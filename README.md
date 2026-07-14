@@ -11,13 +11,13 @@ Pentest & bug-bounty knowledge base + AI automation harness
 
 ```
 
-**An AI-powered penetration testing and bug-bounty knowledge base and automation harness for [Claude Code](https://claude.com/claude-code).** It turns an Obsidian vault into an opinionated offensive-security workflow: a searchable wiki of 430+ hacking technique pages, per-vulnerability "hunt" skills, deterministic hooks that fire the right skill at the right moment, and a state-first engagement model that stops you (and the model) from repeating work.
+**An AI-powered penetration testing and bug-bounty knowledge base and automation harness for [Claude Code](https://claude.com/claude-code).** It turns an Obsidian vault into an opinionated offensive-security workflow: a searchable wiki of 450+ hacking technique pages, per-vulnerability "hunt" skills, deterministic hooks that fire the right skill at the right moment, and a state-first engagement model that stops you (and the model) from repeating work.
 
 [![Version](https://img.shields.io/badge/version-1.0.2-blue.svg)](#)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Built for Claude Code](https://img.shields.io/badge/built%20for-Claude%20Code-blueviolet.svg)](https://claude.com/claude-code)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
-[![Wiki pages](https://img.shields.io/badge/wiki-430%2B%20pages-brightgreen.svg)](wiki/)
+[![Wiki pages](https://img.shields.io/badge/wiki-450%2B%20pages-brightgreen.svg)](wiki/)
 [![LinkedIn](https://img.shields.io/badge/LinkedIn-Tomas%20Zabukas-0A66C2.svg?logo=linkedin&logoColor=white)](https://www.linkedin.com/in/tomas-zabukas/)
 
 
@@ -33,7 +33,7 @@ If ClaudeBrain saves you time on an engagement, a [star](https://github.com/Enco
 ## Contents
 
 - [Features](#features)
-- [The knowledge base](#the-knowledge-base-430-pages-ship-with-the-repo)
+- [The knowledge base](#the-knowledge-base-450-pages-ship-with-the-repo)
 - [What ships vs what stays private](#what-ships-vs-what-stays-private)
 - [Requirements](#requirements)
 - [Quickstart](#quickstart)
@@ -47,7 +47,7 @@ If ClaudeBrain saves you time on an engagement, a [star](https://github.com/Enco
 
 ## Features
 
-- **Wiki-first methodology.** 430+ markdown technique pages indexed by `qmd` for semantic and keyword search over an MCP server (`wiki-search`). Every hunt skill queries the wiki *before* attacking, so knowledge compounds instead of scattering.
+- **Wiki-first methodology.** 450+ markdown technique pages indexed by `qmd` for semantic and keyword search over an MCP server (`wiki-search`). Every hunt skill queries the wiki *before* attacking, so knowledge compounds instead of scattering.
 - **Hunt skills** (`skills/hunt/hunt-*`): one per vulnerability class, XSS, SQLi, SSRF, IDOR, RCE, auth bypass, OAuth/SAML federation, deserialization, cloud (AWS/Azure/GCP), Active Directory, API (OWASP API Top 10), LLM/AI, request smuggling, cache poisoning, and more. Each is wiki-first, out-of-band-gated for blind bugs, and emits a uniform FIND finding schema.
 - **Deterministic automation (hooks).** Plain Python that fires on Claude Code lifecycle events:
   - `hunt-trigger.py` (UserPromptSubmit) matches your prompt against `skills/hunt/triggers.json` and loads the matching hunt skill.
@@ -60,7 +60,7 @@ If ClaudeBrain saves you time on an engagement, a [star](https://github.com/Enco
 
 ---
 
-## The knowledge base (430+ pages ship with the repo)
+## The knowledge base (450+ pages ship with the repo)
 
 The `wiki/` corpus is the heart of ClaudeBrain and it is fully committed, clone it and you get the whole library, not an empty shell. It is a living offensive-security reference organized as:
 
@@ -81,7 +81,7 @@ The wiki and the entire harness are public. Only client data and per-machine sta
 
 | Tracked (ships, safe to push) | Git-ignored (stays private) |
 |---|---|
-| `wiki/` the full 430+ page corpus | `targets/` client engagements and findings |
+| `wiki/` the full 450+ page corpus | `targets/` client engagements and findings |
 | `skills/`, `scripts/`, `setup/`, `docs/`, `tests/` | `CLAUDE.local.md` machine hostnames and paths |
 | `CLAUDE.md`, `README.md`, `LICENSE` | `session/`, `raw/` local working state |
 | `targets/TARGETS.md` the generic engagement playbook | `.claude/`, `.obsidian/`, runtime stamps and caches |
@@ -154,7 +154,7 @@ plugins, but the documented planning loop assumes `superpowers`.
 
 ```
 CLAUDE.md         top-level instructions loaded by Claude Code
-wiki/             430+ page technique corpus (ships; semantic + keyword indexed)
+wiki/             450+ page technique corpus (ships; semantic + keyword indexed)
 skills/           hunt-* skills, research / disclosure, hooks/, meta-skills
 scripts/          next_move, coverage, find-lint, check-leaks, index / lint tooling
 setup/            bootstrap, install-hooks, install-skills, new-engagement / research, templates

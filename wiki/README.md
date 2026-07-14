@@ -1,6 +1,6 @@
 # ClaudeBrain Wiki
 
-A living offensive-security reference: 430+ cross-linked technique pages, payload
+A living offensive-security reference: 450+ cross-linked technique pages, payload
 arsenals, tool references, and cheatsheets. Built in Obsidian and indexed for
 semantic search, so hunt skills consult it before attacking.
 
@@ -11,12 +11,13 @@ Obsidian. On GitHub, browse via the directory links below.
 
 | Domain | Pages | Domain | Pages |
 |---|---|---|---|
-| [Active Directory](techniques/active-directory/) | 101 | [Cloud](techniques/cloud/) | 51 |
-| [Web](techniques/web/) | 67 | [Network](techniques/network/) | 17 |
-| [Red Team](techniques/red-team/) | 14 | [Exploit Dev](techniques/exploit-dev/) | 13 |
-| [Methodology](techniques/methodology/) | 10 | [OSINT](techniques/osint/) | 7 |
-| [Cracking](techniques/cracking/) | 5 | [Mobile / IoT](techniques/mobile-iot/) | 5 |
-| [Linux](techniques/linux/) | 4 | [Forensics](techniques/forensics/) | 2 |
+| [Active Directory](techniques/active-directory/) | 102 | [Cloud](techniques/cloud/) | 51 |
+| [Web](techniques/web/) | 67 | [Exploit Dev](techniques/exploit-dev/) | 18 |
+| [Network](techniques/network/) | 17 | [Red Team](techniques/red-team/) | 15 |
+| [macOS](techniques/macos/) | 10 | [Methodology](techniques/methodology/) | 10 |
+| [OSINT](techniques/osint/) | 7 | [Cracking](techniques/cracking/) | 6 |
+| [Linux](techniques/linux/) | 6 | [Mobile / IoT](techniques/mobile-iot/) | 5 |
+| [Forensics](techniques/forensics/) | 2 | [Blockchain](techniques/blockchain/) | 1 |
 
 ## Arsenal
 
@@ -24,9 +25,16 @@ Obsidian. On GitHub, browse via the directory links below.
 - [Tools](tools/) - per-tool references (nmap, ffuf, nuclei, httpx, sqlmap, BloodHound, netexec, ...)
 - [Cheatsheets](cheatsheets/) - quick-reference command sheets and default-credential tables
 
-## Recent additions (2026 CVE research)
+## Recent additions
 
-Extracted from public security-research forks (single-source; verify against vendor advisories):
+**HackTricks methodology ingest** (synthesized and attributed, `sources: hacktricks-*`):
+
+- New [macOS](techniques/macos/) area (TCC, Gatekeeper, code-signing, sandbox escape, SIP, dylib injection, keychain, persistence, MDM)
+- Deeper [Exploit Dev](techniques/exploit-dev/) (format-string, ROP, ARM64, malware-analysis, heap)
+- [Linux](techniques/linux/) privesc plus new D-Bus and container/Kubernetes escape pages
+- Android / iOS enrichment, and new [Blockchain / Web3](techniques/blockchain/) and [physical-attacks](techniques/red-team/physical-attacks.md) pages
+
+**2026 CVE research** (from public forks; single-source, verify against vendor advisories):
 
 - [Linux kernel rootkits (LKM / ftrace-hooking)](techniques/linux/linux-rootkits.md) - modern 6.x LKM stealth and detection
 - Drupal JSON:API PostgreSQL SQLi (CVE-2026-9082) in [SQL Injection](techniques/web/sql-injection.md)
