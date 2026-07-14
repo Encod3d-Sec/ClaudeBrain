@@ -37,6 +37,7 @@ If ClaudeBrain saves you time on an engagement, a [star](https://github.com/Enco
 - [What ships vs what stays private](#what-ships-vs-what-stays-private)
 - [Requirements](#requirements)
 - [Quickstart](#quickstart)
+- [Plugins and MCP servers](#plugins-and-mcp-servers)
 - [Layout](#layout)
 - [The model underneath](#the-model-underneath)
 - [Safety and boundaries](#safety-and-boundaries)
@@ -125,6 +126,29 @@ bash scripts/check-leaks.sh
 `bootstrap.sh` self-locates the vault; if it cannot, set `OBSIDIAN_VAULT` (and `QMD_VAULT` for the search index) to the repo root. Per-machine paths go in the git-ignored `CLAUDE.local.md`, copy [`CLAUDE.local.example.md`](CLAUDE.local.example.md) to create it. See [`docs/setup.md`](docs/setup.md) for the full walkthrough.
 
 ---
+
+## Plugins and MCP servers
+
+ClaudeBrain runs on Claude Code plus a set of plugins and MCP servers. `setup/bootstrap.sh`
+installs the core set for you; the rest are referenced by the workflow and installed separately.
+
+**Installed by `bootstrap.sh`:**
+
+- **qmd** - the semantic + keyword search engine over `wiki/` (`bun install -g @qmd/cli`); registers the `wiki-search` MCP (`qmd mcp`).
+- **caveman** - terse-output mode; also registers the `caveman-shrink` MCP (a token-compressed `wiki-search`).
+- Official Claude Code plugins: **code-review**, **claude-md-management**, **skill-creator**, **frontend-design** (`claude plugins install <name>@claude-plugins-official`).
+
+**Install separately (referenced by the harness):**
+
+- **superpowers** (recommended) - the planning / execution / debugging workflow the CLAUDE.md loop routes to: `brainstorming` -> `writing-plans` -> `subagent-driven-development`, plus `systematic-debugging`, `dispatching-parallel-agents`, and `verification-before-completion`.
+- **ponytail** (optional) - "lazy senior dev" mode that pushes for the simplest working solution.
+- **context7** (optional MCP) - up-to-date library / API docs, used for vendor-default and dependency lookups.
+- **gsd** (optional) - the `pause-work` session-end helper.
+- **burp-mcp** (optional MCP) - drives Burp Suite for the `hunt-burp` workflow.
+
+Install plugins from Claude Code's plugin marketplace (`/plugin`), and MCP servers with `claude mcp add`.
+Everything degrades gracefully: the hooks fail open and the hunt/wiki skills work without the optional
+plugins, but the documented planning loop assumes `superpowers`.
 
 ## Layout
 
