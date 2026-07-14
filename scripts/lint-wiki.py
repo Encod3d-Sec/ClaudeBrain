@@ -39,7 +39,7 @@ FM_RE = re.compile(r"^---\r?\n(.*?)\r?\n---", re.S)   # tolerate CRLF (this vaul
 EXTERNAL_OK = {"moc", "index", "overview"}
 # auto-generated pages (gen_index.py / build_moc.py) - excluded from authored-content
 # checks (frontmatter date, em-dash) since their content is not hand-written
-GENERATED = {"index.md", "moc.md", "overview.md"}
+GENERATED = {"index.md", "moc.md", "overview.md", "README.md"}
 
 
 def is_generated(path):

