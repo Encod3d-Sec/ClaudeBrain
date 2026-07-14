@@ -1,0 +1,213 @@
+#!/usr/bin/env python3
+"""Audit which wiki technique/payload pages surface "by context" during an engagement.
+
+A page is WIRED iff (see docs/superpowers/specs/2026-07-08-wiki-context-wiring-design.md):
+  (a) its slug is in some scripts/playbook.json fingerprint's `refs`, OR
+  (b) it is [[linked]] from any hunt-skill SKILL.md body, OR
+  (c) it is [[linked]] from a page that satisfies (a) or (b)  -- ONE hop through an anchor/hub.
+
+Full transitive closure is deliberately NOT used (the wiki is densely linked, so closure would call
+everything "wired"). One hop through an anchor mirrors how a page actually reaches the model: a
+fingerprint ref names it directly, or a loaded skill / surfaced hub page links it.
+
+Pages listed in wiki/_wiring-exempt.txt are excluded (index/overview/moc/course/meta pages).
+
+Read-only. Usage:
+  wiki-wiring-audit.py                 # human report, orphans grouped by domain + coverage %
+  wiki-wiring-audit.py --json          # machine output for the CI gate / subagents
+  wiki-wiring-audit.py --domain active-directory   # scope the orphan list to one domain dir
+"""
+from __future__ import annotations
+import argparse, json, os, re, sys, glob
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+WIKI = os.path.join(ROOT, "wiki")
+PLAYBOOK = os.path.join(ROOT, "scripts", "playbook.json")
+SKILLS_GLOB = os.path.join(ROOT, "skills", "hunt", "**", "*.md")
+EXEMPT_FILE = os.path.join(WIKI, "_wiring-exempt.txt")
+
+# Only these subtrees carry "should surface during an engagement" pages (gated by the CI test).
+# tools/ and cheatsheets/ are audited separately (compute_tools / compute_cheats).
+# DELIBERATELY NOT gated (verified by an over-look of the whole wiki/ tree, 2026-07-08):
+#   - CTF/      : challenge writeups (passion-project content; user boundary = leave CTF alone)
+#   - courses/  : course notes (personal reference, not engagement techniques)
+#   - index.md  : auto-generated page catalog (meta)          -- scripts/gen_index.py
+#   - moc.md    : global map-of-content / navigation hub (meta)
+#   - overview.md: methodology-coverage map (meta)
+# These are navigation/meta or explicitly out-of-scope, not attack techniques that fire by context.
+AUDITED_SUBDIRS = ("techniques", "payloads")
+
+WIKILINK = re.compile(r"\[\[([^\]|#]+)")
+
+
+def slug(path: str) -> str:
+    return os.path.splitext(os.path.basename(path))[0]
+
+
+def audited_pages() -> dict[str, str]:
+    """slug -> path for every technique/payload page."""
+    out = {}
+    for sub in AUDITED_SUBDIRS:
+        for f in glob.glob(os.path.join(WIKI, sub, "**", "*.md"), recursive=True):
+            out[slug(f)] = f
+    return out
+
+
+def all_page_paths() -> dict[str, str]:
+    """slug -> path for EVERY wiki page (hubs/moc may live outside audited subtrees)."""
+    out = {}
+    for f in glob.glob(os.path.join(WIKI, "**", "*.md"), recursive=True):
+        out.setdefault(slug(f), f)
+    return out
+
+
+def links_in(path: str) -> set[str]:
+    try:
+        text = open(path, encoding="utf-8", errors="ignore").read()
+    except OSError:
+        return set()
+    return {m.strip().lower() for m in WIKILINK.findall(text)}
+
+
+def playbook_refs() -> set[str]:
+    d = json.load(open(PLAYBOOK, encoding="utf-8"))
+    refs = set()
+    for v in d["fingerprints"].values():
+        for r in v.get("refs", []):
+            refs.add(r.replace("payloads/", "").strip().lower())
+    return refs
+
+
+def playbook_tools() -> set[str]:
+    d = json.load(open(PLAYBOOK, encoding="utf-8"))
+    out = set()
+    for v in d["fingerprints"].values():
+        for t in v.get("tools", []):
+            out.add(t.replace("tools/", "").strip().lower())
+    return out
+
+
+def tool_pages() -> dict[str, str]:
+    return {slug(f): f for f in glob.glob(os.path.join(WIKI, "tools", "*.md"))}
+
+
+def cheat_pages() -> dict[str, str]:
+    return {slug(f): f for f in glob.glob(os.path.join(WIKI, "cheatsheets", "*.md"))}
+
+
+def skill_body_links() -> set[str]:
+    out = set()
+    for f in glob.glob(SKILLS_GLOB, recursive=True):
+        out |= links_in(f)
+    return out
+
+
+def load_exempt() -> set[str]:
+    if not os.path.exists(EXEMPT_FILE):
+        return set()
+    out = set()
+    for line in open(EXEMPT_FILE, encoding="utf-8"):
+        line = line.split("#", 1)[0].strip().lower()
+        if line:
+            out.add(line)
+    return out
+
+
+def compute():
+    pages = audited_pages()
+    everypath = all_page_paths()
+    exempt = load_exempt()
+
+    # Tier (a) + (b): direct anchors.
+    anchors = playbook_refs() | skill_body_links()
+
+    # Tier (c): one hop -- pages linked FROM an anchor page (the hub lists its children).
+    one_hop = set()
+    for a in anchors:
+        p = everypath.get(a)
+        if p:
+            one_hop |= links_in(p)
+
+    wired = anchors | one_hop
+    orphans = sorted(s for s in pages if s not in wired and s not in exempt)
+    return pages, wired, exempt, orphans, anchors
+
+
+def compute_tools():
+    tools = tool_pages()
+    exempt = load_exempt()
+    # a tool is wired if a fingerprint recommends it (tools/refs) or a hunt skill links it
+    anchors = playbook_tools() | playbook_refs() | skill_body_links()
+    orphans = sorted(s for s in tools if s not in anchors and s not in exempt)
+    return tools, orphans, anchors
+
+
+def compute_cheats():
+    cheats = cheat_pages()
+    exempt = load_exempt()
+    anchors = playbook_tools() | playbook_refs() | skill_body_links()
+    orphans = sorted(s for s in cheats if s not in anchors and s not in exempt)
+    return cheats, orphans, anchors
+
+
+def domain_of(path: str) -> str:
+    rel = os.path.relpath(path, WIKI)
+    parts = rel.split(os.sep)
+    # techniques/<domain>/... -> domain ; payloads/x.md -> payloads
+    if parts[0] == "techniques" and len(parts) > 2:
+        return f"techniques/{parts[1]}"
+    return parts[0]
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--json", action="store_true")
+    ap.add_argument("--domain", help="filter orphan list to this domain dir (e.g. techniques/active-directory)")
+    args = ap.parse_args()
+
+    pages, wired, exempt, orphans, anchors = compute()
+    tools, tool_orphans, _ = compute_tools()
+    cheats, cheat_orphans, _ = compute_cheats()
+
+    by_dom: dict[str, list[str]] = {}
+    for s in orphans:
+        dom = domain_of(pages[s])
+        if args.domain and args.domain not in dom:
+            continue
+        by_dom.setdefault(dom, []).append(s)
+
+    total = len(pages)
+    wired_n = sum(1 for s in pages if s in wired or s in exempt)
+    cov = 100.0 * wired_n / total if total else 100.0
+
+    tcov = 100.0 * (len(tools) - len(tool_orphans)) / len(tools) if tools else 100.0
+
+    if args.json:
+        print(json.dumps({
+            "total": total, "wired_or_exempt": wired_n, "coverage_pct": round(cov, 1),
+            "orphans": [{"slug": s, "domain": domain_of(pages[s]), "path": os.path.relpath(pages[s], ROOT)}
+                        for s in orphans if (not args.domain) or args.domain in domain_of(pages[s])],
+            "anchors": sorted(a for a in anchors),
+            "tools_total": len(tools), "tools_coverage_pct": round(tcov, 1), "tool_orphans": tool_orphans,
+            "cheats_total": len(cheats), "cheat_orphans": cheat_orphans,
+        }, indent=2))
+        return
+
+    ccov = 100.0 * (len(cheats) - len(cheat_orphans)) / len(cheats) if cheats else 100.0
+    print(f"Wiki wiring coverage: {wired_n}/{total} = {cov:.1f}%  ({len(orphans)} orphaned)")
+    print(f"Tool coverage: {len(tools) - len(tool_orphans)}/{len(tools)} = {tcov:.1f}%  ({len(tool_orphans)} tools not recommended by any context)")
+    print(f"Cheatsheet coverage: {len(cheats) - len(cheat_orphans)}/{len(cheats)} = {ccov:.1f}%  ({len(cheat_orphans)} not surfaced)")
+    print(f"(anchors: {len(anchors)}  exempt: {len(exempt)})")
+    if tool_orphans:
+        print("  unwired tools:", ", ".join(tool_orphans))
+    if cheat_orphans:
+        print("  unwired cheatsheets:", ", ".join(cheat_orphans))
+    print("-" * 70)
+    for dom in sorted(by_dom):
+        print(f"\n### {dom}  ({len(by_dom[dom])} orphaned)")
+        for s in by_dom[dom]:
+            print(f"  {s}")
+
+
+if __name__ == "__main__":
+    main()

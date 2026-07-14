@@ -1,0 +1,706 @@
+"""Shared helpers for engagement-state hooks.
+
+Resolves the active engagement and parses its state/loot/paths markdown tables.
+Everything here is best-effort and never raises to the caller: callers wrap use
+in try/except, but these helpers also degrade to empty/None on any problem.
+"""
+import ipaddress
+import os
+import re
+from datetime import date
+
+# Self-locate: realpath resolves the ~/.claude/vault-hooks symlink to the real
+# skills/hooks dir inside whichever machine's vault. skills/hooks -> skills -> root.
+# Machine-independent: works regardless of user/path/spelling on each device.
+HERE = os.path.dirname(os.path.realpath(__file__))
+# CLAUDEBRAIN_VAULT overrides the self-located vault root (used by tests to point
+# at a fixture vault). Unset in normal use -> self-locate via the symlinked path.
+VAULT = os.environ.get("CLAUDEBRAIN_VAULT") or os.path.dirname(os.path.dirname(HERE))
+TARGETS = os.path.join(VAULT, "targets")
+# Templates live OUTSIDE targets/ (which is git-ignored) so they ship with the
+# shareable repo. Engagement instances stay private under targets/.
+TEMPLATES = os.path.join(VAULT, "setup", "templates")
+STATE_FILES = ("state.md", "loot.md", "paths.md")
+TYPES = ("pentest", "bugbounty", "ctf")
+# entity identifier columns by engagement type. Defined once here; next_move and
+# coverage both import it so the mapping cannot drift between the two analyzers.
+ENTITY_KEY = {"pentest": ("host", "ip"), "ctf": ("target",), "bugbounty": ("asset", "url")}
+
+# Per-engagement-type heal set. state/loot/paths (STATE_FILES) come from the type's
+# own template dir and are healed for every type. The shared type-agnostic files
+# split into a common core (every type) and a pentest/bugbounty-only extension
+# (coverage/Vuln-index/oob). CTF rooms never use the severity/OOB/coverage machinery
+# (dead across every THM room), so ctf heals only the core; those three become
+# opt-in via ensure_optional_file() (see below) or new-engagement.sh --with-* flags.
+SHARED_CORE = (("log.md", "_log.md"), ("scope.md", "_scope.md"),
+               ("walkthrough.md", "_walkthrough.md"),
+               ("Deadends.md", "_deadends.md"))
+SHARED_FULL = (("coverage.md", "_coverage.md"),
+               ("Vuln-index.md", "_vuln-index.md"),
+               ("oob.md", "_oob.md"))
+# Standard dirs scaffolded for every type. poc/ = curated exploit/PoC/flag shots,
+# recon/ = auto scan-tool cards, ingest/ = raw tool output. Vulns/ is intentionally
+# absent: it is created lazily on the first FIND (pentest/bugbounty), never at init.
+STATE_DIRS = ("ingest", "recon", "poc")
+
+
+def _heal_shared_set(etype):
+    """Shared (dest, templatefile) pairs to heal for an engagement type. ctf gets the
+    lean core only; pentest/bugbounty get core + the coverage/Vuln-index/oob machinery."""
+    return SHARED_CORE if etype == "ctf" else SHARED_CORE + SHARED_FULL
+
+
+# Opt-in shared files a ctf engagement omits at init. Created on demand: the
+# new-engagement.sh --with-oob/--with-coverage flags, ensure_optional_file() when a
+# blind bug (oob) or a coverage check (coverage) actually runs, or a manual findings
+# roll-up (vuln-index). vuln-index is type-aware: ctf uses a slim findings list.
+OPTIONAL_FILES = {"oob": ("oob.md", "_oob.md"),
+                  "coverage": ("coverage.md", "_coverage.md"),
+                  "vuln-index": ("Vuln-index.md", "_vuln-index.md")}
+
+
+def ensure_optional_file(kind, d=None):
+    """Back-fill one opt-in shared file (oob/coverage/vuln-index) on demand for the
+    active (or given) engagement. Returns the created filename, or '' if it already
+    exists / kind is unknown / no engagement / the template is missing. For
+    kind='vuln-index' a ctf engagement gets the slim setup/templates/ctf/vuln-index.md;
+    every other case uses the shared template. Never overwrites (idempotent)."""
+    d = d or active_dir()
+    if not d or kind not in OPTIONAL_FILES:
+        return ""
+    fn, tplname = OPTIONAL_FILES[kind]
+    dest = os.path.join(d, fn)
+    if os.path.exists(dest):
+        return ""
+    tpl = ""
+    if kind == "vuln-index":
+        cand = os.path.join(TEMPLATES, engagement_type(d), "vuln-index.md")
+        if os.path.isfile(cand):
+            tpl = cand
+    if not tpl:
+        tpl = os.path.join(TEMPLATES, tplname)
+    if not os.path.isfile(tpl):
+        return ""
+    name = os.path.basename(d)
+    today = date.today().isoformat()
+    text = open(tpl, encoding="utf-8", errors="ignore").read()
+    text = text.replace("<ENGAGEMENT>", name).replace("<DATE>", today)
+    with open(dest, "w", encoding="utf-8") as fh:
+        fh.write(text)
+    return fn
+
+
+def entity(row, etype):
+    """Identifier for a state/coverage row by engagement type (host/ip | target |
+    asset/url), or '?' if none present."""
+    for k in ENTITY_KEY.get(etype, ("host",)):
+        if row.get(k):
+            return row[k]
+    return "?"
+
+
+def _read_pointer():
+    """Engagement name from targets/active.md (syncs via Obsidian, unlike a
+    dotfile). First non-empty line that is not a markdown header/comment."""
+    p = os.path.join(TARGETS, "active.md")
+    if not os.path.isfile(p):
+        return ""
+    for line in open(p, encoding="utf-8", errors="ignore"):
+        s = line.strip()
+        if s and not s.startswith(("#", "<!--", "-", "*")):
+            return s
+    return ""
+
+
+def active_dir():
+    """Return path to the active engagement dir, or None.
+
+    Priority: targets/active.md pointer, else most-recently-modified engagement
+    dir (excluding _templates and dotfiles). Returns None if targets/ empty.
+    """
+    name = _read_pointer()
+    if name:
+        cand = os.path.join(TARGETS, name)
+        if os.path.isdir(cand):
+            return cand
+    dirs = []
+    for n in os.listdir(TARGETS):
+        if n.startswith(".") or n == "_templates":
+            continue
+        p = os.path.join(TARGETS, n)
+        if os.path.isdir(p):
+            dirs.append(p)
+    if not dirs:
+        return None
+    return max(dirs, key=os.path.getmtime)
+
+
+def _parse_table(path):
+    """Parse the first markdown table in a file into list-of-dicts keyed by
+    lowercased header cell. Returns [] on any problem."""
+    if not os.path.isfile(path):
+        return []
+    rows = []
+    header = None
+    for line in open(path, encoding="utf-8", errors="ignore"):
+        line = line.strip()
+        if not line.startswith("|"):
+            if header is not None:
+                break  # table ended
+            continue
+        cells = [c.strip() for c in line.strip("|").split("|")]
+        if set("".join(cells)) <= set("-: "):
+            continue  # separator row
+        if header is None:
+            header = [c.lower() for c in cells]
+            continue
+        if not any(cells):
+            continue
+        rows.append(dict(zip(header, cells)))
+    return rows
+
+
+# vuln-class synonyms: phrases (beyond the literal class token) that credit a class
+# as TESTED when they appear in a finding title/slug or a Deadends.md line. Keep
+# additions specific -- a false positive silences a coverage-gap reminder early.
+CLASS_ALIASES = {
+    "sqli": ["sql injection", "sql-injection", "sqlmap", "union select", "blind sql"],
+    "xss": ["cross-site scripting", "cross site scripting", "stored xss", "reflected xss", "dom xss"],
+    "ssrf": ["server-side request forgery", "server side request forgery"],
+    "idor": ["insecure direct object", "bola", "broken object level", "object-level auth"],
+    "rce": ["remote code execution", "command injection", "os command", "code execution", "webshell"],
+    "ssti": ["template injection", "server-side template"],
+    "xxe": ["xml external entity", "xml entity"],
+    "csrf": ["cross-site request forgery", "cross site request forgery"],
+    "oauth-saml": ["oauth", "saml", "openid", "single sign-on", "federation"],
+    "auth": ["authentication bypass", "auth bypass", "broken authentication", "login bypass"],
+    "file-upload": ["file upload", "unrestricted upload", "arbitrary file upload"],
+    "open-redirect": ["open redirect"],
+    "request-smuggling": ["request smuggling", "desync"],
+    "deserialization": ["insecure deserialization", "deserialisation", "object injection"],
+    "prototype-pollution": ["prototype pollution"],
+    "subdomain-takeover": ["subdomain takeover"],
+    "web-cache": ["cache poisoning", "cache deception", "web cache"],
+    "host-header": ["host header"],
+    "jwt": ["json web token"],
+    "graphql": ["graph ql"],
+    "cors": ["cross-origin resource", "cross origin resource"],
+    "race-condition": ["race condition", "toctou"],
+    "business-logic": ["business logic", "logic flaw"],
+    "default-creds": ["default credential", "default password", "default login", "weak credential"],
+    "kerberoast": ["kerberoasting"],
+    "asreproast": ["asrep roast", "as-rep roast", "asreproasting"],
+    "adcs": ["esc1", "esc2", "esc3", "esc4", "esc8", "certifried", "certipy", "certificate template"],
+    "privesc": ["privilege escalation", "local privilege"],
+    "signing-relay": ["ntlm relay", "smb relay", "smb signing", "ldap relay", "coerce"],
+    "lateral": ["lateral movement", "pass-the-hash", "pass the hash", "pass-the-ticket"],
+    "shares": ["smb share", "open share", "anonymous share", "readable share"],
+    "enum": ["enumeration"],
+    "recon": ["reconnaissance"],
+    "mcp": ["model context protocol"],
+    "cicd": ["ci/cd", "pipeline injection", "github actions", "runner takeover"],
+}
+
+
+def _match_classes(text, classes):
+    """Subset of `classes` whose bare token (word-boundaried, so 'rce' does not match
+    'source') or a CLASS_ALIASES phrase (substring) appears in `text`. Case-insensitive."""
+    if not text:
+        return set()
+    t = text.lower()
+    hits = set()
+    for c in classes:
+        cl = c.lower()
+        if re.search(r"\b" + re.escape(cl) + r"\b", t):
+            hits.add(c)
+            continue
+        for phrase in CLASS_ALIASES.get(cl, ()):
+            if phrase in t:
+                hits.add(c)
+                break
+    return hits
+
+
+def _frontmatter(text):
+    """key->value dict from a leading --- YAML block, or {}. Scalars become strings;
+    a key followed by `- item` lines becomes a list (so block-list `affected:` parses)."""
+    m = re.match(r"\s*---\s*\n(.*?)\n---", text, re.S)
+    if not m:
+        return {}
+    fm = {}
+    key = None
+    for line in m.group(1).splitlines():
+        li = re.match(r"\s+-\s+(.*)$", line)
+        if li and key:                                  # block-list item under the current key
+            cur = fm.get(key)
+            if not isinstance(cur, list):
+                fm[key] = [] if (cur is None or cur == "") else [cur]
+            fm[key].append(li.group(1).strip().strip('"').strip("'"))
+            continue
+        km = re.match(r"([A-Za-z][\w-]*):\s*(.*)$", line)
+        if km:
+            key = km.group(1).lower()
+            fm[key] = km.group(2).strip().strip('"').strip("'")
+    return fm
+
+
+def tested_classes(d, etype, classes):
+    """Vuln classes credited as TESTED for the engagement, inferred from the files the
+    state-first discipline already produces -- so coverage stays current with no manual
+    bookkeeping:
+      1. coverage.md 'tested' column  -> explicit, per-asset (tokens taken verbatim)
+      2. Vulns/**/FIND-*.md           -> tested-and-found, per 'affected' asset
+      3. Deadends.md lines            -> tested-and-cleared (a named class, bounded-out)
+    Returns (per_asset: {asset_lower: set}, glob: set); glob credits apply to every asset
+    (un-attributed signals). Best-effort: any missing file is skipped. `classes` is the
+    canonical vocabulary to match findings/dead-ends against."""
+    per_asset, glob = {}, set()
+    if not d or not classes:
+        return per_asset, glob
+
+    def credit(hits, asset):
+        if not hits:
+            return
+        if asset:
+            per_asset.setdefault(asset.lower(), set()).update(hits)
+        else:
+            glob.update(hits)
+
+    # 1. explicit coverage.md (verbatim tokens, not matched). Drop dash placeholders.
+    try:
+        for r in _parse_table(os.path.join(d, "coverage.md")):
+            a = (r.get("asset") or r.get("host") or r.get("target") or "").strip().lower()
+            toks = {c for c in (x.strip().lower() for x in (r.get("tested", "") or "").split(","))
+                    if c and not re.fullmatch(r"-+", c)}
+            credit(toks, a)
+    except Exception:
+        pass
+
+    # 2. written findings -> class proven tested on the affected asset
+    vroot = os.path.join(d, "Vulns")
+    if os.path.isdir(vroot):
+        for root, _dirs, files in os.walk(vroot):
+            if os.path.basename(root).lower().startswith(("skip", "false")):
+                continue
+            for f in files:
+                if not (f.startswith("FIND-") and f.endswith(".md")):
+                    continue
+                try:
+                    text = open(os.path.join(root, f), encoding="utf-8", errors="ignore").read()
+                except OSError:
+                    continue
+                fm = _frontmatter(text)
+                title = fm.get("title", "")
+                if isinstance(title, list):
+                    title = " ".join(title)
+                hits = _match_classes(f + " " + title, classes)
+                aff = fm.get("affected", "")
+                for a in (aff if isinstance(aff, list) else [aff]):   # block-list affected -> per-asset
+                    credit(hits, a)
+
+    # 3. Deadends.md -> tested-and-cleared; attribute to a state entity if the line names one
+    de = os.path.join(d, "Deadends.md")
+    if os.path.isfile(de):
+        ents = []
+        try:
+            for r in _parse_table(os.path.join(d, "state.md")):
+                e = entity(r, etype)
+                if e and e != "?":
+                    ents.append(e)
+        except Exception:
+            pass
+        try:
+            raw = open(de, encoding="utf-8", errors="ignore").read()
+            body = re.sub(r"^\s*---\s*\n.*?\n---\s*\n", "", raw, count=1, flags=re.S)
+            for line in body.splitlines():
+                s = line.strip()
+                if not s or s.startswith(("#", "<!--", "|", "---")):
+                    continue
+                asset = next((e for e in ents if e.lower() in s.lower()), "")
+                credit(_match_classes(s, classes), asset)
+        except OSError:
+            pass
+
+    return per_asset, glob
+
+
+def summary():
+    """One-line-per-fact summary dict for the active engagement."""
+    d = active_dir()
+    if not d:
+        return None
+    name = os.path.basename(d)
+    state = _parse_table(os.path.join(d, "state.md"))
+    paths = _parse_table(os.path.join(d, "paths.md"))
+    loot = _parse_table(os.path.join(d, "loot.md"))
+    owned = sum(1 for r in state if r.get("owned", "").lower() == "yes")
+    open_paths = [r for r in paths if r.get("status", "").lower() == "open"]
+    creds = sum(1 for r in loot if r.get("status", "").lower() in ("active", "unconfirmed"))
+    next_moves = [
+        f"{r.get('path', '?')}: {r.get('next-move', '?')}"
+        for r in open_paths
+        if r.get("next-move")
+    ][:3]
+    return {
+        "name": name,
+        "hosts": len(state),
+        "owned": owned,
+        "creds": creds,
+        "open_paths": len(open_paths),
+        "next_moves": next_moves,
+    }
+
+
+def summary_text():
+    """Compact counts-only summary string, or '' if no engagement. Move ranking
+    is owned by scripts/next_move.py (the analyzer), not duplicated here."""
+    s = summary()
+    if not s:
+        return ""
+    return (
+        f"Active engagement: {s['name']} | hosts {s['hosts']} (owned {s['owned']}) "
+        f"| creds {s['creds']} | open paths {s['open_paths']}"
+    )
+
+
+def engagement_type(d=None):
+    """Read engagement_type from any existing state/loot/paths frontmatter.
+    Defaults to 'pentest' when unknown."""
+    d = d or active_dir()
+    if not d:
+        return "pentest"
+    for fn in STATE_FILES:
+        p = os.path.join(d, fn)
+        if not os.path.isfile(p):
+            continue
+        for line in open(p, encoding="utf-8", errors="ignore"):
+            if line.startswith("engagement_type:"):
+                val = line.split(":", 1)[1].strip().lower()
+                if val in TYPES:
+                    return val
+    return "pentest"
+
+
+_SCOPE_SECTIONS = {
+    "in scope": "in_scope",
+    "out of scope": "out_of_scope",
+    "allowed tooling": "allowed_tooling",
+    "rules of engagement": "roe",
+}
+
+
+def scope(d=None):
+    """Parse scope.md: in/out-of-scope lists, allowed tooling, RoE, and the
+    no_bruteforce/no_dos/passive_only flags. Empty defaults if absent."""
+    res = {"in_scope": [], "out_of_scope": [], "allowed_tooling": [], "roe": [],
+           "no_bruteforce": False, "no_dos": False, "passive_only": False,
+           "tunnel_safe": False}
+    d = d or active_dir()
+    if not d:
+        return res
+    p = os.path.join(d, "scope.md")
+    if not os.path.isfile(p):
+        return res
+    cur = None
+    for line in open(p, encoding="utf-8", errors="ignore"):
+        s = line.strip()
+        fm = re.match(r"(no_bruteforce|no_dos|passive_only|tunnel_safe):\s*(true|false)", s, re.I)
+        if fm:
+            res[fm.group(1).lower()] = fm.group(2).lower() == "true"
+            continue
+        h = re.match(r"##\s+(.*)", s)
+        if h:
+            cur = _SCOPE_SECTIONS.get(h.group(1).strip().lower())
+            continue
+        if cur and s.startswith("-"):
+            v = s[1:].strip()
+            if v and not v.startswith("<!--"):
+                res[cur].append(v)
+    return res
+
+
+def _scope_entry_match(e, o, strict=False):
+    """Boundary-aware match of host/ip `e` against scope entry `o`.
+
+    Always matches on: exact host; `o` as a parent domain (`x.com` -> `api.x.com`,
+    the `endswith("." + o)` arm, which is a genuine-subdomain relationship and is
+    safe); or `o` as a CIDR/IP that contains `e`.
+
+    The label-prefix arm (`o` as a bare-label prefix, `prod-db` -> `prod-db.x.com`,
+    only when `o` has no dot) is ADVISORY-ONLY and applies only when `strict=False`.
+    It is inherently attacker-spoofable: anyone can register `<label>.attacker.tld`,
+    so a bare-label prefix does NOT prove `e` is the in-scope host. It is a
+    convenience for advisory callers (scope-guard warnings, next_move ranking) but
+    must never authorize a security decision that writes data to disk. Strict callers
+    (the poc/pages disk-write gate) pass `strict=True` and get exact/parent/CIDR only.
+    Also avoids the old bidirectional-substring bug (`db` -> `db-staging`) and dotted
+    label-prefix confusion (`10.0.0.9` -> `10.0.0.9.evil.com`).
+    """
+    if not o:
+        return False
+    if e == o or e.endswith("." + o):
+        return True
+    if not strict and "." not in o and e.startswith(o + "."):
+        # advisory-only convenience: a bare-label entry matches its FQDN forms; NOT
+        # trusted for a disk-write gate (a host can spoof <label>.attacker.tld).
+        return True
+    try:
+        if "/" in o:
+            return ipaddress.ip_address(e) in ipaddress.ip_network(o, strict=False)
+        # bare-IP scope entry: exact-match already handled above
+    except ValueError:
+        pass
+    return False
+
+
+def out_of_scope_match(entity, sc):
+    """True if entity (host/ip/asset) matches any out-of-scope entry."""
+    e = (entity or "").lower().strip()
+    if not e:
+        return False
+    return any(_scope_entry_match(e, (o or "").lower().strip())
+               for o in sc.get("out_of_scope", []))
+
+
+def scope_text():
+    """Compact scope/RoE summary for injection, or ''."""
+    s = scope()
+    parts = []
+    if s["in_scope"]:
+        parts.append(f"in-scope {len(s['in_scope'])}")
+    if s["out_of_scope"]:
+        parts.append(f"out-of-scope {len(s['out_of_scope'])}")
+    flags = [k for k in ("no_bruteforce", "no_dos", "passive_only") if s[k]]
+    if flags:
+        parts.append("RoE: " + ", ".join(flags))
+    return "Scope: " + " | ".join(parts) if parts else ""
+
+
+def recent_log(maxlines=12):
+    """Newest block of the active engagement's log.md, or ''. Lets the client
+    narrative load from targets/<eng>/log.md instead of session/hot.md."""
+    d = active_dir()
+    if not d:
+        return ""
+    p = os.path.join(d, "log.md")
+    if not os.path.isfile(p):
+        return ""
+    lines = open(p, encoding="utf-8", errors="ignore").read().splitlines()
+    seps = [i for i, l in enumerate(lines) if l.strip() == "---"]
+    start = (seps[2] + 1) if len(seps) >= 3 else (seps[1] + 1 if len(seps) >= 2 else 0)
+    body = [l for l in lines[start:] if l.strip()]
+    return "\n".join(body[:maxlines])
+
+
+# row-structured wiki cheatsheets a fingerprint can pull concrete rows from
+CHEATSHEETS = {"default-credentials", "api-request-findings", "cve-arsenal"}
+_CS_HEADERS = {"product", "cve", "product/tech"}
+
+
+def cheatsheet_rows(slug, anchor, maxrows=3):
+    """Up to `maxrows` markdown table rows from wiki/cheatsheets/<slug>.md whose cells
+    contain `anchor` (str or list, case-insensitive). [] if the file/rows are absent
+    (e.g. the wiki is not present on this device) -> caller falls back to the slug.
+    Lets a tech fingerprint surface the actual reuse rows, not just a page name."""
+    if slug not in CHEATSHEETS or not anchor:
+        return []
+    anchors = [a.lower() for a in (anchor if isinstance(anchor, (list, tuple)) else [anchor]) if a]
+    if not anchors:
+        return []
+    p = os.path.join(VAULT, "wiki", "cheatsheets", slug + ".md")
+    try:
+        lines = open(p, encoding="utf-8", errors="ignore").read().splitlines()
+    except OSError:
+        return []
+    out = []
+    for line in lines:
+        s = line.strip()
+        if not s.startswith("|"):
+            continue
+        cells = s.split("|")
+        if set("".join(cells)) <= set("-: "):
+            continue  # separator row
+        first = cells[1].strip().lower() if len(cells) > 1 else ""
+        if first in _CS_HEADERS:
+            continue  # header row
+        low = s.lower()
+        if any(a in low for a in anchors):
+            out.append(s)
+            if len(out) >= maxrows:
+                break
+    return out
+
+
+def oob_rows(d=None):
+    """Rows of the active engagement's oob.md ledger (list of dicts), or []."""
+    d = d or active_dir()
+    if not d:
+        return []
+    return _parse_table(os.path.join(d, "oob.md"))
+
+
+def oob_hits(d=None):
+    """OOB ledger rows whose callback landed (status HIT) but are not yet actioned."""
+    return [r for r in oob_rows(d) if r.get("status", "").strip().lower() == "hit"]
+
+
+def flip_oob_status(d, token, new_status, source=""):
+    """Flip the status (and optionally source) of the oob.md row whose token cell
+    contains `token`, but only if it is still open (waiting/blank). Line-based edit
+    so the rest of the table is untouched. Returns True if a row changed.
+    Best-effort: never raises."""
+    if not d or not token or len(token) < 4:
+        return False
+    p = os.path.join(d, "oob.md")
+    try:
+        lines = open(p, encoding="utf-8", errors="ignore").read().splitlines(keepends=True)
+    except OSError:
+        return False
+    changed = False
+    for i, line in enumerate(lines):
+        if token not in line or not line.lstrip().startswith("|"):
+            continue
+        nl = "\n" if line.endswith("\n") else ""
+        cells = line[:len(line) - len(nl)].split("|")
+        # "| token | sink | class | planted | status | source |" -> 8 parts (lead/trail empty)
+        if len(cells) < 8 or token not in cells[1]:
+            continue
+        if cells[5].strip().lower() not in ("waiting", ""):
+            continue  # only flip an open row, never overwrite HIT/actioned/expired
+        cells[5] = " " + new_status + " "
+        if source:
+            cells[6] = " " + source + " "
+        lines[i] = "|".join(cells) + nl
+        changed = True
+    if changed:
+        try:
+            open(p, "w", encoding="utf-8").write("".join(lines))
+        except OSError:
+            return False
+    return changed
+
+
+_STATUS_RE = re.compile(r"^##\s*STATUS:\s*(SOLVED|OWNED|ROOTED|COMPLETE)\b",
+                        re.IGNORECASE | re.MULTILINE)
+
+
+def is_solved(d):
+    """True iff <d>/state.md carries a '## STATUS: SOLVED' (or OWNED/ROOTED/COMPLETE)
+    heading, case-insensitive -- the explicit close-out marker the walkthrough
+    auto-assembly gate watches for. Missing file / any error -> False (fail-open:
+    never nag on a detection error)."""
+    if not d:
+        return False
+    p = os.path.join(d, "state.md")
+    try:
+        text = open(p, encoding="utf-8", errors="ignore").read()
+        return bool(_STATUS_RE.search(text))
+    except Exception:
+        return False
+
+
+# unfilled-template markers a scaffolded-but-untouched walkthrough.md still carries
+_WALKTHROUGH_STUB_MARKERS = ("<entrypoint>", "<foothold")
+_WALKTHROUGH_STUB_LINES = ("- target:", "- reach:")
+
+
+def walkthrough_stale(d):
+    """True (needs assembling) iff <d>/walkthrough.md is absent/empty/whitespace, OR
+    still carries an unfilled-template marker (<entrypoint>, <foothold, or a bare
+    '- target:'/'- reach:' stub line), OR its '## Evidence' section has no image row
+    (![](...)). False once the narrative is filled in and the gallery has a shot.
+    Any error -> False (fail-open: do NOT nag on a detection error)."""
+    if not d:
+        return False
+    p = os.path.join(d, "walkthrough.md")
+    try:
+        if not os.path.isfile(p):
+            return True
+        text = open(p, encoding="utf-8", errors="ignore").read()
+        if not text.strip():
+            return True
+        if any(m in text for m in _WALKTHROUGH_STUB_MARKERS):
+            return True
+        if any(line.strip() in _WALKTHROUGH_STUB_LINES for line in text.splitlines()):
+            return True
+        m = re.search(r"^##\s+Evidence\s*$(.*?)(?=^##\s|\Z)", text, re.MULTILINE | re.DOTALL)
+        section = m.group(1) if m else ""
+        if "![](" not in section:
+            return True
+        return False
+    except Exception:
+        return False
+
+
+def learn_pending(d):
+    """True (a knowledge-harvest pass is due) iff <d> is SOLVED, its walkthrough is
+    already assembled (walkthrough_stale False), AND no fresh <d>/.learn-done marker
+    exists. Skill(learn) writes .learn-done at the end of a harvest pass to self-clear
+    this gate. A marker OLDER than state.md's mtime is stale (the operator changed
+    close-out state since the last pass) and re-arms the gate. Placed strictly AFTER
+    the walkthrough gate so it never nags while the walkthrough is still unassembled.
+    Any error / missing file -> False (fail-open: never nag on a detection error)."""
+    if not d:
+        return False
+    try:
+        if not is_solved(d):
+            return False
+        if walkthrough_stale(d):
+            return False                       # walkthrough gate owns this Stop first
+        marker = os.path.join(d, ".learn-done")
+        if not os.path.isfile(marker):
+            return True
+        try:
+            state = os.path.join(d, "state.md")
+            return os.path.getmtime(marker) < os.path.getmtime(state)
+        except OSError:
+            return False
+    except Exception:
+        return False
+
+
+def ensure_state_files():
+    """Create any missing per-engagement files (from the type's template) and the
+    standard dirs in the active engagement. The shared set is type-aware: a ctf
+    engagement heals only the lean core (state/loot/paths/log/scope/walkthrough/hot/
+    Deadends), skipping the coverage/Vuln-index/oob severity machinery that is dead
+    across CTF rooms; pentest/bugbounty heal the full set. poc/ is scaffolded for
+    every type; Vulns/ is created lazily on the first FIND, never here. Returns the
+    created names. Idempotent: never overwrites an existing file."""
+    d = active_dir()
+    if not d:
+        return []
+    name = os.path.basename(d)
+    today = date.today().isoformat()
+    etype = engagement_type(d)
+    tpldir = os.path.join(TEMPLATES, etype)
+    if not os.path.isdir(tpldir):
+        tpldir = os.path.join(TEMPLATES, "pentest")
+    created = []
+
+    def _emit(dest, tpl):
+        if os.path.exists(dest) or not os.path.isfile(tpl):
+            return None
+        text = open(tpl, encoding="utf-8", errors="ignore").read()
+        text = text.replace("<ENGAGEMENT>", name).replace("<DATE>", today)
+        with open(dest, "w", encoding="utf-8") as fh:
+            fh.write(text)
+        return os.path.basename(dest)
+
+    # 1. state/loot/paths from the type's own template dir (per-type columns)
+    for fn in STATE_FILES:
+        c = _emit(os.path.join(d, fn), os.path.join(tpldir, fn))
+        if c:
+            created.append(c)
+    # 2. shared type-agnostic files, type-aware set (ctf omits coverage/Vuln-index/oob)
+    for fn, tplname in _heal_shared_set(etype):
+        c = _emit(os.path.join(d, fn), os.path.join(TEMPLATES, tplname))
+        if c:
+            created.append(c)
+    # 3. standard dirs for every type (see STATE_DIRS). Vulns/ stays lazy (first FIND).
+    for sub in STATE_DIRS:
+        p = os.path.join(d, sub)
+        if not os.path.isdir(p):
+            os.makedirs(p, exist_ok=True)
+            created.append(sub + "/")
+    return created

@@ -1,0 +1,13 @@
+{
+  "_comment": "Base vuln-class checklist per engagement type, ORDERED high-to-low expected impact (list order = priority). coverage.py: applicable = base[type] + classes implied by matched playbook fingerprints, and it prints gaps in this order so high-severity untested classes surface first. next_move.py emits the top untested base classes as low-ranked [gap] floor moves (below every concrete lead) so systematic breadth always reaches the shortlist even with no fingerprint match. Edit to fit your methodology; keep each set complete, reorder to retune priority.",
+  "bugbounty": ["rce", "sqli", "ssrf", "ssti", "xxe", "deserialization", "auth",
+                "idor", "oauth-saml", "request-smuggling", "jwt", "graphql",
+                "file-upload", "business-logic", "prototype-pollution", "xss",
+                "csrf", "cors", "web-cache", "host-header", "open-redirect",
+                "subdomain-takeover", "session", "race-condition", "mcp",
+                "cicd", "recon"],
+  "pentest": ["adcs", "signing-relay", "kerberoast", "asreproast", "default-creds",
+              "privesc", "lateral", "shares", "enum"],
+  "ctf": ["enum", "web", "pwn", "privesc", "rev", "crypto", "binary",
+          "forensics", "stego", "osint"]
+}

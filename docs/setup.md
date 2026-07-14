@@ -1,0 +1,51 @@
+# Vault Setup
+
+**New machine:** run `bash setup/bootstrap.sh` from the vault root. This creates the `~/.claude/CLAUDE.md` include, copies obsidian skills, installs bun + qmd, installs the four official Claude plugins (code-review, frontend-design, skill-creator, claude-md-management), installs caveman, and registers the `wiki-search` and `caveman-shrink` MCP servers. After setup, restart Claude Code and run `qmd update` to build the local search index.
+
+**Caveman (both machines):** Output compression skill -- cuts ~65% of Claude output tokens with no accuracy loss. Requires Node >=18. Bootstrap handles install automatically; to install manually: `curl -fsSL https://raw.githubusercontent.com/JuliusBrussee/caveman/main/install.sh | bash`. Trigger per session with `/caveman`, or say "talk like caveman". Source: https://github.com/JuliusBrussee/caveman
+
+**caveman-shrink MCP (both machines):** MCP proxy that wraps `wiki-search` (qmd.mcp_server) and compresses tool descriptions before Claude reads them, reducing context token usage. Bootstrap registers it automatically at user scope with the correct `QMD_VAULT` for each machine. To register manually: `claude mcp add caveman-shrink -s user -e QMD_VAULT=<vault-path> -- npx -y caveman-shrink qmd mcp`. Both `wiki-search` (raw) and `caveman-shrink` (compressed descriptions) run as separate MCP entries; they share the same underlying data.
+
+**qmd / `wiki-search` index:** Aim the markdown collection (`wiki`, or whichever name your MCP uses) only at **`$(vault-root)/wiki`**. Set `QMD_VAULT` to your vault root (no trailing slash). Remove stale collections that still reference old absolute paths before `qmd update` so indexing never scans the wrong directory.
+
+**Vault file reads:** Use the `Read` tool with the vault path directly. The `obsidian-vault` MCP (`mcp-obsidian`) was removed -- it required the Obsidian app running and offered no advantage over `Read`. See `skills/skills-setup.md` for details.
+
+**Hook symlink (wiki session hooks):** `bootstrap.sh` creates this automatically. To create it manually:
+
+```bash
+VAULT="<vault-root>"   # e.g. /mnt/c/Users/<you>/Documents/ObsidianVaults/ClaudeBrain
+ln -sf "$VAULT/skills/hooks" ~/.claude/vault-hooks
+```
+
+Then register the vault hook set in `~/.claude/settings.json` (`bash setup/install-hooks.sh` does this for you; the canonical set spans 6 events -- see below). On a new machine, re-running `bash setup/bootstrap.sh` handles both steps automatically.
+
+## Engagement-state automation (both machines)
+
+**Transport is Obsidian Sync** for everything: the markdown knowledge base AND the automation code (`.py`, `.json`, `.sh`). There is no git push; a local git repo may exist per-device as offline history only (Obsidian does not sync `.git`).
+
+**Hard requirement:** Obsidian Sync must be set to carry non-markdown files, or the hook code never reaches the other device and automation is dead there. In Obsidian: **Settings -> Sync -> turn ON "Sync all other file types"**, and confirm **Selective Sync** is not excluding `skills/`, `scripts/`, or `setup/`. By default Obsidian also skips dotfiles, but nothing runtime-critical is a dotfile (the engagement pointer is `targets/active.md`, not `.active`), so that exclusion is harmless.
+
+**Device-2 / new-device procedure:**
+
+```bash
+# 1. let Obsidian Sync finish pulling the vault (incl. skills/, scripts/, setup/)
+# 2. then, once per device:
+cd <vault-root>
+bash setup/install-hooks.sh    # symlinks ~/.claude/vault-hooks + registers the vault hook set
+# 3. restart Claude Code
+```
+
+`install-hooks.sh` is self-locating (works on any user/path/spelling) and idempotent. It registers the canonical set (mirrored in `scripts/check-hooks.py` `EXPECTED_HOOKS`; `engagement-init` warns at SessionStart if any is unregistered) -- 8 hook commands across 6 events:
+- **SessionStart** -- `session-start.sh` (session bootstrap / context7-lock cleanup), `engagement-init.py` (self-heals the `state/loot/paths/...` set, injects the state summary + top next-moves + drift/CVE warnings).
+- **UserPromptSubmit** -- `hunt-trigger.py` (fires hunt skills from `skills/hunt/triggers.json`).
+- **PreToolUse (Bash)** -- `scope-guard.py` (scope / RoE / dead-end guard).
+- **PreToolUse (Write)** -- `session-guard.py` (client-marker leak guard).
+- **PostToolUse (Bash)** -- `recon-capture.py` (fingerprint router + capture nudge + OOB correlation + pending-test marker).
+- **PreCompact** -- `pre-compact.sh` (persist state before compaction).
+- **Stop** -- `loop-driver.py` (render-only evidence drain: renders staged PoC cards at turn-end; never blocks or forces continuation).
+
+**Hooks self-locate the vault** via `realpath(__file__)` through the `~/.claude/vault-hooks` symlink -- no hardcoded paths, so the same code runs unmodified on every device.
+
+**Active engagement pointer:** `targets/active.md` (one line: engagement dir name). It is markdown, so it syncs via Obsidian to both devices. Engagement files: `targets/<eng>/{state,loot,paths,log}.md` + `ingest/`, scaffolded from `setup/templates/<type>/` via `bash setup/new-engagement.sh <name> <pentest|bugbounty|ctf>`.
+
+**`settings.json` and the symlink never sync** (machine-local by design). Always run `install-hooks.sh` once per device after the first git pull.

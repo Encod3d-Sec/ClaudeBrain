@@ -1,0 +1,50 @@
+# ============================================================================
+#  ClaudeBrain .gitignore
+#
+#  PUBLIC (tracked):  wiki/  skills/  scripts/  setup/  docs/  tests/
+#                     CLAUDE.md  README.md  LICENSE
+#  PRIVATE (ignored): targets/ (client engagements) + all machine/working state
+# ============================================================================
+
+# --- Client / engagement data: NEVER commit (hard boundary) -----------------
+# Everything under targets/ is client-confidential. Only the generic
+# engagement playbook (TARGETS.md) is shipped.
+targets/*
+!targets/TARGETS.md
+
+# --- Machine-specific config (real hostnames, paths, local secrets) ---------
+CLAUDE.local.md
+.claude/
+.obsidian/
+
+# --- Local working state (not part of the harness) --------------------------
+session/
+# raw/: keep the dir (research workspaces, cloned repos, assets go here) but
+# ignore all contents; only the placeholder ships.
+raw/*
+!raw/.gitkeep
+
+# --- Internal development notes (NOT needed to use the harness) --------------
+# Harness design plans/specs/handovers. They contain real machine paths and a
+# client engagement name; scrub before shipping if you ever want to publish them.
+docs/superpowers/
+
+# --- Wiki subsets kept private ----------------------------------------------
+wiki/CTF/
+wiki/courses/
+
+# --- Runtime stamps, telemetry, caches --------------------------------------
+.trigger-fire.jsonl
+.pending-*
+.loop-budget
+.cve-stamp
+.wiki-stamp
+
+# --- Python / pytest --------------------------------------------------------
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# --- OS cruft ---------------------------------------------------------------
+.DS_Store
+Thumbs.db
