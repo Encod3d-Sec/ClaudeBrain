@@ -4,8 +4,8 @@ type: technique
 tags: [bypass, evasion, kiosk, reference-import, windows]
 phase: post-exploitation
 date_created: 2026-05-13
-date_updated: 2026-07-02
-sources: [InternalAllTheThings]
+date_updated: 2026-07-14
+sources: [InternalAllTheThings, hacktricks-hardware]
 ---
 
 # Kiosk Escape and Jail Breakout
@@ -201,6 +201,20 @@ The following URI handlers might trigger application on the machine:
 * shell:MyComputerFolder
 * shell:InternetFolder
 
+## Kiosk/VDI and tablet GUI-application escape
+
+Additions covering VDI allowlists and tablet kiosks not in the Windows-dialog material above:
+- First, check the physical device: power-cycle to expose the start screen, brief power-cut to force a reboot, plug a real USB keyboard for more shortcuts, use an exposed Ethernet port to scan/sniff.
+- Command execution from a common dialog's "Open with": pick a shell binary; enumerate more via LOLBAS (Windows) and GTFOBins (nix).
+- Citrix/RDS/VDI restricted-desktop breakout: use Open/Save/Print-to-file dialogs as a mini-Explorer (`*.*`/`*.exe` in the filename box, right-click "Open in new window", Properties -> Open file location). Create execution paths by renaming a new file to `.CMD`/`.BAT` or a shortcut to `%WINDIR%\System32\cmd.exe`; drag-and-drop a file onto cmd.exe; if Task Manager is reachable use Run new task; if interactive shells are blocked but scheduling is allowed, schedule cmd.exe (`schtasks.exe` / `taskschd.msc`). Beat allowlists by filename/extension rename or by copying the payload into an allowed directory. Find writable staging with AccessChk:
+```cmd
+echo %TEMP%
+accesschk.exe -uwdqs Users c:\
+accesschk.exe -uwdqs "Authenticated Users" c:\
+```
+- Browser-only kiosk: `document.write('<input/type=file>')` opens a file dialog; unassociated protocols (`irc:`, `ftp:`, `telnet:`) trigger an "open with" prompt to launch an installed program with attacker args (e.g. `irc://127.0.0.1 -P "Test"` launches Firefox with a less-hardened custom profile).
+- iPad/tablet kiosk: escape via gestures (swipe up with 4-5 fingers or slow swipe from the bottom for dock/multitask; swipe from the left for Today view) and a paired keyboard (Cmd-H home, Cmd-Space Spotlight, Cmd-Tab app switch, Cmd-L address bar in Safari). Only the app-escape shortcuts matter.
+
 ## References
 
 * [PentestPartners - Breaking out of Citrix and other restricted desktop environments](https://www.pentestpartners.com/security-blog/breaking-out-of-citrix-and-other-restricted-desktop-environments/)
@@ -224,3 +238,4 @@ Tool references are inline in **Methodology**; see the `tools/` pages for CLI us
 ## Sources
 
 - Swisskyrepo [InternalAllTheThings](https://github.com/swisskyrepo/InternalAllTheThings) (ingest slug `InternalAllTheThings`).
+- HackTricks (hardware-physical-access), ingest slug `hacktricks-hardware`.

@@ -11,17 +11,19 @@ Top-level hub. Each domain has its own MOC linking every page.
 
 ## Technique domains
 
-- [[active-directory-moc|Active Directory]] (101)
+- [[active-directory-moc|Active Directory]] (102)
+- [[blockchain-moc|Blockchain]] (1)
 - [[cloud-moc|Cloud]] (51)
-- [[cracking-moc|Cracking]] (5)
-- [[exploit-dev-moc|Exploit Dev]] (13)
+- [[cracking-moc|Cracking]] (6)
+- [[exploit-dev-moc|Exploit Dev]] (18)
 - [[forensics-moc|Forensics]] (2)
-- [[linux-moc|Linux]] (3)
+- [[linux-moc|Linux]] (6)
+- [[macos-moc|Macos]] (10)
 - [[methodology-moc|Methodology]] (10)
 - [[mobile-iot-moc|Mobile Iot]] (5)
 - [[network-moc|Network]] (17)
 - [[osint-moc|Osint]] (7)
-- [[red-team-moc|Red Team]] (14)
+- [[red-team-moc|Red Team]] (15)
 - [[web-moc|Web]] (67)
 
 ## Reference

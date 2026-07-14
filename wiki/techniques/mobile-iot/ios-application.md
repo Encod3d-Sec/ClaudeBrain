@@ -4,8 +4,8 @@ type: technique
 tags: [mobile, ios, frida, objection, keychain, ssl-pinning, exploitation]
 phase: exploitation
 date_created: 2026-06-16
-date_updated: 2026-07-02
-sources: [owasp-mastg-ios]
+date_updated: 2026-07-14
+sources: [owasp-mastg-ios, hacktricks-mobile]
 ---
 
 ## What it is
@@ -136,6 +136,50 @@ Pin with backup pins (and pin the intermediate), encrypted storage (keychain wit
 
 ## Tools
 `frida` ([[frida]]) / `frida-ios-dump` / bagbak, `objection`, Burp Suite ([[burp-suite]]), `class-dump`, `otool`/`nm`/`plutil`/`codesign`, `radare2` ([[radare2]]) / [[ghidra]] / Hopper, MobSF, SSL-Kill-Switch2, checkra1n/palera1n/Dopamine, Sideloadly/AltStore. API testing pairs with the web hunt skills; shares runtime tooling with [[android-application]].
+
+## iOS pentesting without a jailbreak (decrypted IPA + get-task-allow re-sign)
+
+You can instrument a stock iOS device by re-signing the app with the `get-task-allow`
+entitlement, which lets `task_for_pid()` grab the app task port. FairPlay DRM invalidates on
+re-sign, so you need a decrypted IPA first (ask the client, or dump from an old jailbroken device
+with Iridium/frida-ios-dump). Pull a fresh App Store IPA via Apple Configurator (Add > Apps,
+grab from `.../MobileApps`).
+
+```bash
+unzip redacted.ipa -d unzipped                 # lower Info.plist MinimumOSVersion if needed
+ideviceinstaller -i no-min-version.ipa -w      # AppSync Unified avoids invalid-signature errors
+# then decrypt on device with Iridium, or re-sign the decrypted IPA:
+# app-signer / iResign GUI: enable get-task-allow, pick free Apple ID dev cert + profile
+ideviceinstaller -i resigned.ipa -w
+# trust the dev cert on device: Settings > Privacy & Security > Developer Mode
+```
+
+Deeper: patch a decrypted IPA to inject a DYLIB (Frida gadget / implant) and re-sign with a free
+Apple ID entirely from CLI (`patcher.py patch --ipa MyApp.ipa --dylib libShell.dylib`, then
+`full ... --install --udid <udid>`), giving in-app instrumentation with no jailbreak.
+
+## iOS insecure object deserialization (NSCoding / NSKeyedUnarchiver)
+
+iOS persists objects via `NSCoding`/`NSKeyedArchiver` into `NSData`. The insecure pattern is
+decoding attacker-influenced archives (files in the container, pasteboard, IPC, network) with
+plain `NSCoding` / `decodeObjectForKey:`, which instantiates whatever class the archive names,
+enabling object injection into an already-constructed instance. The mitigation and the audit
+target is `NSSecureCoding`: it forces `supportsSecureCoding` and type-checked decoding
+(`decodeObjectOfClass:forKey:`) so only expected classes are built. Note `NSSecureCoding` gives
+type safety only, not encryption or integrity, so an archive on disk is still tamperable and may
+leak sensitive fields.
+
+```swift
+// VULNERABLE: type is whatever the archive claims
+let obj = NSKeyedUnarchiver.unarchiveObject(withFile: path)
+// SAFER: restrict the decoded class
+let obj = try NSKeyedUnarchiver.unarchivedObject(ofClass: MyClass.self, from: data)
+```
+
+Audit checklist: find `NSKeyedUnarchiver`/`decodeObjectForKey:` on untrusted input, confirm
+whether the class implements `NSSecureCoding` and passes an explicit class allowlist, and check
+that serialized `Codable`/plist/JSON blobs holding tokens/PII are encrypted and signed. For
+third-party XML decoders, verify external-entity processing is disabled (XXE).
 
 ## Sources
 - OWASP Mobile Application Security Testing Guide (MASTG) - iOS (slug: owasp-mastg-ios).

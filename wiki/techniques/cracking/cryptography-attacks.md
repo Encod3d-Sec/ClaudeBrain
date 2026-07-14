@@ -4,8 +4,8 @@ type: technique
 tags: [crypto, ctf, rsa, aes, padding-oracle, ecdsa, prng, hash-length-extension]
 phase: exploitation
 date_created: 2026-06-16
-date_updated: 2026-07-05
-sources: []
+date_updated: 2026-07-14
+sources: [hacktricks-crypto]
 ---
 
 ## What it is
@@ -65,7 +65,36 @@ Use vetted libraries (libsodium); authenticated encryption (AES-GCM with unique 
 ## Tools
 `RsaCtfTool`, `sage`, `factordb`, `hashpump`, `xortool`, `padbuster`, CyberChef, `z3`, `randcrack`. Hash cracking: [[hashcat]], [[password-cracking]].
 
+## Structured-limb ("short-sleeve") RSA key factoring
+
+A broken big-integer RNG can leak structure straight into the public modulus: each 32/64/128-bit limb carries only a few random bytes and the rest are zero, so `n` shows regularly-spaced zero windows at a fixed stride. Classic bug is sizing a `bits/32` limb array but filling only that many bytes, giving each limb ~8 bits of entropy. When both primes are structured this way, `n` factors from the public key alone.
+
+Detection and attack:
+```text
+# 1. dump n in hex, look for repeated zero windows at a 32/64/128-bit stride
+# 2. re-slice n into limbs base B=2^w; if each limb is unusually small it is short-sleeve
+# 3. write n as a polynomial f_n(x) in base B  (n = sum n_i * B^i)
+# 4. factor f_n(x) over the integers in Sage; evaluate candidate factors at x=B
+# 5. verify which candidates multiply back to n
+```
+If low-end alignment fails, search shifts i,j so `2^i*p` and `2^j*q` become sparse, factor, then recombine. Audit real SSH/TLS host keys for this and related weak-key classes with `badkeys`. A reused broken routine also cripples DSA: a structured private exponent shrinks the discrete-log search enough for baby-step giant-step. This does not touch correctly-generated RSA.
+
+## CTR/GCM nonce reuse: structured known-plaintext and PKCS#8 key-offset recovery
+
+Beyond the `C1 xor C2 = P1 xor P2` crib-dragging noted above, structured data gives you huge free known-plaintext regions, and structured secrets leak even without full plaintext.
+
+- Highly-structured carriers (X.509 certs, file headers, JSON/CBOR, ASN.1) let you XOR the ciphertext against the predictable body to recover long keystream stretches, then decrypt anything else encrypted under the same key+IV at the same offsets.
+- Same-format secrets under a reused keystream leak by field alignment. Two PKCS#8 RSA keys of the same modulus size place their prime factors at matching offsets (~99.6% alignment for 2048-bit). XOR the two ciphertexts and you isolate `p xor p'` / `q xor q'`, brute-recoverable in seconds.
+- A constant/default library IV (e.g. `000...01`) turns CTR into a repeated one-time pad on every message. Treat any AEAD nonce reuse (CTR/GCM/GCM-SIV) as critical: keystream recovery plus, for GCM under repeated nonce, authentication-tag forgery (recover H).
+- CTR/CBC without a tag are malleable: bit-flips in ciphertext flip the same plaintext bits, a privilege-escalation primitive when integrity is absent. Fix is AEAD with enforced tag verification.
+
+## CBC-MAC variable-length forgery
+
+CBC-MAC (`tag = last block of CBC-encrypt(key, msg, IV=0)`) is only secure for fixed-length messages with domain separation. Tokens/cookies that MAC a username or role with CBC-MAC are forgeable: given tags for chosen messages, you can craft a tag for a concatenation without the key by exploiting how CBC chains blocks (the tag of msg1 becomes the effective IV for the tail). Recognize it in CTF cookies of the form `data || tag`. Defenses: HMAC-SHA256/512, correctly-used AES-CMAC, and binding the message length into the MAC input.
+
 ## Sources
+
+- HackTricks (crypto), ingest slug `hacktricks-crypto`.
 
 ## Wired sub-techniques
 

