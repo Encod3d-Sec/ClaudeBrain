@@ -1,17 +1,11 @@
 # ClaudeBrain Wiki
 
-A living offensive-security reference: 440+ cross-linked technique pages, payload
+A living offensive-security reference: 430+ cross-linked technique pages, payload
 arsenals, tool references, and cheatsheets. Built in Obsidian and indexed for
 semantic search, so hunt skills consult it before attacking.
 
-> Browsing on GitHub? Use the links below. Full graph navigation (the `[[wikilinks]]`
-> and the map-of-content) is best experienced in Obsidian via [`moc.md`](moc.md).
-
-## Start here
-
-- [`index.md`](index.md) - flat catalog of every page
-- [`overview.md`](overview.md) - methodology map and coverage status
-- [`moc.md`](moc.md) - graph map-of-content (Obsidian hub)
+Pages cross-link with Obsidian `[[wikilinks]]` and a graph map-of-content, clickable inside
+Obsidian. On GitHub, browse via the directory links below.
 
 ## Techniques
 
@@ -22,13 +16,23 @@ semantic search, so hunt skills consult it before attacking.
 | [Red Team](techniques/red-team/) | 14 | [Exploit Dev](techniques/exploit-dev/) | 13 |
 | [Methodology](techniques/methodology/) | 10 | [OSINT](techniques/osint/) | 7 |
 | [Cracking](techniques/cracking/) | 5 | [Mobile / IoT](techniques/mobile-iot/) | 5 |
-| [Linux](techniques/linux/) | 3 | [Forensics](techniques/forensics/) | 2 |
+| [Linux](techniques/linux/) | 4 | [Forensics](techniques/forensics/) | 2 |
 
 ## Arsenal
 
 - [Payloads](payloads/) - per-vulnerability-class payload sets (SQLi, XSS, SSRF, SSTI, XXE, IDOR, deserialization, and more)
 - [Tools](tools/) - per-tool references (nmap, ffuf, nuclei, httpx, sqlmap, BloodHound, netexec, ...)
 - [Cheatsheets](cheatsheets/) - quick-reference command sheets and default-credential tables
+
+## Recent additions (2026 CVE research)
+
+Extracted from public security-research forks (single-source; verify against vendor advisories):
+
+- [Linux kernel rootkits (LKM / ftrace-hooking)](techniques/linux/linux-rootkits.md) - modern 6.x LKM stealth and detection
+- Drupal JSON:API PostgreSQL SQLi (CVE-2026-9082) in [SQL Injection](techniques/web/sql-injection.md)
+- 2026 kernel LPEs (futex requeue-PI, netfilter IDLETIMER, IPv6 RPL SRH, pidfd FD-theft) in [Kernel Exploitation](techniques/exploit-dev/kernel-exploitation.md)
+- WS2025 local NTLM reflection to SYSTEM (CVE-2026-24294) in [Internal NTLM Relay](techniques/active-directory/internal-ntlm-relay.md)
+- Chrome / Firefox renderer RCE plus all the above in the [CVE Arsenal](cheatsheets/cve-arsenal.md)
 
 ## License
 
