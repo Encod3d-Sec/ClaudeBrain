@@ -5,7 +5,7 @@ tags: [active-directory, credentials, reference-import, windows]
 phase: post-exploitation
 date_created: 2026-05-13
 date_updated: 2026-07-02
-sources: [InternalAllTheThings]
+sources: [InternalAllTheThings, hacktricks-windows]
 ---
 
 # Mimikatz
@@ -306,6 +306,22 @@ Attributes : 0
 vault::cred /in:C:\Users\demo\AppData\Local\Microsoft\Vault\"
 ```
 
+
+## Cloud credentials / Entra ID (PRT)
+
+On Entra ID or hybrid-joined hosts, cached Primary Refresh Token (PRT) material in LSASS is often more valuable than classic wdigest output. Extract it, then derive the key when the Proof-of-Possession key is software-protected (much harder when TPM-backed):
+
+```
+privilege::debug
+sekurlsa::cloudap
+dpapi::cloudapkd /keyvalue:<ProofOfPossessionKey> /unprotect
+```
+
+This feeds Pass-the-PRT workflows. On modern domains where RC4 is disabled, prefer `sekurlsa::ekeys` (AES128/256 Kerberos keys) over NT-hash-only tradecraft, and use `sekurlsa::pth /aes256:<HEX>` for pass-the-key.
+
+## WTS session-token theft and log tampering
+
+`wts-impersonator` abuses the WTS API to enumerate and impersonate other users' RDP/console session tokens without reading LSASS, useful where LSASS is PPL or Credential-Guard hardened. Mimikatz `event::drop` (experimental) patches the Event Log service to stop recording new events, after `privilege::debug`.
 ## Commands list
 
 | Command |Definition|
