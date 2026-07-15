@@ -55,6 +55,7 @@ Top-level hub. Each domain has its own MOC linking every page.
 - [[ldap]]
 - [[lfi-path-traversal]]
 - [[llm-prompt-injection]]
+- [[macos-app-injection]]
 - [[mfa-bypass]]
 - [[modbus]]
 - [[nosql]]
