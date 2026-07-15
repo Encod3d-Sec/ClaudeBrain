@@ -51,11 +51,39 @@ Account abstraction validates every UserOperation in a bundle before executing a
 
 ### DeFi/AMM economic exploitation
 
-Two economic-drain archetypes:
+Full hunt flow, calibration math, and Foundry harnesses in [[defi-amm-exploitation]]. Two economic-drain archetypes:
 
 Rounding/precision drift in custom AMM hooks (Bunni V2): a hook doing extra fixed-point accounting per swap can round inconsistently across a threshold/tick boundary so residue credits the caller. Calibrate an exact-input swap that barely crosses the boundary (adjust +/-1 wei), loop it under a flash loan, then withdraw the accumulated credit. Root causes: mulDiv floor vs ceil mismatch, unrounded vs tick-spaced ticks, Q64.96 precision loss not mirrored on the reverse mapping, per-caller withdrawable residue instead of a burn sink.
 
 Virtual-balance cache poisoning (Yearn yETH, "16 wei -> 2.35e56 tokens"): weighted pools cache derived virtual balances for gas. A multi-bug chain: push the solver into a degenerate regime (`Pi` collapses to 0, LP over-minted), drain real liquidity while floor-division leaves cache dust, reach a live `prev_supply == 0` bootstrap state that trusts the stale cache, then a dust deposit hits unchecked subtraction and mints a near-infinite supply. Generalizes wherever cached balance-derivatives persist, partial updates truncate, iterative solvers reach degenerate states without reverting, internal accounting can diverge from real balances, and bootstrap/zero-supply paths reuse caches. Defenses: clear caches at `supply == 0`, recompute from ground truth on init, seal bootstrap as one-shot, assert solver domain, mint sanity bounds.
+
+### zkVM / proof-guest integrity attacks
+
+A valid proof only attests that the guest program executed as written; a buggy guest can produce a proof that verifies while the claimed invariant or public metric is false. Treat private witness/circuit bytes as untrusted attacker input even though the proof hides them. Three audit patterns:
+- Unsafe deserialization: avoid unchecked helpers like `rkyv::access_unchecked` on witness bytes; validate enum discriminants, relative pointers, lengths, and indexes before they influence control flow or memory.
+- Jump-table / UB counter bypass: if Rust lowers a large `match` on an attacker-controlled enum into a jump table, an out-of-range discriminant can index past a first match (which updates security-critical counters/constraints) and land in code for a second match (real instruction semantics), executing the op while skipping the accounting path, forging proofs that report impossible resource bounds.
+- Missing semantic constraints: validate operand-aliasing rules the proof is meant to enforce, not just memory safety. A Toffoli/CCX-like `*qubit(q_target) ^= cond & qubit(q_control1) & qubit(q_control2)` becomes a deterministic reset primitive (`q = q ^ (q & q) = 0`) if `q_control1 == q_control2 == q_target` is not rejected, breaking reversibility and bypassing the cost model.
+```rust
+let private_circuit_bytes = sp1_zkvm::io::read_vec();
+let ops = unsafe {
+    rkyv::access_unchecked::<rkyv::Archived<Vec<Op>>>(&private_circuit_bytes) // untrusted
+};
+```
+Test: fuzz all guest parsers with malformed encodings, assert enum-range validation before opcode dispatch, add operand-aliasing checks, and compare reported public counters against an independent reference implementation.
+
+### Value-centric Web3 red teaming (MITRE AADAPT)
+
+MITRE AADAPT (Adversarial Actions in Digital Asset Payment Techniques) models attacker behaviors that manipulate value rather than only infrastructure. Use it as a threat-modeling backbone: inventory every component that can mint, price, authorize, or route assets, map each to AADAPT techniques, then rehearse scenarios that measure resistance to irreversible economic loss. Scope is broader than the contracts; it includes the off-chain identities that indirectly steer value.
+
+Inventory and mapping:
+```text
+Signing/KMS/HSM estates   -> credential theft, policy bypass, signing abuse, governance takeover
+Oracles / data feeds      -> input poisoning, aggregation manipulation, deviation-threshold evasion
+On-chain protocols        -> flash-loan economic manipulation, invariant breaking, param reconfig
+Automation / CI pipelines -> compromised bot/CI identities, batch replay, unauthorized deployment
+Bridges / cross-chain     -> cross-chain evasion, rapid-hop laundering, settlement desync
+```
+Prioritize operational footholds that could succeed today (exposed CI creds, over-privileged IAM, misconfigured KMS policy, automation accounts that can request arbitrary signatures) before deep protocol/economic paths. Detonate only on forked mainnets / isolated testnets with blast-radius planning (circuit breakers, pausable modules, rollback runbooks, test-only admin keys) and legal sign-off. Reusable scenario templates: (A) flash-loan economic manipulation, (B) oracle/feed poisoning, (C) credential/signing abuse -> unauthorized upgrade or treasury drain, (D) cross-chain evasion / traceability gaps. Instrument chain traces, app/API logs, KMS/HSM logs, oracle metadata, and bridge traces; drive a purple-team loop to push MTTD/MTTC down. Flash-loan economic manipulation detail lives in [[defi-amm-exploitation]].
 
 ## Bypasses and variants
 - Flash loans finance most economic attacks with zero long-lived capital; always model the exploit as a single-transaction, flash-funded sequence.
