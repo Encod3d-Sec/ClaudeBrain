@@ -5,7 +5,7 @@ tags: [ics, scada, ot, modbus, plc, s7comm, ethernet-ip, openplc, node-red, ctf,
 phase: exploitation
 date_created: 2026-06-29
 date_updated: 2026-06-29
-sources: [thm-kaboom]
+sources: [thm-kaboom, hacktricks-network]
 ---
 
 # ICS / SCADA / OT Attacks
@@ -92,6 +92,56 @@ for db in range(1,30):
 ```
 Many CTF S7 services are **banner-only sims** (respond to `s7-info` SZL but expose no DBs and empty
 CPU info) = decoy. Confirm with `db_read`/`get_cpu_info` before burning time.
+
+## EtherNet/IP (44818, Rockwell/ODVA)
+
+Industrial Ethernet used for PLC control in water, manufacturing and utility plants. Identify a device with a List Identity message (0x63) to TCP/UDP 44818.
+
+```bash
+nmap -n -sV --script enip-info -p 44818 <IP>
+pip3 install cpppo
+python3 -m cpppo.server.enip.list_services --list-identity -a <IP>   # add --udp --broadcast to sweep
+```
+
+Enumeration returns vendor/product/serial and PLC run state. On controllers that allow it, `pycomm3` reads and writes CIP tags to manipulate the process. Shodan: `port:44818 "product name"`.
+
+## BACnet (47808/udp, building automation)
+
+HVAC, lighting, access-control and fire systems (ASHRAE / ISO 16484-5). You must be on the same subnet for the broadcast Who-Is.
+
+```bash
+nmap --script bacnet-info --script-args full=yes -sU -n -sV -p 47808 <IP>
+```
+```python
+import BAC0                                   # pip3 install BAC0 netifaces
+bacnet = BAC0.connect(ip='192.168.1.4/24')    # same subnet as the device
+bacnet.whois()                                # broadcast device discovery
+# bacnet.readMultiple("<devIp> device <id> all")  -> model, version, objects
+```
+
+Unauthenticated devices let you read and write object properties (analog/binary values, setpoints) to drive building systems. Shodan: `port:47808 instance`.
+
+## OPC UA (4840 binary opc.tcp; 4843 HTTPS; 49320/62541/48050/53530 vendor)
+
+Cross-vendor PLC data exchange (manufacturing, energy, aerospace). Strong security is optional and frequently downgraded for legacy compatibility, so enumerate security policies and test anonymous access first. Scanners miss it on nonstandard ports, so sweep the vendor range.
+
+```bash
+nmap -sV -Pn -n --open -p 4840,4843,49320,48050,53530,62541 $TARGET
+opalopc -vv opc.tcp://$TARGET:4840           # anon login, weak policy, writable-var scanner
+```
+
+Enumeration playbook:
+- `GetEndpoints`/`FindServers` capture `SecurityPolicyUri`, `SecurityMode`, `UserTokenType`, product strings; unsecured discovery (`FindServersOnNetwork`, LDS-ME/mDNS) leaks inventory before you touch the server.
+- Walk `ObjectsFolder (i=85)` with `Browse`/`Read` for writable process variables and `Method` nodes; read `ServerStatus (i=2256)`/`BuildInfo` to fingerprint; `HistoryRead` snapshots proprietary recipes.
+- If anonymous access is allowed, `Call` maintenance methods (`ns=2;s=Reset`, `ns=2;s=StartMotor`); vendors often forget to bind role permissions to custom methods.
+
+Attacks:
+- Legacy `Basic128Rsa15` padding oracle (Bleichenbacher): flood `OpenSecureChannel`/`CreateSession` with crafted PKCS#1 v1.5 blobs to recover the server private key, then impersonate it. OPC Foundation .NET stack < 1.5.374.158 (CVE-2024-42512) and CODESYS Runtime < 3.5.21.0 let an unauthenticated attacker force that policy and skip application auth; HTTPS bindings add a reflection/relay bypass (CVE-2024-42513).
+- Softing OPC UA C++ SDK / edgeConnector (CVE-2025-7390): TLS client-auth accepts any cert replaying a trusted Common Name, so mint a cert with a plant engineer's CN and log in with arbitrary identity tokens.
+- open62541 <= 1.4.6 (CVE-2024-53429): oversized `ExtensionObject` in a SecureChannel chunk triggers a pre-auth use-after-free crash; many integrators fall back to anonymous mode after the reboot.
+- Session abuse: clone captured `AuthenticationToken`s to hijack subscriptions; exhaust `MaxSessionCount` to crash weak stacks.
+
+Tooling: Secura `opcattack` (`auth-check`, `reflect`, `sigforge`, `decrypt`), Claroty `opcua-exploit-framework` (sanity/attacks/corpus + rogue-server to backdoor engineering clients through Reverse Connect). Shodan: `port:4840`, `ssl:"urn:opcua"`, `product:"opc ua"`.
 
 ## Detection / defence
 - Segment OT from IT (the Purdue model); never expose 502/102/44818 to routable networks.
