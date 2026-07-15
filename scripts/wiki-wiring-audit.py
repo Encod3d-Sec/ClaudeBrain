@@ -10,7 +10,7 @@ Full transitive closure is deliberately NOT used (the wiki is densely linked, so
 everything "wired"). One hop through an anchor mirrors how a page actually reaches the model: a
 fingerprint ref names it directly, or a loaded skill / surfaced hub page links it.
 
-Pages listed in wiki/_wiring-exempt.txt are excluded (index/overview/moc/course/meta pages).
+Pages listed in scripts/wiring-exempt.txt are excluded (index/overview/moc/course/meta pages).
 
 Read-only. Usage:
   wiki-wiring-audit.py                 # human report, orphans grouped by domain + coverage %
@@ -24,7 +24,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 WIKI = os.path.join(ROOT, "wiki")
 PLAYBOOK = os.path.join(ROOT, "scripts", "playbook.json")
 SKILLS_GLOB = os.path.join(ROOT, "skills", "hunt", "**", "*.md")
-EXEMPT_FILE = os.path.join(WIKI, "_wiring-exempt.txt")
+EXEMPT_FILE = os.path.join(ROOT, "scripts", "wiring-exempt.txt")
 
 # Only these subtrees carry "should surface during an engagement" pages (gated by the CI test).
 # tools/ and cheatsheets/ are audited separately (compute_tools / compute_cheats).

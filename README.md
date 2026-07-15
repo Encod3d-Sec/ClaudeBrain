@@ -13,7 +13,7 @@ Pentest & bug-bounty knowledge base + AI automation harness
 
 **An AI-powered penetration testing and bug-bounty knowledge base and automation harness for [Claude Code](https://claude.com/claude-code).** It turns an Obsidian vault into an opinionated offensive-security workflow: a searchable wiki of 450+ hacking technique pages, per-vulnerability "hunt" skills, deterministic hooks that fire the right skill at the right moment, and a state-first engagement model that stops you (and the model) from repeating work.
 
-[![Version](https://img.shields.io/badge/version-1.0.2-blue.svg)](#)
+[![Version](https://img.shields.io/badge/version-1.0.3-blue.svg)](#)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Built for Claude Code](https://img.shields.io/badge/built%20for-Claude%20Code-blueviolet.svg)](https://claude.com/claude-code)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)

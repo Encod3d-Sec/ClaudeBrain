@@ -6,7 +6,7 @@ docs/superpowers/specs/2026-07-08-wiki-context-wiring-design.md) and edits:
   - scripts/playbook.json       (add_ref, new_fingerprint)  -- format preserved: one fingerprint/line
   - skills/hunt/triggers.json   (trigger)                    -- consolidated new entries per (tier,skill)
   - wiki/<hub>.md               (hub_link)                   -- adds [[child]] under a Wired section
-  - wiki/_wiring-exempt.txt     (exempt)
+  - scripts/wiring-exempt.txt     (exempt)
 
 Action schema (one of):
   {"action":"add_ref","fingerprint":"<exact playbook key>","slug":"<page>"}
@@ -23,7 +23,7 @@ import json, os, sys, glob, re
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PLAYBOOK = os.path.join(ROOT, "scripts", "playbook.json")
 TRIGGERS = os.path.join(ROOT, "skills", "hunt", "triggers.json")
-EXEMPT = os.path.join(ROOT, "wiki", "_wiring-exempt.txt")
+EXEMPT = os.path.join(ROOT, "scripts", "wiring-exempt.txt")
 
 warn = []
 

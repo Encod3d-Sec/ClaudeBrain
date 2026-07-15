@@ -2,7 +2,7 @@
 
 Runs scripts/wiki-wiring-audit.py and fails if any audited page is orphaned (neither wired via a
 playbook fingerprint ref, a hunt-skill link, one hop through an anchor/hub, nor listed in
-wiki/_wiring-exempt.txt). Prevents new orphans as pages are added.
+scripts/wiring-exempt.txt). Prevents new orphans as pages are added.
 See docs/superpowers/specs/2026-07-08-wiki-context-wiring-design.md
 """
 import glob
@@ -35,7 +35,7 @@ def test_no_orphaned_wiki_pages():
     assert not orphans, (
         f"{len(orphans)} wiki page(s) do not surface by context and are not exempt "
         f"(coverage {data['coverage_pct']}%). Wire each into playbook.json refs / a hunt-skill link / "
-        f"a hub page, or add to wiki/_wiring-exempt.txt with a reason.\nFirst 20: "
+        f"a hub page, or add to scripts/wiring-exempt.txt with a reason.\nFirst 20: "
         + ", ".join(o["slug"] for o in orphans[:20])
     )
 

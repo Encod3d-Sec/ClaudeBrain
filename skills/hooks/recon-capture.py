@@ -922,7 +922,7 @@ def fingerprint_hits(blob):
 # playbook.json / running apply-wiring falsely fingerprinted as deserialization/sqli). These
 # tokens never appear in genuine target recon, so a plain presence check on the command is safe.
 _FRAMEWORK_META = re.compile(
-    r"playbook\.json|triggers\.json|wiki-wiring|apply-wiring|_wiring-exempt|"
+    r"playbook\.json|triggers\.json|wiki-wiring|apply-wiring|wiring-exempt|"
     r"recon-capture|loop-driver|hunt-trigger|scope-guard|engagement-init|"
     r"scripts/(?:playbook|wiki|gen_index|build_moc|wl-add|wiki-stage|check-hooks)|"
     r"skills/hooks|/vault-hooks/", re.IGNORECASE)
