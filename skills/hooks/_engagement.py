@@ -34,7 +34,8 @@ ENTITY_KEY = {"pentest": ("host", "ip"), "ctf": ("target",), "bugbounty": ("asse
 # opt-in via ensure_optional_file() (see below) or new-engagement.sh --with-* flags.
 SHARED_CORE = (("log.md", "_log.md"), ("scope.md", "_scope.md"),
                ("walkthrough.md", "_walkthrough.md"),
-               ("Deadends.md", "_deadends.md"))
+               ("Deadends.md", "_deadends.md"),
+               ("poc.md", "_poc.md"))
 SHARED_FULL = (("coverage.md", "_coverage.md"),
                ("Vuln-index.md", "_vuln-index.md"),
                ("oob.md", "_oob.md"))

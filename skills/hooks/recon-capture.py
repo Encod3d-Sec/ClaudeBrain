@@ -352,6 +352,10 @@ def stage_shot(cmd, output, d):
     Returns the staged path, or None (deduped / no output / error)."""
     import hashlib
     output = (output or "").strip()
+    # collapse terminal erase-line progress: ffuf/nmap emit `\r\x1b[2K` (or `\n\x1b[2K` once the CR
+    # is normalized to LF) before every row, which otherwise renders as a blank line + the row (the
+    # "double spacing" artifact). Match one-or-more CR/LF before the [2K erase code -> a single LF.
+    output = re.sub(r"[\r\n]+\x1b\[2K", "\n", output).strip()
     if not output:
         return None
     if _VMSCAN_RE.search(cmd):
@@ -821,8 +825,14 @@ def stage_page_or_source(cmd, output, d, url=None, req_seg=None):
         req_line = _lead_request_context(cmd) or ("curl " + url)
         body = "$ %s\n\n%s" % (req_line, output[:MAX_BLOB])
         browser = (kind == "page" and _http_method(req_seg) == "GET")
+        # carry the request cookie (single, no-space value) so the render shows the authed page
+        cm = re.search(r"(?:-b|--cookie)[=\s]+(['\"]?)([^'\"\s]+)\1", cmd or "")
+        cookie = cm.group(2) if cm else ""
         if browser:
-            meta_line = "#meta browser=1 url=%s\n" % re.sub(r"\s+", "", url or "")
+            meta_line = "#meta browser=1 url=%s" % re.sub(r"\s+", "", url or "")
+            if cookie:
+                meta_line += " cookie=%s" % cookie
+            meta_line += "\n"
         else:
             meta_line = "#meta browser=0\n"
         out_path = os.path.join(pend, "%04d-%s-%s.txt" % (n, kind, key))
@@ -886,11 +896,10 @@ def active_research():
         return (None, None)
 
 
-def fingerprint_hits(blob):
-    """Return up to MAX_HITS ROUTING lines ('<tech> detected -> load Skill(x)') from
-    playbook.json. Routing only: the named hunt skill owns the tests, tooling-first,
-    payload arsenal, and cheatsheet reuse -- this hook surfaces the skill, it does not
-    prescribe methodology."""
+def fingerprint_records(blob):
+    """Return up to MAX_HITS (label, spec) tuples matched from playbook.json. The label is
+    the cleaned first fingerprint token; spec is the raw playbook record (skills/tools/refs/
+    tests). Backs the routing display (fingerprint_hits)."""
     try:
         import _engagement
         pb = os.path.join(_engagement.VAULT, "scripts", "playbook.json")
@@ -898,20 +907,29 @@ def fingerprint_hits(blob):
     except Exception:
         return []
     out = []
-    nhits = 0
     for key, spec in fps.items():
         try:
             if not re.search(key, blob, re.IGNORECASE):
                 continue
         except re.error:
             continue
-        skills = spec.get("skills") or []
         label = key.split("|")[0].replace("\\b", "")   # clean regex tokens for display
+        out.append((label, spec))
+        if len(out) >= MAX_HITS:
+            break
+    return out
+
+
+def fingerprint_hits(blob):
+    """Return up to MAX_HITS ROUTING lines ('<tech> detected -> load Skill(x)') from
+    playbook.json. Routing only: the named hunt skill owns the tests, tooling-first,
+    payload arsenal, and cheatsheet reuse -- this hook surfaces the skill, it does not
+    prescribe methodology."""
+    out = []
+    for label, spec in fingerprint_records(blob):
+        skills = spec.get("skills") or []
         sk = (" -> load " + ", ".join("Skill(%s)" % s for s in skills)) if skills else ""
         out.append(f"  {label} detected{sk}")
-        nhits += 1
-        if nhits >= MAX_HITS:
-            break
     return out
 
 
@@ -1309,12 +1327,17 @@ def main():
     #    emits playbook tokens that would false-fingerprint as a discovered surface.
     if is_probe and not _is_framework_meta(cmd):
         blob = (cmd + "\n" + _response_text(data))[:MAX_BLOB]
-        hits = fingerprint_hits(blob)
-        if hits:
+        recs = fingerprint_records(blob)
+        if recs:
+            skills_lines = []
+            for label, spec in recs:
+                sk = spec.get("skills") or []
+                tail = (" -> load " + ", ".join("Skill(%s)" % s for s in sk)) if sk else ""
+                skills_lines.append("  %s detected%s" % (label, tail))
             blocks.append(
                 "Tech fingerprinted (playbook.json) -> load the hunt Skill named below; it "
                 "carries the wiki-first, tooling-first, tests, and payload steps:\n"
-                + "\n".join(hits)
+                + "\n".join(skills_lines)
             )
 
     # 2. research-loop nudge (a CVE-research tool ran + a research project is active)

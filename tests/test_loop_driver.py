@@ -64,6 +64,26 @@ def test_drain_pending_noop_when_empty(tmp_path):
     assert ld.drain_pending(str(d)) == []          # empty .pending
 
 
+def test_drain_invokes_vm_via_bash_not_bare_exec(tmp_path):
+    # Regression: the VM bridge must be invoked as `bash vm.sh ...`, NOT `[vm.sh, ...]`. A bare exec
+    # of a non-executable bridge raises PermissionError (silently swallowed) -> zero renders, ever
+    # (a real production failure). A NON-executable stub proves the form: bash runs it; bare-exec fails.
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "loop_driver_b", os.path.join(REPO, "skills", "hooks", "loop-driver.py"))
+    ld = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(ld)
+    stub = tmp_path / "fakevm.sh"
+    marker = tmp_path / "ran"
+    stub.write_text("#!/bin/bash\necho called >> %s\n" % marker)   # deliberately NOT chmod +x
+    pend = tmp_path / "ENG" / "recon" / ".pending"
+    pend.mkdir(parents=True)
+    (pend / "0001-nmap-x.txt").write_text("$ nmap\nPORT 80 open\n")
+    ld.drain_pending(str(tmp_path / "ENG"), vm=str(stub), area="recon")   # scripts/shot.py resolves via realpath(HERE)
+    assert marker.exists() and marker.read_text().strip(), \
+        "VM bridge not invoked via bash (non-executable stub never ran -> bare-exec regression)"
+
+
 def test_drain_cli_entrypoint(tmp_path):
     """--drain CLI renders staged txt to PNG without blocking (Fix 2b + Fix 3)."""
     import base64
@@ -286,7 +306,7 @@ def test_drain_pending_retries_transient_render_failure_then_succeeds(tmp_path, 
     render_calls = []
 
     def fake_run(args, **kwargs):
-        remote = args[1] if len(args) > 1 else ""
+        remote = args[-1] if args else ""   # command is the last arg (after the "bash", vm prefix)
         class _P:
             pass
         p = _P()
@@ -324,7 +344,7 @@ def test_drain_pending_all_retries_fail_leaves_card_staged(tmp_path, monkeypatch
     render_calls = []
 
     def fake_run(args, **kwargs):
-        remote = args[1] if len(args) > 1 else ""
+        remote = args[-1] if args else ""   # command is the last arg (after the "bash", vm prefix)
         class _P:
             pass
         p = _P()
@@ -563,11 +583,13 @@ def test_drain_cli_dispatch_poc_pages_predicate_includes_reqresp(tmp_path):
         timeout=30)
     assert result.returncode == 0
     assert (d / "poc" / "pages" / "0001-page-abcd1234.png").exists()
-    assert "--reqresp --maxlines 600" in captured.read_text()
+    txt = captured.read_text()
+    assert "--reqresp" in txt and "--maxlines 600" in txt
 
 
-def test_drain_cli_dispatch_recon_predicate_excludes_reqresp(tmp_path):
-    """recon area must still NOT get --reqresp (unchanged by Task 2)."""
+def test_drain_cli_dispatch_recon_now_includes_reqresp(tmp_path):
+    """recon cards now ALSO render with --reqresp: the command shows as `$ ...` in cyan on the
+    body (matching the page/lead cards), instead of the raw command sitting in the title bar."""
     import base64
     import sys
     ld_path = os.path.join(REPO, "skills", "hooks", "loop-driver.py")
@@ -590,12 +612,12 @@ def test_drain_cli_dispatch_recon_predicate_excludes_reqresp(tmp_path):
         timeout=30)
     assert result.returncode == 0
     assert (d / "recon" / "0001-nmap-abcd1234.png").exists()
-    assert "--reqresp" not in captured.read_text()
+    assert "--reqresp" in captured.read_text()
 
 
 def test_drain_pending_combined_bottom_is_clean_fetch_not_staged_body(tmp_path, monkeypatch):
     """Task 2 change (b): the BOTTOM (term) card of a browser=1 combined poc/pages card
-    must be rendered from a FRESH clean re-fetch of the URL (curl -sSi <url>), never the
+    must be rendered from a FRESH clean re-fetch of the URL (curl -sS -iv <url>), never the
     raw staged body -- proven by recording every remote command issued and the bytes that
     end up in the written PNG. The top browser render here returns non-image bytes, so
     stack_vertical fails closed (PIL cannot open it) and the combined path falls back to
@@ -617,34 +639,36 @@ def test_drain_pending_combined_bottom_is_clean_fetch_not_staged_body(tmp_path, 
 
     clean_marker = b"CLEAN-FETCH-BYTES-" + b"X" * 100
     clean_b64 = base64.b64encode(clean_marker).decode()
-    top_b64 = base64.b64encode(b"\x00" * 200).decode()   # not a real PNG -> stack fails closed
+    combined_marker = b"VM-COMBINED-BYTES-" + b"Z" * 100
+    combined_b64 = base64.b64encode(combined_marker).decode()
 
     calls = []
 
     def fake_run(args, **kwargs):
-        remote = args[1] if len(args) > 1 else ""
+        remote = args[-1] if args else ""   # command is the last arg (after the "bash", vm prefix)
         calls.append(remote)
         class _P:
             pass
         p = _P()
         p.returncode = 0
         p.stderr = b""
-        if "curl -sSi" in remote:
+        if "-comb.png" in remote:              # VM combine: page shot + convert -append (on Kali)
+            p.stdout = combined_b64.encode()
+        elif "--reqresp" in remote:            # bottom request/response re-fetch render
             p.stdout = clean_b64.encode()
-        elif "-top.png" in remote:
-            p.stdout = top_b64.encode()
-        elif "base64 -d" in remote:            # staged-body fallback -- must never fire here
+        elif "base64 -d > /tmp/poc/" in remote:   # staged-body fallback -- must never fire here
             p.stdout = b"SHOULD-NOT-BE-CALLED-" + b"Y" * 100
         else:
-            p.stdout = b""                     # shot.py push
+            p.stdout = b""                     # shot.py push / other
         return p
 
     monkeypatch.setattr(real_subprocess, "run", fake_run)
     rendered = ld.drain_pending(str(d), vm=str(stub), area="poc/pages")
     assert rendered == ["0001-page-abcd1234.png"]
     png_bytes = (d / "poc" / "pages" / "0001-page-abcd1234.png").read_bytes()
-    assert png_bytes == clean_marker
-    assert any("curl -sSi" in c and "10.0.0.9/login" in c and "--reqresp --maxlines 600" in c
+    assert png_bytes == combined_marker            # final = the VM-stacked combined card
+    assert any("curl -sS -iv" in c and "10.0.0.9/login" in c
+               and "--reqresp" in c and "--maxlines 600" in c
                for c in calls)
     # discriminate the staged-body fallback render (target /tmp/poc/<stem>.txt) from the
     # one-time shot.py push (target /tmp/shot.py), which also contains "base64 -d"
@@ -674,14 +698,14 @@ def test_drain_pending_combined_clean_fetch_failure_falls_back_to_staged_body(tm
     calls = []
 
     def fake_run(args, **kwargs):
-        remote = args[1] if len(args) > 1 else ""
+        remote = args[-1] if args else ""   # command is the last arg (after the "bash", vm prefix)
         calls.append(remote)
         class _P:
             pass
         p = _P()
         p.returncode = 0
         p.stderr = b""
-        if "curl -sSi" in remote:
+        if "curl -sS -iv" in remote:
             p.stdout = b"c2hvcnQ="                  # base64("short") -> < 100 bytes decoded
         elif "base64 -d" in remote:                  # staged-body fallback path
             p.stdout = fallback_b64.encode()
@@ -696,7 +720,7 @@ def test_drain_pending_combined_clean_fetch_failure_falls_back_to_staged_body(tm
     assert rendered == ["0001-page-abcd1234.png"]
     png_bytes = (d / "poc" / "pages" / "0001-page-abcd1234.png").read_bytes()
     assert png_bytes == fallback_marker
-    assert any("curl -sSi" in c for c in calls)        # clean fetch was attempted first
+    assert any("curl -sS -iv" in c for c in calls)        # clean fetch was attempted first
     assert any("base64 -d > /tmp/poc/" in c for c in calls)   # then fell back to the staged body
 
 
@@ -985,3 +1009,36 @@ def test_loop_driver_has_no_gate_machinery():
     assert not hasattr(ld, "reason_for")
     assert not hasattr(ld, "_read_budget")
     assert hasattr(ld, "drain_pending")      # the capture drain stays
+
+
+def test_append_poc_builds_up_and_is_idempotent(tmp_path):
+    ld = _load_loop_driver()
+    d = tmp_path / "ENG"
+    d.mkdir()
+    poc = d / "poc.md"
+    poc.write_text("# PoC\n\n## Findings\n<!-- POC-AUTO -->\n")
+    ld._append_poc(str(d), "recon", "0001-nmap-x.png", "nmap -sV T", "22/tcp open ssh")
+    t1 = poc.read_text()
+    assert "0001-nmap-x.png" in t1
+    assert "```sh\nnmap -sV T\n```" in t1
+    assert "22/tcp open ssh" in t1
+    ld._append_poc(str(d), "recon", "0001-nmap-x.png", "nmap -sV T", "22/tcp open ssh")
+    assert poc.read_text().count("<!--card:0001-nmap-x.png-->") == 1   # idempotent per card
+
+
+def test_append_poc_skips_hand_curated_poc(tmp_path):
+    ld = _load_loop_driver()
+    d = tmp_path / "ENG"
+    d.mkdir()
+    poc = d / "poc.md"
+    poc.write_text("# hand-written\nno marker\n")                 # no POC-AUTO
+    ld._append_poc(str(d), "recon", "0001-nmap-x.png", "nmap", "out")
+    assert poc.read_text() == "# hand-written\nno marker\n"       # untouched
+
+
+def test_append_poc_noop_when_missing(tmp_path):
+    ld = _load_loop_driver()
+    d = tmp_path / "ENG"
+    d.mkdir()
+    ld._append_poc(str(d), "recon", "x.png", "nmap", "out")       # no poc.md -> fail-open
+    assert not (d / "poc.md").exists()
