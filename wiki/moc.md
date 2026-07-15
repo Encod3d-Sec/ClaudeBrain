@@ -15,7 +15,7 @@ Top-level hub. Each domain has its own MOC linking every page.
 - [[blockchain-moc|Blockchain]] (2)
 - [[cloud-moc|Cloud]] (51)
 - [[cracking-moc|Cracking]] (6)
-- [[exploit-dev-moc|Exploit Dev]] (18)
+- [[exploit-dev-moc|Exploit Dev]] (19)
 - [[forensics-moc|Forensics]] (2)
 - [[linux-moc|Linux]] (10)
 - [[macos-moc|Macos]] (19)
