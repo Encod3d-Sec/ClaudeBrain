@@ -175,10 +175,11 @@ def test_scope_template_ships_tunnel_safe_false():
     assert "tunnel_safe: false" in tpl
 
 
-def test_ensure_is_idempotent(vault):
-    # acme already complete -> only log/ingest may be created once, second run none
+def test_ensure_is_idempotent(vault, monkeypatch):
+    # acme already complete -> only log/ingest may be created once, second run none.
+    # monkeypatch (not raw assignment) so active_dir reverts and does not poison later tests.
     import _engagement as e
-    e.active_dir = lambda: str(vault / "targets" / "acme")
+    monkeypatch.setattr(e, "active_dir", lambda: str(vault / "targets" / "acme"))
     first = e.ensure_state_files()
     second = e.ensure_state_files()
     assert second == []
@@ -373,3 +374,15 @@ def test_learn_pending_true_when_marker_older_than_state(tmp_path):
 
 def test_learn_pending_false_none_dir_fails_open():
     assert _engagement.learn_pending(None) is False
+
+
+def test_poc_in_shared_core_for_every_type():
+    for etype in ("ctf", "bugbounty", "pentest"):
+        assert ("poc.md", "_poc.md") in _engagement._heal_shared_set(etype), etype
+
+
+def test_poc_template_exists_with_marker():
+    p = os.path.join(_engagement.TEMPLATES, "_poc.md")
+    assert os.path.isfile(p)
+    body = open(p, encoding="utf-8").read()
+    assert "POC-AUTO" in body and "<ENGAGEMENT>" in body

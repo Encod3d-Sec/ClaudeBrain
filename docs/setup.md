@@ -35,7 +35,7 @@ bash setup/install-hooks.sh    # symlinks ~/.claude/vault-hooks + registers the 
 # 3. restart Claude Code
 ```
 
-`install-hooks.sh` is self-locating (works on any user/path/spelling) and idempotent. It registers the canonical set (mirrored in `scripts/check-hooks.py` `EXPECTED_HOOKS`; `engagement-init` warns at SessionStart if any is unregistered) -- 8 hook commands across 6 events:
+`install-hooks.sh` is self-locating (works on any user/path/spelling) and idempotent. It registers the canonical set (mirrored in `scripts/check-hooks.py` `EXPECTED_HOOKS`; `engagement-init` warns at SessionStart if any is unregistered) -- 9 hook commands across 6 events:
 - **SessionStart** -- `session-start.sh` (session bootstrap / context7-lock cleanup), `engagement-init.py` (self-heals the `state/loot/paths/...` set, injects the state summary + top next-moves + drift/CVE warnings).
 - **UserPromptSubmit** -- `hunt-trigger.py` (fires hunt skills from `skills/hunt/triggers.json`).
 - **PreToolUse (Bash)** -- `scope-guard.py` (scope / RoE / dead-end guard).

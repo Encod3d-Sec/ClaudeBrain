@@ -75,6 +75,10 @@ for g in h.get("PostToolUse", []):
         if "recon-capture.py" in hk.get("command", "") and hk.get("timeout", 0) < 30:
             hk["timeout"] = 30
             print("bumped recon-capture timeout -> 30")
+if not has("PreToolUse", "no-echo-banner.py"):
+    add("PreToolUse", {"matcher": "Bash", "hooks": [{"type": "command",
+        "command": "python3 ~/.claude/vault-hooks/no-echo-banner.py", "timeout": 10}]})
+    print("added PreToolUse no-echo-banner")
 if not has("PreToolUse", "scope-guard.py"):
     add("PreToolUse", {"matcher": "Bash", "hooks": [{"type": "command",
         "command": "python3 ~/.claude/vault-hooks/scope-guard.py", "timeout": 10}]})

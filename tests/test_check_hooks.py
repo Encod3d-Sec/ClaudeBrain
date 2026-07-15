@@ -109,14 +109,14 @@ def test_tool_lean_removed():
     assert not os.path.exists(os.path.join(root, "skills", "hooks", "tool-lean.py"))
 
 
-def test_wiki_log_removed_and_count_is_8():
+def test_wiki_log_removed_and_count_is_9():
     import importlib.util, os
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     spec = importlib.util.spec_from_file_location("ch", os.path.join(root, "scripts", "check-hooks.py"))
     ch = importlib.util.module_from_spec(spec); spec.loader.exec_module(ch)
     assert not any("wiki-log" in b for _e, b in ch.EXPECTED_HOOKS)
     assert not os.path.exists(os.path.join(root, "skills", "hooks", "wiki-log.py"))
-    assert len(ch.EXPECTED_HOOKS) == 8
+    assert len(ch.EXPECTED_HOOKS) == 9
 
 
 def test_docs_hook_count_matches_expected():
@@ -126,4 +126,4 @@ def test_docs_hook_count_matches_expected():
     ch = importlib.util.module_from_spec(spec); spec.loader.exec_module(ch)
     setup = open(os.path.join(root, "docs", "setup.md"), encoding="utf-8").read()
     m = re.search(r"(\d+)\s+hook commands", setup)
-    assert m and int(m.group(1)) == len(ch.EXPECTED_HOOKS) == 8
+    assert m and int(m.group(1)) == len(ch.EXPECTED_HOOKS) == 9

