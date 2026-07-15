@@ -177,6 +177,22 @@ PHP web app on a high port; no memory CVE, the whole box is applied crypto. Load
 - **Anti-grind:** guessing the cipher KEY was a dead-end (~130 combos); the padding oracle needs NO key. When an app
   echoes padding validity, reach for the oracle, don't brute keys. Forging (CBC-R) is the payload, not just decryption.
 
+## Lesson: cred-reuse-first, don't blind-scrape a SPA admin, linpeas-not-by-hand (THM Voyage)
+
+Joomla 4.2.7 -> CVE-2023-23752 leaked the DB root password. Chain: cred-reuse -> root SSH on a pivot
+container -> internal Flask app pickle-deser RCE -> `cap_sys_module` kmod escape to host root. Three misses:
+- **A leaked cred is a REUSE probe before it is a research target.** The DB password was reused for root
+  SSH on a second port. Test any leaked/default cred against SSH + every other auth surface FIRST; only
+  then commit to a slower web-admin exploit chain. (Rule 2 says this; the miss was ~13 calls blind-scraping
+  the admin panel before trying the obvious reuse.)
+- **Modern CMS/SPA admin panels are JS-rendered**, so `curl` sees only page chrome (no list rows/ids). Do
+  NOT grind a template-editor RCE over `curl` against a Joomla 4 / SPA admin - drive a real browser, or
+  (usually) the intended foothold is elsewhere (here: the cred reuse).
+- **Privesc = linpeas/pspy FIRST (Rule 3), not hand-rolled `ls`/`find`/`cat`.** The smell is enumerating by
+  hand before the automated sweep runs. `cap_sys_module` escape: `capsh --print | grep sys_module` then
+  build+`insmod` a module into the host (`call_usermodehelper`); if headers != running kernel, patch the
+  `.ko` vermagic to `uname -r` - see [[linux-privesc]].
+
 ## Capture (engagement discipline)
 
 After each phase, write to `targets/<eng>/`: hosts/access -> `state.md`, creds -> `loot.md`, chain -> `paths.md`, vulns -> `Vuln-index.md`, dead-ends -> `Deadends.md`, narrative -> `log.md`. Flags go in the writeup, never in `session/*` or `wiki/`.
@@ -211,6 +227,12 @@ linpeas/pspy) auto-collects as cards in `targets/<eng>/recon/` (the Stop-hook dr
 your deliberate step shots land in `poc/` - curate both into the `## Evidence` gallery, or run
 `python3 scripts/build-walkthrough.py <eng>` to auto-populate that gallery from every rendered card on
 disk (it refreshes the Evidence table in place and never touches your narrative).
+
+**`poc.md` builds up automatically (no action needed).** As each card renders, the Stop-hook drain
+appends it to `targets/<eng>/poc.md` (self-healed from `_poc.md`): image on top, the `sh` command, and
+the full response. EVERY scan/page/lead is included -- dead-ends too -- so you get a copy-paste PoC and
+can review the whole run manually. It only auto-builds a templated `poc.md` (the `POC-AUTO` marker); a
+hand-curated `poc.md` (marker removed) is left untouched.
 
 **Grow the harness wordlist.** If a non-obvious route/file/param cracked the box (one the standard
 lists missed, e.g. `/internal`), feed the GENERIC token back so the next box is faster:

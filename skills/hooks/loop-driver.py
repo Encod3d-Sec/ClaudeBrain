@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
 """Stop hook: render-only evidence-capture drain.
 
-When the model stops, spawn detached render subprocesses for any evidence cards
-recon-capture staged during the turn (recon scans, poc/leads, poc/pages, and any
-tmux scan tabs) so PoC images render at turn-end. This is CAPTURE, not enforcement:
-it NEVER blocks the turn or forces continuation, and it is idempotent/self-gating
-(a no-op when nothing is staged). Fails open: any error -> exit 0.
+When the model stops, spawn detached render subprocesses for any evidence cards recon-capture
+staged during the turn (recon scans, poc/leads, poc/pages, and any tmux scan tabs) so PoC images
+render at turn-end. This is CAPTURE, not enforcement: it NEVER blocks the turn or forces
+continuation, and it is idempotent/self-gating (a no-op when nothing is staged). Fails open: any
+error -> exit 0.
 """
-import json
 import os
+import re
 import sys
 import time
 
-HERE = os.path.dirname(os.path.abspath(__file__))
+HERE = os.path.dirname(os.path.realpath(__file__))   # realpath: resolve the ~/.claude/vault-hooks symlink so scripts/shot.py deploys from the real vault
 sys.path.insert(0, HERE)
 
 VM_SH = os.environ.get("VM_SH", "/root/vm.sh")
@@ -25,6 +25,36 @@ _RENDER_RETRIES = 3   # bounded per-card render retry: a transient/reaped remote
 def _shq(s):
     """Single-quote a string for a remote shell arg."""
     return "'" + s.replace("'", "'\\''") + "'"
+
+
+def _append_poc(d, area, png, cmd, body):
+    """Append a rendered card (image on top + `sh` command + full response) to <d>/poc.md so the
+    PoC builds up during the engagement -- EVERY card (recon scan, page/source, lead, request),
+    including dead-ends, so the operator can review the whole run manually. Only touches a
+    templated poc.md (the POC-AUTO marker); idempotent per card filename. Fail-open."""
+    try:
+        pocf = os.path.join(d, "poc.md")
+        if not os.path.isfile(pocf):
+            return
+        existing = open(pocf, encoding="utf-8", errors="ignore").read()
+        if "POC-AUTO" not in existing:            # only the templated poc.md, not a hand-curated one
+            return
+        marker = "<!--card:%s-->" % png
+        if marker in existing:                     # idempotent: already appended this card
+            return
+        body = re.sub(r"\x1b\[[0-9;?]*[A-Za-z]", "", (body or "")).replace("\r", "").strip()
+        heading = (((cmd or png).strip().splitlines() or [png])[0])[:70]
+        section = (
+            "\n### %s %s\n"
+            "![](%s/%s)\n\n"
+            "```sh\n%s\n```\n"
+            "```\n%s\n```\n"
+            % (heading, marker, area, png, (cmd or "").strip(), body)
+        )
+        with open(pocf, "a", encoding="utf-8") as fh:
+            fh.write(section)
+    except Exception:
+        pass
 
 
 def _try_lock(lockpath, stale=600):
@@ -126,7 +156,7 @@ def drain_pending(d, vm=None, area="recon", reqresp=False):
         shot = os.path.join(os.path.dirname(os.path.dirname(HERE)), "scripts", "shot.py")
         try:
             b64 = base64.b64encode(open(shot, "rb").read()).decode()
-            subprocess.run([vm, "mkdir -p /tmp/poc; echo %s | base64 -d > /tmp/shot.py" % b64],
+            subprocess.run(["bash", vm, "mkdir -p /tmp/poc; echo %s | base64 -d > /tmp/shot.py" % b64],
                            capture_output=True, timeout=30)
         except Exception:
             return []
@@ -138,55 +168,66 @@ def drain_pending(d, vm=None, area="recon", reqresp=False):
             stem = base[:-4]
             png = stem + ".png"                             # deterministic; matches -o below
             try:
-                lines = open(txt, encoding="utf-8", errors="ignore").read().splitlines()
+                # drop CR first: splitlines() splits on a bare `\r` too, so a tool's
+                # `\r\x1b[2K` progress prefix (ffuf/nmap) would splitlines into a blank line
+                # before every row -> the "double spacing" artifact.
+                raw = open(txt, encoding="utf-8", errors="ignore").read().replace("\r", "")
+                lines = raw.splitlines()
                 cmd, meta, body_text = _parse_card_meta(lines)
                 if cmd is None:
                     cmd = stem
                 # render with explicit -o so the remote PNG name == `png` we read back.
-                # lead cards (and, as of Task 2, poc/pages cards) get --reqresp (request/
-                # response coloring) + a higher line cap so a full response is not truncated.
-                extra = " --reqresp --maxlines 600" if reqresp else ""
-                combined_target = (
-                    area == "poc/pages" and meta.get("browser") == "1" and meta.get("url"))
-                url = meta.get("url") if combined_target else None
+                # page cards ALWAYS get a reqshot-style request/response re-fetch (curl -iv,
+                # colored, clean title) when a URL is known; browser=1 additionally stacks a
+                # chromium page render (the visual website shot) on top.
+                url = meta.get("url") if area == "poc/pages" else None
+                cookie = (meta.get("cookie") or "").strip()
+                do_refetch = bool(url)
+                browser_top = bool(url and meta.get("browser") == "1")
 
                 term_data = b""
-                if combined_target:
-                    # Task 2: the BOTTOM half of a combined page card must be a CLEAN
-                    # re-fetch of the URL (a pristine `curl -i`), not the raw staged body --
-                    # the staged body is whatever stdout triggered the capture and can carry
-                    # shell noise (debug echoes, chained commands). Always request/response
-                    # colored: this render is specifically an HTTP request/response, unlike
-                    # the general `reqresp` flag which governs the staged-body path below.
+                if do_refetch:
+                    # BOTTOM half = a clean re-run of the request as a request/response card,
+                    # the SAME recipe as scripts/reqshot.sh (curl -sS -iv -> `>` request + `<`
+                    # response, --reqresp coloring; the command shows as `$ ...` in cyan on the
+                    # body, a short label in the title). Carries the original cookie so an authed
+                    # page renders logged-IN, not the gate. Never the raw staged body.
+                    ck = ("-b " + _shq(cookie) + " ") if cookie else ""
+                    shown = "$ curl -sS -iv " + (("-b " + cookie + " ") if cookie else "") + url
                     clean_remote = (
-                        "curl -sSi %s > /tmp/poc/%s.txt 2>/dev/null; "
-                        "python3 /tmp/shot.py --term /tmp/poc/%s.txt --cmd %s "
-                        "--reqresp --maxlines 600 -o /tmp/poc/%s >/dev/null 2>&1; "
-                        "base64 -w0 /tmp/poc/%s"
-                        % (_shq(url), stem, stem, _shq("curl -sSi " + url), png, png)
+                        "{ echo %s; echo; curl -sS -iv %s%s; } > /tmp/poc/%s.txt 2>&1 || true; "
+                        "python3 /tmp/shot.py --term /tmp/poc/%s.txt --reqresp --cmd %s "
+                        "--maxlines 600 -o /tmp/poc/%s >/dev/null 2>&1; base64 -w0 /tmp/poc/%s"
+                        % (_shq(shown), ck, _shq(url), stem, stem,
+                           _shq("curl -iv  (request + response)"), png, png)
                     )
                     try:
-                        cp = subprocess.run([vm, clean_remote], capture_output=True, timeout=90)
+                        cp = subprocess.run(["bash", vm,clean_remote], capture_output=True, timeout=90)
                         term_data = base64.b64decode(cp.stdout or b"", validate=False)
                     except Exception:
                         term_data = b""
 
                 if len(term_data) < 100:
-                    # Not a combined card, or the clean re-fetch failed: fail open to
-                    # rendering the staged body, exactly as before Task 2. Bounded retry:
-                    # a transient/reaped remote render (VM slow, detached process cut
-                    # short) gets up to _RENDER_RETRIES attempts before the card is left
-                    # staged for a later drain.
-                    tb = base64.b64encode(body_text.encode("utf-8", "ignore")).decode()
+                    # Not a combined card, or a re-fetch failed: render the STAGED body. Match the
+                    # reqshot/page style -- the command shows as `$ ...` in cyan ON THE BODY (not the
+                    # raw command in the title bar), and a short tool-name label titles the card.
+                    # Bounded retry for a transient/slow remote render.
+                    # Strip terminal progress control codes (ffuf/nmap emit `\r\x1b[2K` per line);
+                    # the bare `\r` renders as an extra blank line -> the "double spacing" artifact.
+                    import re as _re
+                    clean_body = _re.sub(r"\x1b\[[0-9;?]*[A-Za-z]", "", body_text).replace("\r", "")
+                    labeled = "$ " + cmd + "\n\n" + clean_body
+                    tb = base64.b64encode(labeled.encode("utf-8", "ignore")).decode()
+                    title = cmd.split()[0] if (cmd and cmd.strip()) else stem   # tool name in the title
                     remote = (
                         "echo %s | base64 -d > /tmp/poc/%s.txt; "
-                        "python3 /tmp/shot.py --term /tmp/poc/%s.txt --cmd %s%s "
-                        "-o /tmp/poc/%s >/dev/null 2>&1; "
+                        "python3 /tmp/shot.py --term /tmp/poc/%s.txt --reqresp --cmd %s "
+                        "--maxlines 600 -o /tmp/poc/%s >/dev/null 2>&1; "
                         "base64 -w0 /tmp/poc/%s"
-                        % (tb, stem, stem, _shq(cmd), extra, png, png)
+                        % (tb, stem, stem, _shq(title), png, png)
                     )
                     for attempt in range(_RENDER_RETRIES):
-                        p = subprocess.run([vm, remote], capture_output=True, timeout=90)
+                        p = subprocess.run(["bash", vm,remote], capture_output=True, timeout=90)
                         term_data = base64.b64decode(p.stdout or b"", validate=False)
                         if len(term_data) >= 100:
                             break
@@ -195,47 +236,43 @@ def drain_pending(d, vm=None, area="recon", reqresp=False):
                     if len(term_data) < 100:            # all attempts failed -> keep staged
                         continue
                 final_data = term_data
-                # Task 3: poc/pages cards flagged browser=1 get a COMBINED card (a chromium
-                # render of the page stacked on top of this term card). Any failure anywhere
+                # poc/pages cards flagged browser=1 get a COMBINED card (a chromium render of
+                # the page stacked on top of this request/response card). Any failure anywhere
                 # in this attempt falls back to the plain term_data card computed above --
                 # never `continue` here, the text card must still land.
-                if combined_target:
-                    combined = None
+                if browser_top:
+                    # Render the chromium PAGE shot and stack it above the request/response card
+                    # ON THE VM -- convert(1) + PIL live on Kali, NOT on the hook host (which has
+                    # neither, so a host-side stack silently fails -> term-only card). An authed
+                    # page (cookie present) is fetched with curl then rendered via shot.py --html
+                    # so the login cookie never enters the browser. Fail open to the term card.
                     try:
-                        top_remote = (
-                            "python3 /tmp/shot.py %s -o /tmp/poc/%s-top.png >/dev/null 2>&1; "
-                            "base64 -w0 /tmp/poc/%s-top.png" % (_shq(url), stem, stem)
+                        origin = "/".join(url.split("/")[:3])   # scheme://host
+                        if cookie:
+                            # prepend a <base href="origin/"> so RELATIVE asset hrefs (style.css,
+                            # img/..) resolve to the target, not the local file:// path -> the authed
+                            # page renders fully styled, not bare text. Assets load live from the VM.
+                            top_cmd = (
+                                "{ echo %s; curl -sS -b %s %s; } > /tmp/poc/%s.html 2>/dev/null; "
+                                "python3 /tmp/shot.py --html /tmp/poc/%s.html --base %s --url-bar %s "
+                                "-o /tmp/poc/%s-top.png >/dev/null 2>&1"
+                                % (_shq('<base href="%s/">' % origin), _shq(cookie), _shq(url), stem,
+                                   stem, _shq(origin), _shq(url), stem)
+                            )
+                        else:
+                            top_cmd = ("python3 /tmp/shot.py %s -o /tmp/poc/%s-top.png >/dev/null 2>&1"
+                                       % (_shq(url), stem))
+                        combine_remote = (
+                            "%s; convert -append /tmp/poc/%s-top.png /tmp/poc/%s "
+                            "/tmp/poc/%s-comb.png >/dev/null 2>&1 && base64 -w0 /tmp/poc/%s-comb.png"
+                            % (top_cmd, stem, png, stem, stem)
                         )
-                        tp = subprocess.run([vm, top_remote], capture_output=True, timeout=90)
-                        top_data = base64.b64decode(tp.stdout or b"", validate=False)
-                        if len(top_data) >= 100:
-                            tdir = tempfile.mkdtemp(prefix="ldstack-")
-                            top_tmp = os.path.join(tdir, stem + ".top.png")
-                            bot_tmp = os.path.join(tdir, stem + ".bot.png")
-                            out_tmp = os.path.join(tdir, stem + ".combined.png")
-                            try:
-                                with open(top_tmp, "wb") as fh:
-                                    fh.write(top_data)
-                                with open(bot_tmp, "wb") as fh:
-                                    fh.write(term_data)
-                                out_path = stack_vertical(top_tmp, bot_tmp, out_tmp)
-                                if out_path and os.path.isfile(out_path) and os.path.getsize(out_path) > 0:
-                                    with open(out_path, "rb") as fh:
-                                        combined = fh.read()
-                            finally:
-                                for tmp in (top_tmp, bot_tmp, out_tmp):
-                                    try:
-                                        os.remove(tmp)
-                                    except OSError:
-                                        pass
-                                try:
-                                    os.rmdir(tdir)
-                                except OSError:
-                                    pass
+                        cb = subprocess.run(["bash", vm, combine_remote], capture_output=True, timeout=90)
+                        combined = base64.b64decode(cb.stdout or b"", validate=False)
+                        if len(combined) >= 100:
+                            final_data = combined
                     except Exception:
-                        combined = None
-                    if combined:
-                        final_data = combined
+                        pass
                 png_path = os.path.join(d, *parts, png)
                 with open(png_path, "wb") as fh:
                     fh.write(final_data)
@@ -247,6 +284,15 @@ def drain_pending(d, vm=None, area="recon", reqresp=False):
                     continue
                 os.remove(txt)
                 rendered.append(png)
+                # build up poc.md: a page card's `sh` line is the reconstructed curl (with cookie),
+                # a recon/lead card's is the tool command as captured.
+                try:
+                    poc_cmd = cmd
+                    if area == "poc/pages" and url:
+                        poc_cmd = "curl -sSi " + (("-b " + cookie + " ") if cookie else "") + url
+                    _append_poc(d, area, png, poc_cmd, body_text)
+                except Exception:
+                    pass
                 manifest.append("| ![](%s/%s) | %s |" % (area, png, cmd.replace("|", "\\|")[:80]))
             except Exception:
                 continue
@@ -292,7 +338,7 @@ def drain_pending_tmux(d, vm=None):
         shot = os.path.join(os.path.dirname(os.path.dirname(HERE)), "scripts", "shot.py")
         try:
             b64 = base64.b64encode(open(shot, "rb").read()).decode()
-            subprocess.run([vm, "mkdir -p /tmp/poc; echo %s | base64 -d > /tmp/shot.py" % b64],
+            subprocess.run(["bash", vm, "mkdir -p /tmp/poc; echo %s | base64 -d > /tmp/shot.py" % b64],
                            capture_output=True, timeout=30)
         except Exception:
             return []
@@ -317,7 +363,7 @@ def drain_pending_tmux(d, vm=None):
                 )
                 data = b""
                 for attempt in range(_RENDER_RETRIES):
-                    p = subprocess.run([vm, remote], capture_output=True, timeout=90)
+                    p = subprocess.run(["bash", vm,remote], capture_output=True, timeout=90)
                     data = base64.b64decode(p.stdout or b"", validate=False)
                     if len(data) >= 100:
                         break
@@ -391,10 +437,6 @@ def main():
         sys.stdin.read()          # drain the payload pipe; the render runs regardless of it
     except Exception:
         pass
-    # Render any staged evidence cards at turn-end. CAPTURE, not enforcement: spawn
-    # detached render subprocesses (a cross-host render would blow the Stop hook budget)
-    # and return immediately. Idempotent/self-gating -- a no-op when nothing is staged.
-    # NEVER blocks the turn or forces continuation.
     try:
         import _engagement
         d = _engagement.active_dir()
@@ -402,6 +444,9 @@ def main():
         d = None
     if not d:
         return
+    # Render any staged evidence cards at turn-end (CAPTURE, not enforcement): detached, prints
+    # nothing, idempotent/self-gating (a no-op when nothing is staged). A cross-host render would
+    # blow the Stop budget, so spawn and return immediately. NEVER blocks the turn.
     try:
         import subprocess
         for area in ("recon", "poc/leads", "poc/pages"):  # scan firehose + curated lead/page cards

