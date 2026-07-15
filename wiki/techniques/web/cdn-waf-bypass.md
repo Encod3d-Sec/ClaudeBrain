@@ -4,8 +4,8 @@ type: technique
 tags: [origin-ip, rate-limit-bypass, recon, waf-bypass, web]
 phase: recon
 date_created: 2026-05-21
-date_updated: 2026-07-02
-sources: [claroty-json-waf, orange-worstfit-defcon2024]
+date_updated: 2026-07-15
+sources: [claroty-json-waf, orange-worstfit-defcon2024, hacktricks-web]
 ---
 
 # CDN/WAF Bypass via Direct Origin IP
@@ -244,6 +244,20 @@ Use when input is reflected into: a Windows process command line, a filename/pat
 
 See [[sql-injection]], [[xss]], [[hpp-attacks]], [[path-traversal-lfi]].
 
+### Unicode `\u`-to-`%` and encoding-conversion mismatch
+
+Two normalization gadgets distinct from Best-Fit above:
+
+- **`\u` -> `%` transform:** some backends rewrite the `\u` prefix of a unicode escape into `%`. Pick a codepoint whose hex tail decodes to the metacharacter you want. A `<` handled naively can surface as `%3c` and then URL-decode to `<`, injecting the tag byte past a filter that never saw a literal `<`. Generalize by choosing codepoints whose last bytes map to `<`, `"`, `'`, `/`, etc.
+- **Encoding-conversion mismatch (double-transcode):** when a service strips dangerous chars, then converts encodings in the wrong order (e.g. `iconv("Windows-1252","UTF-8")` followed by `iconv("UTF-8","ASCII//TRANSLIT")`), a benign non-ASCII lookalike gets normalized back into the dangerous ASCII char AFTER the filter ran. Emoji/confusable payloads survive the blacklist and re-materialize as `<`:
+
+```
+# lands after the sanitizer, transliterates to < on a mismatched pipeline
+💋img src=x onerror=alert(document.domain)//💛
+```
+
+Method: identify where input is validated versus where it is normalized/case-folded/transcoded; inject a unicode char that is safe at validation time but collapses to the attack byte at the later step. Use unicode-explorer / worst.fit mapping tables to pick codepoints.
+
 ## Bypasses and variants
 
 - **Origin requires Cloudflare IP in X-Forwarded-For**: some origins validate that the XFF header contains a Cloudflare IP; add `-H "X-Forwarded-For: 104.16.0.1"` to bypass this check
@@ -267,3 +281,4 @@ See [[sql-injection]], [[xss]], [[hpp-attacks]], [[path-traversal-lfi]].
 ## Sources
 
 - Generalised from real engagement findings
+- HackTricks (pentesting-web) - `\u`-to-`%` and encoding-conversion mismatch (slug: hacktricks-web)

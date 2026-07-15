@@ -4,8 +4,8 @@ type: technique
 tags: [credentials, lateral-movement, reference-import, windows]
 phase: post-exploitation
 date_created: 2026-05-13
-date_updated: 2026-07-02
-sources: [InternalAllTheThings]
+date_updated: 2026-07-14
+sources: [InternalAllTheThings, hacktricks-windows]
 ---
 
 # Windows - Using credentials
@@ -515,6 +515,57 @@ Allows a user to run specific tools and programs with different permissions than
 runas /netonly /user:DOMAIN\username "cmd.exe"
 runas /noprofil /netonly /user:DOMAIN\username cmd.exe
 ```
+
+## Credential sources beyond LSASS
+
+This consolidates the non-LSASS credential hunt, which matters when LSA
+Protection/PPL or Credential Guard blocks LSASS dumping.
+
+Browsers (Chrome/Edge/Chromium): logins, cookies, and autofill are DPAPI-protected
+under the user profile. Decrypt with the user's DPAPI master key (SharpChrome /
+SharpDPAPI), which works fully in the user's own context.
+
+```text
+SharpDPAPI.exe masterkeys /password:<userpass>   # or /rpc for the domain-backup route
+SharpChrome.exe logins /unprotect
+SharpChrome.exe cookies /unprotect
+```
+
+Windows Credential Manager / Vault: stored RDP, web, and network creds.
+
+```cmd
+cmdkey /list
+vaultcmd /listcreds:"Windows Credentials" /all
+:: reuse a stored cred without knowing it:
+runas /savecred /user:DOMAIN\admin cmd.exe
+```
+
+Wi-Fi profiles (clear-text keys for saved networks):
+
+```cmd
+netsh wlan show profiles
+netsh wlan show profile name="<SSID>" key=clear
+```
+
+DPAPI at large decrypts scheduled-task and service passwords, saved RDP creds, and
+machine-scope blobs. Machine blobs need the `DPAPI_SYSTEM` LSA secret (recoverable
+offline from the SYSTEM+SECURITY hives, or `mimikatz lsadump::secrets`).
+
+KeePass: pull the master key from a live process (KeeThief) or exploit
+CVE-2023-32784 to recover most of the master password from a memory dump. Always
+grab `.kdbx` files and any key file when found.
+
+LAPS: the local admin password sits on the computer object. Legacy LAPS uses
+`ms-Mcs-AdmPwd` (clear text); Windows LAPS uses `msLAPS-Password` (clear-text JSON)
+or `msLAPS-EncryptedPassword`. If your account was delegated read access, you get
+local admin on that host directly. gMSA passwords (`msDS-ManagedPassword`) are
+readable by delegated principals and derivable offline from KDS root keys
+(GoldenGMSA) for persistence.
+
+Also sweep on-disk credential stores: `unattend.xml` / `sysprep.xml` / `autounattend.xml`,
+SYSVOL Group Policy Preferences `cpassword` (static AES key, `Get-GPPPassword`), IIS
+`web.config`, PuTTY/WinSCP/VNC registry entries, PowerShell history and transcripts,
+and Sticky Notes. LaZagne automates most of these local sources in one pass.
 
 ## References
 

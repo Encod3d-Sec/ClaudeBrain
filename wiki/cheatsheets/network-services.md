@@ -3,8 +3,8 @@ title: "Network Services Cheatsheet"
 type: cheatsheet
 tags: [cheatsheet, dns, enumeration, exploitation, htb, network, rdp, smb]
 date_created: 2026-05-08
-date_updated: 2026-05-08
-sources: [cpts-common-services]
+date_updated: 2026-07-14
+sources: [cpts-common-services, hacktricks-network]
 ---
 
 # Network Services Cheatsheet
@@ -524,6 +524,97 @@ New-PSDrive -Name "N" -Root "\\<IP>\<share>" -PSProvider "FileSystem" -Credentia
 Get-ChildItem -Recurse -Path N:\ | Select-String "cred" -List
 Get-ChildItem -Recurse -Path N:\ -Include *cred* -File
 ```
+
+---
+
+## MongoDB 27017 unauthenticated enumeration
+
+MongoDB ships with no password by default (`noauth=true` in mongodb.conf). Connect with
+the `mongo`/`mongosh` client and dump databases and collections. `admin` is a common DB.
+NoSQL object IDs are timestamp-plus-counter and can be predicted for IDOR.
+
+```bash
+nmap -sV --script "mongo* and default" -p 27017 <IP>
+nmap -sV --script mongodb-brute -p 27017 <IP>      # checks if creds are required
+
+mongosh <IP>:27017                                  # or legacy: mongo <IP>:27017
+```
+
+```javascript
+show dbs
+use <db>
+show collections
+db.<collection>.find()
+db.<collection>.count()
+db.users.find({"username":"admin"})
+```
+
+Python (when only the driver is available):
+
+```python
+from pymongo import MongoClient
+c = MongoClient("<IP>", 27017)
+for db in c.list_databases():
+    print(db["name"], c[db["name"]].list_collection_names())
+```
+
+---
+
+## Memcached 11211 key enumeration and dump
+
+Memcached is usually exposed without auth. Cached values often hold session data,
+tokens, and SQL rows. Walk the slab classes to recover key names, then GET them. The
+UDP port also enables reflection/amplification DDoS.
+
+```bash
+# Manual walk over the text protocol
+echo -e "version\r"        | nc -vn -w1 <IP> 11211
+echo -e "stats\r"          | nc -vn -w1 <IP> 11211
+echo -e "stats slabs\r"    | nc -vn -w1 <IP> 11211
+echo -e "stats items\r"    | nc -vn -w1 <IP> 11211
+echo -e "stats cachedump <slab_id> 0\r" | nc -vn -w1 <IP> 11211   # key names (0 = unlimited)
+echo -e "get <key>\r"      | nc -vn -w1 <IP> 11211                 # value
+
+# libmemcached-tools helpers
+memcstat --servers=<IP>
+memcdump --servers=<IP>          # all keys
+memccat  --servers=<IP> <key>    # value
+
+# Automated
+nmap -sV --script memcached-info -p 11211 <IP>
+msf> use auxiliary/gather/memcached_extractor
+msf> use auxiliary/scanner/memcached/memcached_amp   # UDP amplification check
+```
+
+---
+
+## NTP 123/udp enumeration and monlist amplification
+
+NTP leaks system/peer info via control queries and, on legacy daemons, the Mode-7
+`monlist` command returns up to 600 recent client addresses. `monlist` is both a recon
+goldmine (internal hosts) and a ~200x reflection/amplification DDoS primitive.
+
+```bash
+# Control queries (ntpd)
+ntpq -c rv <IP>
+ntpq -c peers <IP>
+ntpq -c associations <IP>
+
+# Legacy Mode-7 (often disabled on ntpd >= 4.2.8p9)
+ntpdc -c monlist <IP>
+ntpdc -c sysinfo <IP>
+
+# chrony (modern distros; only if cmdallow)
+chronyc -a -n -h <IP> sources -v
+
+# Nmap
+nmap -sU -sV --script "ntp* and (discovery or vuln) and not (dos or brute)" -p 123 <IP>
+nmap -sU -p123 --script ntp-monlist <IP>
+```
+
+Config to check post-access: `/etc/ntp.conf`, `/etc/chrony/chrony.conf` (look for
+`restrict`, `disable monitor`, NTS). Recent OOB-write CVEs: CVE-2023-26551..26555 (fixed
+in ntp 4.2.8p16).
 
 ---
 

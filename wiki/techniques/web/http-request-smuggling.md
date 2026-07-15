@@ -4,8 +4,8 @@ type: technique
 tags: [exploitation, h1, portswigger, server-side, smuggling, thm, web]
 phase: exploitation
 date_created: 2026-05-08
-date_updated: 2026-07-02
-sources: [thm-adv-smuggling-pt1, thm-adv-smuggling-pt2, thm-adv-smuggling-ws, thm-adv-browser-desync, thm-elbandito-ctf, h1-scraped-http-request-smuggling, 0xdf-hard-insane, payloadsallthethings-request-smuggling, git-portswigger-all-labs, portswigger-browser-powered-desync, kettle-http1-must-die, te0-bugcrowd, flomb-http2-connect]
+date_updated: 2026-07-15
+sources: [thm-adv-smuggling-pt1, thm-adv-smuggling-pt2, thm-adv-smuggling-ws, thm-adv-browser-desync, thm-elbandito-ctf, h1-scraped-http-request-smuggling, 0xdf-hard-insane, payloadsallthethings-request-smuggling, git-portswigger-all-labs, portswigger-browser-powered-desync, kettle-http1-must-die, te0-bugcrowd, flomb-http2-connect, hacktricks-web]
 
 ---
 
@@ -846,6 +846,32 @@ Detect by sending a masked header (space before name, duplicate, null/obfuscated
 
 Related single-packet primitive used for detection and for [[race-conditions]] / [[web-timing-attacks]].
 
+## HTTP response smuggling / desync primitives
+Response smuggling sends TWO complete requests to desync the proxy's RESPONSE queue rather than prefixing the victim's request. The smuggled request must be slow (e.g. hit a sleep endpoint) so the attacker's connection closes before it responds; the victim's response then gets swapped for the attacker's, or the victim's response (with `Set-Cookie`) is delivered to the attacker. One payload can nest many responses to hit many users or DoS.
+
+- **Capture victim requests:** send a final `POST` with a reflected parameter and a large `Content-Length`; the victim's next request appends after your reflected param and comes back to you.
+- **HEAD desync:** a `HEAD` response carries the `Content-Length` of the equivalent GET but no body, so the proxy waits for body bytes and fills them with the NEXT queued response. This glues an attacker-chosen body onto a victim's response header, or forces Content-Type/length confusion.
+- **TRACE reflection gadget:** when there is no reflection endpoint, smuggle `HEAD` then `TRACE`. TRACE echoes the backend-received request (including proxy-added `X-Forwarded-For` and downgraded start-lines), becoming the HEAD response's missing body = attacker-controlled reflected bytes, yielding XSS/content confusion even on a page with no XSS sink.
+
+```http
+GET / HTTP/1.1
+Host: target
+Content-Length: 150
+
+HEAD / HTTP/1.1
+Host: target
+
+TRACE / HTTP/1.1
+Host: target
+X-Pad: ...padding...
+X: <script>alert(1)</script>
+```
+
+- **Response splitting** yields a full attacker-crafted response cached in the proxy (arbitrary-URL cache poisoning when the "victim" is the attacker) and web cache deception (cache a victim's private response).
+- **2024-2025 discrepancy classes** worth testing even when request-side checks are clean: response TE.CL / dechunk-vs-length mismatches, response-order mapping bugs (response stealing), and CGI/FastCGI/uWSGI gateway header leakage into the final HTTP response.
+
+Modern-testing caveat: if the PoC only works with `requestsPerConnection > 1` or explicit socket reuse, re-test with reuse disabled; you may have only desynced your client, not the front-end from the back-end. Confirm a real parser discrepancy via an HTTP/2 to HTTP/1 downgrade that yields a nested HTTP/1 response. Tool: Burp HTTP Request Smuggler.
+
 ## Sources
 
 - THM HTTP Request Smuggling pt1 (`https://tryhackme.com/room/httprequestsmuggling`)
@@ -859,6 +885,7 @@ Related single-packet primitive used for detection and for [[race-conditions]] /
 - James Kettle, PortSwigger Research, "HTTP/1.1 Must Die: The Desync Endgame" (2025) - 0.CL, expect-based desync, V-H/H-V model, HTTP Request Smuggler v3 (slug: kettle-http1-must-die) (`https://portswigger.net/research/http1-must-die`).
 - "Unveiling TE.0 HTTP Request Smuggling: Discovering a Critical Vulnerability in Thousands of Google Cloud Websites", Bugcrowd (2024) (slug: te0-bugcrowd) (`https://www.bugcrowd.com/blog/unveiling-te-0-http-request-smuggling-discovering-a-critical-vulnerability-in-thousands-of-google-cloud-websites/`).
 - @flomb, "Playing with HTTP/2 CONNECT" (2025 top-10 #9) - HTTP/2 CONNECT internal port scanning + tunnelling (slug: flomb-http2-connect) (`https://blog.flomb.net/posts/http2connect/`).
+- HackTricks (pentesting-web) - response smuggling / desync primitives (slug: hacktricks-web).
 
 ## Wired sub-techniques
 

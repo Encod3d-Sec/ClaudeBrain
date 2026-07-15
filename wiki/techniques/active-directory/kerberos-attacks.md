@@ -15,8 +15,8 @@ tags:
   - dcsync
 phase: post-exploitation
 date_created: 2026-05-13
-date_updated: 2026-05-13
-sources: [0xdf-kerberos]
+date_updated: 2026-07-14
+sources: [0xdf-kerberos, hacktricks-network]
 ---
 
 # Kerberos Attacks
@@ -434,6 +434,35 @@ Add-DomainObjectAcl -TargetIdentity "DC=domain,DC=local" -PrincipalIdentity user
 ```
 
 See [[ad-persistence]] for Skeleton Key and DSRM as alternative persistence paths that also require DC access.
+
+---
+
+## Kerberos-only authentication from Linux (client prep and troubleshooting)
+
+When NTLM is disabled on domain services, Linux tooling must speak Kerberos, and the
+practical setup steps are the gap (the roasting/PtT attacks are already covered). Clock
+skew beyond a few minutes yields KRB_AP_ERR_SKEW; NTLM attempts return
+STATUS_NOT_SUPPORTED, so force Kerberos with -k. netexec can generate a working
+krb5.conf.
+
+```bash
+# 1. Sync clock to the DC (skew breaks all Kerberos auth)
+sudo ntpdate <dc.fqdn> || sudo chronyd -q 'server <dc.fqdn> iburst'
+
+# 2. Generate and install a krb5.conf, then get a TGT
+netexec smb <dc.fqdn> -u <user> -p '<pass>' -k --generate-krb5-file krb5.conf
+sudo cp krb5.conf /etc/krb5.conf
+kinit <user>; klist
+
+# 3. Use the ccache with SMB/WinRM tooling (no passwords sent)
+netexec smb <dc.fqdn> -k
+smbclient --kerberos //<dc.fqdn>/IPC$
+# GSSAPI SSH SSO; the FQDN must match the host SPN or you get
+# "Server not found in Kerberos database"
+ssh -o GSSAPIAuthentication=yes <user>@<host.fqdn>
+```
+
+Ensure /etc/hosts resolves the exact FQDN (SPN mismatches break GSSAPI).
 
 ---
 

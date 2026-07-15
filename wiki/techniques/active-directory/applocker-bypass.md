@@ -4,8 +4,8 @@ type: technique
 tags: [applocker, bypass, evasion, post-exploitation, thm, windows]
 phase: post-exploitation
 date_created: 2026-05-08
-date_updated: 2026-05-08
-sources: [thm-win-corp-bypass, thm-linux-apparmor]
+date_updated: 2026-07-14
+sources: [thm-win-corp-bypass, thm-linux-apparmor, hacktricks-windows]
 ---
 
 ## What It Is
@@ -251,6 +251,40 @@ echo '/bin/bash -ip' >> /opt/run_container.sh
 ```
 
 ---
+
+## AppLocker, WDAC, and Constrained Language Mode bypass (delta)
+
+Beyond the writable-path and LOLBAS bypasses and basic CLM above, the additions
+worth staging:
+
+- Default-writable allowed dirs under an otherwise-trusted System32/Windows rule:
+
+```text
+C:\Windows\System32\spool\drivers\color
+C:\Windows\System32\Microsoft\Crypto\RSA\MachineKeys
+C:\Windows\Tasks
+C:\Windows\tracing
+```
+
+- Poorly written path rules: a rule like `%OSDRIVE%*\allowed*` is beaten by
+  creating any folder named `allowed`. Blocking only
+  `%System32%\WindowsPowerShell\v1.0\powershell.exe` misses `SysWOW64` PowerShell
+  and `PowerShell_ISE.exe`.
+- DLL rules are rarely enforced (performance/testing cost), so a DLL backdoor
+  loaded by a trusted host binary usually bypasses AppLocker entirely.
+- Constrained Language Mode: CLM blocks COM, unapproved .NET types, and more, but
+  is bypassed by running PowerShell code in another process via ReflectivePick /
+  SharpPick, or with PSByPassCLM. Downgrading to PowerShell v2
+  (`powershell -version 2`) also skips AMSI and can loosen CLM on legacy hosts.
+- WDAC (the stronger, kernel-enforced Application Control) needs different
+  tradecraft than AppLocker: enumerate the effective policy, then rely on
+  Microsoft-signed LOLBins not on the block list, unsigned-DLL loads through a
+  policy-trusted loader, and known policy gaps rather than writable-path tricks.
+
+```powershell
+Get-AppLockerPolicy -Effective -Xml           # AppLocker rules in effect
+$ExecutionContext.SessionState.LanguageMode    # ConstrainedLanguage vs FullLanguage
+```
 
 ## Detection and Defence
 

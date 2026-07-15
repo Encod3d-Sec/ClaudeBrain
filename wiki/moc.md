@@ -11,20 +11,20 @@ Top-level hub. Each domain has its own MOC linking every page.
 
 ## Technique domains
 
-- [[active-directory-moc|Active Directory]] (102)
+- [[active-directory-moc|Active Directory]] (103)
 - [[blockchain-moc|Blockchain]] (1)
 - [[cloud-moc|Cloud]] (51)
 - [[cracking-moc|Cracking]] (6)
 - [[exploit-dev-moc|Exploit Dev]] (18)
 - [[forensics-moc|Forensics]] (2)
-- [[linux-moc|Linux]] (6)
-- [[macos-moc|Macos]] (10)
+- [[linux-moc|Linux]] (10)
+- [[macos-moc|Macos]] (19)
 - [[methodology-moc|Methodology]] (10)
 - [[mobile-iot-moc|Mobile Iot]] (5)
 - [[network-moc|Network]] (17)
 - [[osint-moc|Osint]] (7)
 - [[red-team-moc|Red Team]] (15)
-- [[web-moc|Web]] (67)
+- [[web-moc|Web]] (79)
 
 ## Reference
 
@@ -43,6 +43,7 @@ Top-level hub. Each domain has its own MOC linking every page.
 - [[cors]]
 - [[crlf]]
 - [[crypto]]
+- [[csp-bypass]]
 - [[csrf]]
 - [[deserialization]]
 - [[file-upload]]
@@ -59,8 +60,11 @@ Top-level hub. Each domain has its own MOC linking every page.
 - [[nosql]]
 - [[oauth-saml]]
 - [[open-redirect]]
+- [[orm-injection]]
 - [[prototype-pollution]]
 - [[race-conditions]]
+- [[redos]]
+- [[rsql]]
 - [[session]]
 - [[smuggling]]
 - [[sqli]]
@@ -69,5 +73,7 @@ Top-level hub. Each domain has its own MOC linking every page.
 - [[web-cache]]
 - [[webauthn-passkey]]
 - [[xpath]]
+- [[xslt]]
 - [[xss]]
+- [[xssi]]
 - [[xxe]]

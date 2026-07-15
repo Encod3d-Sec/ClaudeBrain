@@ -1,11 +1,11 @@
 ---
 title: Linux - Evasion
 type: technique
-tags: [evasion, linux, reference-import]
+tags: [evasion, linux, reference-import, fileless]
 phase: post-exploitation
 date_created: 2026-05-13
-date_updated: 2026-07-02
-sources: [InternalAllTheThings]
+date_updated: 2026-07-15
+sources: [InternalAllTheThings, hacktricks-linux]
 ---
 
 # Linux - Evasion
@@ -158,6 +158,22 @@ sudo mount -o remount,rw,nosuid,nodev,noexec,relatime,hidepid=2 /proc
 - `hidepid=2`: Hides all processes that don't belong to the user.
 - `hidepid=1`: Hides only process details (command line, environment variables) but still shows PIDs.
 
+## DDexec / EverythingExec: fileless in-memory execution (bypass noexec / read-only / allowlisting)
+
+`execve()` needs a file path, which is exactly what noexec mounts, read-only filesystems, distroless containers, and hash/name allowlisting rely on to control execution. DDexec sidesteps all of it by NOT starting a new process: it rewrites the memory of the current shell via `/proc/self/mem` to replay what the kernel does on `execve()` (build the mappings, read the binary in, set perms, prime the stack + auxv, jump to the loader). No file ever touches disk with an executable bit.
+
+Mechanics: a shell-created file descriptor to `/proc/$pid/mem` with write perms is inherited by children, so child processes can patch the shell's memory; ASLR is defeated by reading `/proc/$pid/maps`; `lseek()` into the huge `mem` file is done from shell via `dd` (or alternatives). The target binary is fed base64 on stdin and read by the injected shellcode. Only ubiquitous coreutils are needed: `dd`/`tail`/`head`/`cut`/`grep`/`od`/`readlink`/`base64`/`tr`.
+
+```bash
+# arget13/DDexec: run a binary that only exists as base64, no file on disk
+base64 -w0 /bin/ls | bash ddexec.sh ls -l
+# swap the seeker if dd is blocked/monitored (tail is default; hexdump/cmp/xxd also work)
+SEEKER=cmp bash ddexec.sh ls -l <<< $(base64 -w0 /bin/ls)
+SEEKER=xxd SEEKER_ARGS='-s $offset' zsh ddexec.sh ls -l <<< $(base64 -w0 /bin/ls)
+```
+
+Related fileless primitives worth pairing on the same locked-down host: `memfd_create()` + `fexecve()` to execute from an anonymous RAM fd, and process hijack via `ptrace()`/`gdb` when available (same overwrite-the-return-address idea). Detection is EDR-side (`socket`/`ptrace`/`/proc/*/mem` write patterns), not file-based, so this evades filesystem allowlists entirely.
+
 ## References
 
 - [ATT&CK - Impair Defenses: Impair Command History Logging](https://attack.mitre.org/techniques/T1562/003/)
@@ -182,3 +198,4 @@ Tool references are inline in **Methodology**; see the `tools/` pages for CLI us
 ## Sources
 
 - Swisskyrepo [InternalAllTheThings](https://github.com/swisskyrepo/InternalAllTheThings) (ingest slug `InternalAllTheThings`).
+- HackTricks linux-hardening (ingest slug `hacktricks-linux`).

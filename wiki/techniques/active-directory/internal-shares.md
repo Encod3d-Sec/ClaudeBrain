@@ -4,8 +4,8 @@ type: technique
 tags: [active-directory, credentials, enumeration, reference-import, smb, windows]
 phase: enumeration
 date_created: 2026-05-13
-date_updated: 2026-07-02
-sources: [InternalAllTheThings]
+date_updated: 2026-07-14
+sources: [InternalAllTheThings, hacktricks-network]
 ---
 
 # Internal - Shares
@@ -209,6 +209,34 @@ IconIndex=1
 ## References
 
 * [SMB Share – SCF File Attacks - December 13, 2017 - @netbiosX](https://pentestlab.blog/2017/12/13/smb-share-scf-file-attacks/)
+
+## SMB share attack-surface mapping for BloodHound (ShareHound + ShareQL)
+
+Beyond crackmapexec spider_plus, ShareHound discovers domain SMB shares, walks them,
+extracts ACLs, and emits an OpenGraph JSON for BloodHound CE/Enterprise, so you can
+query hosts/shares/files and effective write rights as graph edges. ShareQL is a
+first-match-wins DSL to allow/deny traversal and cap recursion depth per rule (focus on
+interesting shares, avoid runaway crawls).
+
+```bash
+# Collect: LDAP computer objects -> DNS resolve -> SMB share list -> crawl with rules
+sharehound -ai "10.0.100.201" -au "user" -ap "Test123!" -ns "10.0.100.201" \
+  -rf "rules/skip_common_shares.shareql" -rf "rules/max_depth_2.shareql"
+```
+
+```text
+# ShareQL: only crawl shares whose name contains "backup", depth 2
+allow host * share *backup* path * depth 2
+deny  host * share * path *
+```
+
+```cypher
+// After import: principals with write-like access on shares
+MATCH x=(p)-[:CanWriteDacl|CanWriteOwner|CanDsWriteProperty]->(s:NetworkShareSMB) RETURN x
+// Hunt sensitive files by extension
+MATCH p=(h:NetworkShareHost)-[:HasNetworkShare]->(s:NetworkShareSMB)-[:Contains*0..]->(f:File)
+WHERE toLower(f.extension)=".vmdk" RETURN p
+```
 
 ## Bypasses and variants
 

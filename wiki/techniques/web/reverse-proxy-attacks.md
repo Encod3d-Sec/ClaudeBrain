@@ -4,8 +4,8 @@ type: technique
 tags: [nginx, proxy, path-traversal, ssrf, ssti, web]
 phase: exploitation
 date_created: 2026-05-13
-date_updated: 2026-06-17
-sources: [payloadsallthethings-reverseproxy, orange-confusion-attacks]
+date_updated: 2026-07-15
+sources: [payloadsallthethings-reverseproxy, orange-confusion-attacks, hacktricks-web]
 ---
 
 # Reverse Proxy Misconfigurations
@@ -54,6 +54,37 @@ Within one Apache httpd `request_rec`, the fields `r->filename`, `r->handler`, a
 - Handler confusion: coercing `r->handler` / `r->content_type` makes a request run through a different handler, leading to SSRF or RCE (for example forcing a file through a scripting handler or `mod_proxy`).
 
 Patched CVEs: CVE-2024-38472 (UNC SSRF), CVE-2024-39573 (mod_rewrite proxy handler), CVE-2024-38477 (mod_proxy DoS), CVE-2024-38476 (backend output to handler execution). Fixed in httpd 2.4.59/2.4.60. Test: fingerprint httpd version, probe `RewriteRule` behaviour, encoded path segments, and handler/content-type coercion.
+
+## HTTP Connection Contamination (first-request routing)
+Browsers coalesce a single HTTP/2+ connection across hostnames that share an IP and a TLS cert
+(commonly a wildcard `*.example.com`). If the reverse proxy uses first-request routing (routes the
+whole connection to the back-end chosen by the first request), later requests to a different vhost
+on the coalesced connection are misrouted to the wrong back-end. So a low-value host
+(`wordpress.example.com`) with XSS can be reached by a browser request intended for
+`secure.example.com`, turning a same-site low-severity bug into a cross-service one without MITM.
+
+Test with coalescing observed in Chrome Network tab / Wireshark:
+```javascript
+fetch("//sub1.example.com/", {mode:"no-cors", credentials:"include"}).then(() => {
+  fetch("//sub2.example.com/", {mode:"no-cors", credentials:"include"})
+})
+```
+Preconditions: shared IP + wildcard/multi-SAN cert + first-request routing. Attack surface widens
+under HTTP/3 (relaxes the IP-match requirement). Fix: avoid first-request routing; scope certs.
+
+## Hop-by-hop header abuse
+Hop-by-hop headers apply to a single transport hop and must be stripped by a compliant proxy before forwarding. The standard set is `Connection`, `Keep-Alive`, `TE`, `Trailer`, `Transfer-Encoding`, `Upgrade`, `Proxy-Authorization`, `Proxy-Authenticate`. Critically, the `Connection` header lets a client mark ANY additional header as hop-by-hop. A proxy that honours this but fails to re-add or validate the named header creates a bypass: the backend never sees a header it expected.
+
+```http
+# Force the proxy to drop X-Forwarded-For so the backend treats the request
+# as coming directly from a trusted proxy IP (IP-ACL / geofence bypass)
+GET /admin HTTP/1.1
+Host: target
+Connection: close, X-Forwarded-For
+X-Forwarded-For: 1.2.3.4
+```
+
+Other headers to nominate as hop-by-hop: session/auth headers the backend trusts (`Cookie`, custom `X-Auth-*`), and cache-key headers for cache poisoning (mark a header the cache keys on so it is stripped after the response is stored). Detection: send a request with and without `Connection: close, <header>` and diff the responses; a behaviour change means the proxy is stripping it. Automate with a Burp Intruder sweep over candidate header names.
 
 ## Real-world
 Nginx alias traversal and `X-*-URL` ACL bypass are recurring CVEs/bug-bounty finds; CDN+origin path-normalization differences enable auth bypass and request smuggling ([[http-request-smuggling]]).
