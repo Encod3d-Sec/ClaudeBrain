@@ -15,7 +15,7 @@ without a `poc/` image), GATE 3 (exhausted vector -> `[!]` + one `Deadends.md` l
 ## Standing mandate: Wiki-first, tools-before-scripts (GATE 1, all phases)
 
 This mandate stands over every phase below. Before writing ANY custom script or recalling an exploit from memory:
-1. `qmd_query "<tech/version> exploit"` and `qmd_query "<service> privilege escalation"` via wiki-search MCP. Read matches.
+1. `qmd_query "<tech/version> exploit"` and `qmd_query "<service> privilege escalation"` via wiki-search MCP. Read matches. If the MCP is down (it drops mid-session), run `bash scripts/wiki-query.sh "<tech> exploit"` (same qmd index; `-k` for an exact CVE) - do NOT skip wiki-first or fall back to grep.
 2. Pull payloads from `wiki/payloads/` and chains from `wiki/cheatsheets/attack-chains.md` + `wiki/cheatsheets/cve-arsenal.md`, or `Skill(arsenal)` to resolve the exact file.
 3. Privesc reference: `wiki/techniques/linux/linux-privesc.md` / `wiki/cheatsheets/linux-privesc.md` (or windows-privesc).
 Only after the wiki has nothing do you write a custom PoC. Do not reinvent what the wiki already documents.

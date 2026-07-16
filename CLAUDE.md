@@ -74,8 +74,10 @@ in context. On every engagement, run each step in order, do not skip under momen
 1. **Wiki-first.** Before exploiting a fingerprinted service/class, consult the wiki for it -
    fastest path is `Skill(wiki-arsenal)` (parallel lookup across techniques/payloads/tools/cheatsheets;
    say "deep" for the 4-agent synthesized card), or directly `qmd_query`/`qmd_search` via the
-   `wiki-search` OR `caveman-shrink` MCP (same index), the `qmd` CLI, or `Read` the `wiki/` page.
-   MCP-independent: if one path is down, use another; never skip it.
+   `wiki-search` OR `caveman-shrink` MCP (same index), or `Read` the `wiki/` page.
+   MCP-independent: if the MCP is down (it has dropped mid-session on multiple engagements), run
+   `bash scripts/wiki-query.sh "<tech> exploit"` (semantic; `-k` for an exact CVE/tool string) - it
+   wraps the SAME qmd index. If one path is down, use another; NEVER degrade to ad-hoc grep or skip it.
 2. **Tools, not hand-rolls.** Reach for the installed tool (nmap/ffuf/nuclei/httpx/nxc/sqlmap/borg/...),
    never a hand-rolled `curl`/`/dev/tcp` loop; if none fits, say why in one line. Enumerate NON-STANDARD
    installed tools (borg/borgmatic/restic/duplicity, backup + secret managers) as a loot/privesc lead -
@@ -181,6 +183,7 @@ ClaudeBrain/
 │   └── auto-triggers.md         <- what auto-fires (hooks, triggers.json, playbook) and when
 ├── scripts/                     <- automation (self-documenting via docstrings): next_move,
 │                                   status.py (on-demand engagement dashboard: phase/counts/evidence/deadends/moves),
+│                                   wiki-query.sh (qmd CLI wiki-first fallback when the MCP drops),
 │                                   find-lint, lint-wiki, lint-md-tables.py (GFM table integrity), gen_index, build_moc, cve_feed, freshness,
 │                                   check-hooks, check-leaks.sh, trigger-stats, wordlist-* (+wordlists/),
 │                                   shot.py, capture.sh (one entrypoint, modes: ev=live cmd+url card / req=curl
