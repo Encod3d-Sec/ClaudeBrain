@@ -8,10 +8,11 @@ date_updated: <DATE>
 
 # PoC - <ENGAGEMENT>
 
-Copy-paste proof of concept. Builds up automatically as findings are captured: every rendered
-evidence card (recon scan, page/source, lead, request/response) is appended below with its
-image on top, the `sh` command, and the full response. Curate/reorder for the final report.
+Optional curated proof-of-concept roll-up for the report. Evidence images are captured live
+into `poc/*.png` via `capture.sh` (ev/req/tmux/burp) the moment each step lands, and
+`scripts/build-walkthrough.py` populates the walkthrough.md `## Evidence` gallery from them.
+Curate a separate report narrative here by hand if you want one distinct from the walkthrough.
 
 ## Findings
-<!-- POC-AUTO: the loop-driver drain appends a card section here as each renders, keyed by
-filename so it is idempotent. Keep this POC-AUTO marker or the auto-build stops. -->
+<!-- POC-AUTO: legacy marker (the auto-render drain was retired). Add evidence rows here by
+hand: image on top, the `sh` command, the response. -->

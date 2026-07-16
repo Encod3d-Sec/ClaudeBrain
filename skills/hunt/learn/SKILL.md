@@ -150,7 +150,7 @@ marker. Report what promoted, what was refused, and why.
 python3 scripts/lint-wiki.py -q        # must be clean (broken links, stale index)
 # only if a NEW page was created:
 python3 scripts/gen_index.py && python3 scripts/build_moc.py && qmd update
-touch targets/$ENG/.learn-done         # self-clears the loop-driver learn gate
+touch targets/$ENG/.learn-done         # marks this engagement's learn pass done
 ```
 Log one GENERIC line to `session/log.md` (e.g. "learn: promoted 3 -> jwt-attacks,
 default-credentials") and an audit line to `targets/$ENG/log.md`. Never put a client

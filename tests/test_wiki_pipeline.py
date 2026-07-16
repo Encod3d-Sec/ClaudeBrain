@@ -353,23 +353,18 @@ def test_exploit_script_preservation_step_present():
                 assert "—" not in line, "em-dash found in %s: %r" % (path, line)
 
 
-def test_auto_combined_page_evidence_documented():
-    """Lock-in for the auto-combined page evidence docs update: an in-scope HTML GET
-    page is now auto-captured as a COMBINED card (chromium page render stacked on the
-    curl request/response card) to targets/<eng>/poc/pages/, with zero hand-capture.
-    Both ctf-box and screenshot must document the poc/pages token. New lines must not
-    carry a U+2014 em-dash."""
-    skills = (
-        os.path.join(REPO, "skills", "hunt", "ctf-box", "SKILL.md"),
-        os.path.join(REPO, "skills", "hunt", "screenshot", "SKILL.md"),
-    )
-    for path in skills:
-        text = open(path, encoding="utf-8").read()
-        assert "poc/pages" in text, "%s missing the poc/pages auto-capture step" % path
-
-        for line in text.splitlines():
-            if "poc/pages" in line:
-                assert "—" not in line, "em-dash found in %s: %r" % (path, line)
+def test_ctfbox_reframed_on_kill_chain_phases():
+    """The ctf-box spine is the four cyber-kill-chain phases; it anchors on the
+    killchain.md board, checks /opt/arsenal first, and captures evidence via capture.sh.
+    The privesc discipline (pspy + linpeas) and exploit-script preservation are kept."""
+    text = open(os.path.join(REPO, "skills", "hunt", "ctf-box", "SKILL.md"), encoding="utf-8").read()
+    for phase in ("Recon", "Weaponize", "Deliver", "Exploit"):
+        assert phase in text, "ctf-box missing kill-chain phase: %s" % phase
+    assert "killchain.md" in text
+    assert "/opt/arsenal" in text
+    assert "capture.sh" in text
+    assert "pspy" in text and "linpeas" in text
+    assert "poc/scripts" in text
 
 
 def test_walkthrough_skill_exists_and_carries_required_steps():

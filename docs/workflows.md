@@ -36,8 +36,8 @@ When the user drops a CVE writeup, blog post, or advisory into `raw/research/`, 
 At close-out of a completed box/bugbounty/pentest/CTF, harvest the GENERIC knowledge the
 engagement produced that the wiki does not already have. This is the mirror image of
 research ingest (external source -> wiki): the source here is the finished engagement.
-Use `Skill(learn)`; it auto-fires via the loop-driver once the engagement is `SOLVED`
-and its walkthrough is assembled.
+Use `Skill(learn)` at close-out, once the engagement is `SOLVED` and its walkthrough is
+assembled.
 
 1. **Inventory** what the engagement taught from `state/loot/paths/killchain/Deadends/
    Vuln-index/walkthrough/hot/log`.

@@ -9,10 +9,9 @@ Turn the text walkthrough into evidence. Capture runs on the **Kali tooling host
 route to in-scope targets); the PNG is then pulled into the vault under `targets/<eng>/poc/`. Driver:
 `scripts/shot.py` (chromium headless). For redaction-before-report use `Skill(evidence)`.
 
-**Two evidence dirs.** `poc/` = the curated story you choose to show (login, the exploited state, the
-flag) - everything this skill captures by hand lands here. `recon/` = the auto-captured firehose of
-scan-tool cards (nmap/ffuf/nuclei/nxc/linpeas/pspy) the Stop-hook drain fills on its own; pull the ones
-worth keeping into the `## Evidence` gallery, ignore the rest.
+**One evidence dir, captured by hand.** `poc/` = the curated story you choose to show (login, the
+exploited state, the flag). ALL PoC evidence is now captured MANUALLY and LIVE via `capture.sh` straight
+into `poc/` the moment a step lands - there is no auto-capture net.
 
 ## Scope check
 Only screenshot **in-scope** hosts (read `targets/<eng>/scope.md`). On `passive_only` RoE a screenshot
@@ -51,17 +50,11 @@ The card shows `$ <cmd-label>` in the title bar AND `<request-url>` in a browser
 required) so every image says what was run and where. Use the manual `shot.py` calls below only for the
 modes `capture.sh ev` does not wrap (a live web page, a `--tmux` scan tab, a GUI `--window`/`--screen`).
 
-## Request/response leads: automatic capture + `capture.sh req`
+## Request/response leads: `capture.sh req`
 The highest-value CTF/pentest evidence is the **real curl request and response** for a lead (creds, a
-flag, a leaked source) - presentable as full-file PoC. Two live mechanisms, so a lead is never missed:
+flag, a leaked source) - presentable as full-file PoC. Capture it deliberately, the moment the lead lands:
 
-**Automatic (the net, no action needed):** when a `curl`/`wget` to an in-scope target returns a lead
-signal (credential/key/flag/leaked source/dir-listing), the `recon-capture.py` hook auto-stages a
-request+response card to `targets/<eng>/poc/leads/` and the Stop-hook drain renders it. This is why
-leads get captured even mid-exploit. Curate the good ones into the walkthrough; if a plain `curl` (no
-`-i/-v`) fired it, the hook nudges you to re-capture the full headers with `capture.sh req`.
-
-**Deliberate + full fidelity (`capture.sh req`):** for a request you want as a clean PoC (request line +
+**Full fidelity (`capture.sh req`):** for a request you want as a clean PoC (request line +
 headers + body, response status + headers + body), run it through the `req` mode - it runs `curl -sS -iv`,
 colors the request(`>`)/response(`<`) Burp-style, and pulls the PNG into `poc/`:
 ```bash
@@ -71,15 +64,6 @@ For a **crypto-forged** request (envelope/signature), give the exploit script a 
 the forged body to a file and prints the `capture.sh req` args, so the PoC is a reproducible curl, not
 "run my python". Never settle for a script-summary card (`POST https://T/login` + python output) when the
 real curl request/response is the artifact a client / writeup needs.
-
-## Page evidence: also automatic now (`poc/pages`)
-An in-scope HTML GET is covered by the same net: `recon-capture.py` stages the page and the loop-driver
-Stop-drain renders it as ONE COMBINED card, the chromium browser render of the page stacked on TOP of
-the curl request/response card underneath, landing in `targets/<eng>/poc/pages/*.png`. No manual
-screenshot step is needed for a normal in-scope page GET (same pattern as the `poc/leads/` and `recon/`
-auto-capture above). This skill's DELIBERATE capture is for what that auto path does NOT cover:
-authenticated/exploited states (post-login dashboard, the vuln firing, the flag page) and the
-narrative `capture.sh tmux`/`--tmux` real-session cards, not a plain in-scope page GET.
 
 ## Real tmux-session cards: `capture.sh tmux`
 When the evidence should look like an ACTUAL Kali terminal session (real commands + real output, the way
@@ -129,12 +113,9 @@ bash /root/vm.sh 'curl -s http://T/logs/app.log > /tmp/l.txt;
 `--maxlines` (default 120) caps long output (linpeas); the card auto-sizes to wrapped rows so a long
 obfuscated-JS line does not crop the reveal. Then pull the PNG into `poc/` like the web shots above.
 
-**Auto catch-all:** actually INVOKING nmap/ffuf/nuclei/nxc/linpeas/pspy at command position (a poll
-loop / `grep` / `cd` that merely *mentions* the name does NOT fire) auto-stages its output
-(`recon-capture.py`); the Stop-hook drain renders those clean (prompt-stripped) to `recon/` and appends
-a row to `recon/.pending/manifest.md`. Pull the rows worth showing into the `## Evidence` gallery.
-Deliberate story shots (the box's arc) still use the calls above and land in `poc/`. Scans you run
-detached in a tmux tab (`vm-scan.sh`) don't return output to the response, so capture those live with
+**No auto catch-all:** scan output is NOT auto-captured - screenshot the scans worth showing yourself,
+and they land in `poc/` like every other deliberate story shot (the box's arc). Scans you run detached in
+a tmux tab (`vm-scan.sh`) don't return output to the response, so capture those live with
 `--tmux <eng>:<tab>` once the pane has output.
 
 ## Run scans in tmux + capture them (nmap/ffuf/nuclei live)
