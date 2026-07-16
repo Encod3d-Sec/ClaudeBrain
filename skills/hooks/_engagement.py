@@ -20,14 +20,14 @@ TARGETS = os.path.join(VAULT, "targets")
 # Templates live OUTSIDE targets/ (which is git-ignored) so they ship with the
 # shareable repo. Engagement instances stay private under targets/.
 TEMPLATES = os.path.join(VAULT, "setup", "templates")
-STATE_FILES = ("state.md", "loot.md", "paths.md")
+STATE_FILES = ("state.md", "loot.md", "paths.md", "killchain.md")
 TYPES = ("pentest", "bugbounty", "ctf")
 # entity identifier columns by engagement type. Defined once here; next_move and
 # coverage both import it so the mapping cannot drift between the two analyzers.
 ENTITY_KEY = {"pentest": ("host", "ip"), "ctf": ("target",), "bugbounty": ("asset", "url")}
 
-# Per-engagement-type heal set. state/loot/paths (STATE_FILES) come from the type's
-# own template dir and are healed for every type. The shared type-agnostic files
+# Per-engagement-type heal set. state/loot/paths/killchain (STATE_FILES) come from the
+# type's own template dir and are healed for every type. The shared type-agnostic files
 # split into a common core (every type) and a pentest/bugbounty-only extension
 # (coverage/Vuln-index/oob). CTF rooms never use the severity/OOB/coverage machinery
 # (dead across every THM room), so ctf heals only the core; those three become

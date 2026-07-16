@@ -56,6 +56,27 @@ def test_ensure_state_files_creates_missing(vault, monkeypatch):
     assert (eng / "ingest").is_dir()
 
 
+def test_state_files_includes_killchain():
+    assert "killchain.md" in _engagement.STATE_FILES
+
+
+def test_killchain_healed_for_every_type(vault, monkeypatch):
+    for etype in ("ctf", "pentest", "bugbounty"):
+        eng = vault / "targets" / ("kc_" + etype)
+        os.makedirs(eng)
+        (eng / "state.md").write_text(
+            "---\ntype: engagement-state\nengagement_type: %s\n---\n" % etype, encoding="utf-8")
+        monkeypatch.setattr(_engagement, "active_dir", lambda e=eng: str(e))
+        _engagement.ensure_state_files()
+        board = eng / "killchain.md"
+        assert board.exists()
+        text = board.read_text()
+        assert "Kill-Chain Board" in text
+        assert "engagement_type: %s" % etype in text
+        assert "<ENGAGEMENT>" not in text and "<DATE>" not in text
+        assert "GATE 1 (wiki)" in text
+
+
 def test_scope_parse(vault):
     (vault / "targets" / "acme" / "scope.md").write_text(
         "---\ntype: engagement-scope\nno_bruteforce: true\npassive_only: false\n---\n\n"

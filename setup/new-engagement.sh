@@ -111,8 +111,9 @@ TODAY="$(date +%F)"
 # scan cards; ingest/ = raw tool output. Vulns/ is created lazily on the first FIND.
 mkdir -p "$DEST/ingest" "$DEST/recon" "$DEST/poc"
 
-# state/loot/paths from the type's own template dir (per-type columns)
-for f in state loot paths; do
+# state/loot/paths/killchain from the type's own template dir (per-type columns).
+# Keep in sync with STATE_FILES in skills/hooks/_engagement.py.
+for f in state loot paths killchain; do
   sub "$TPL/$f.md" "$NAME" "$TODAY" "$DEST/$f.md"
 done
 # shared core, healed for EVERY type (SHARED_CORE in _engagement.py)
@@ -146,7 +147,7 @@ sub "$VAULT/setup/templates/_deadends.md" "$NAME" "$TODAY" "$DEST/Deadends.md"
 
 printf '%s\n' "$NAME" > "$VAULT/targets/active.md"
 
-FILES="state, loot, paths, log, scope, walkthrough, Deadends"
+FILES="state, loot, paths, killchain, log, scope, walkthrough, Deadends"
 [ "$WITH_COV" = 1 ] && FILES="$FILES, coverage"
 [ "$WITH_OOB" = 1 ] && FILES="$FILES, oob"
 [ "$TYPE" != "ctf" ] && FILES="$FILES, Vuln-index"
