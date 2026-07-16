@@ -40,9 +40,9 @@ SHARED_CORE = (("log.md", "_log.md"), ("scope.md", "_scope.md"),
 SHARED_FULL = (("Vuln-index.md", "_vuln-index.md"),
                ("oob.md", "_oob.md"))
 # Standard dirs scaffolded for every type. poc/ = curated exploit/PoC/flag shots,
-# recon/ = auto scan-tool cards, ingest/ = raw tool output. Vulns/ is intentionally
-# absent: it is created lazily on the first FIND (pentest/bugbounty), never at init.
-STATE_DIRS = ("ingest", "recon", "poc")
+# ingest/ = raw tool output. Vulns/ is intentionally absent: it is created lazily on
+# the first FIND (pentest/bugbounty), never at init.
+STATE_DIRS = ("ingest", "poc")
 
 
 def _heal_shared_set(etype):

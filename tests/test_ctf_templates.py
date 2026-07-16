@@ -39,8 +39,9 @@ def test_ensure_ctf_heals_lean_set(vault, monkeypatch):
         assert f in created and (eng / f).exists()
     assert "Kill-Chain Board" in (eng / "killchain.md").read_text()
     assert "hot.md" not in created and not (eng / "hot.md").exists()   # removed
-    for dsub in ("ingest/", "recon/", "poc/"):
+    for dsub in ("ingest/", "poc/"):
         assert dsub in created
+    assert "recon/" not in created and not (eng / "recon").exists()   # auto firehose retired
     assert (eng / "poc").is_dir()
     for f in ("oob.md", "coverage.md", "Vuln-index.md"):
         assert f not in created and not (eng / f).exists()
@@ -118,8 +119,9 @@ def test_new_engagement_ctf_lean(eng_vault):
         assert (d / f).exists()
     assert "Kill-Chain Board" in (d / "killchain.md").read_text()
     assert not (d / "hot.md").exists()   # per-engagement hot.md removed
-    for sub in ("ingest", "recon", "poc"):
+    for sub in ("ingest", "poc"):
         assert (d / sub).is_dir()
+    assert not (d / "recon").exists()   # auto firehose retired
     for f in ("oob.md", "coverage.md", "Vuln-index.md"):
         assert not (d / f).exists()
     assert (eng_vault / "targets" / "active.md").read_text().strip() == "room"

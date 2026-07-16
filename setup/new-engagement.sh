@@ -106,9 +106,9 @@ TODAY="$(date +%F)"
 [ -d "$TPL" ] || { echo "template missing: $TPL"; exit 1; }
 [ -e "$DEST" ] && { echo "already exists: $DEST"; exit 1; }
 
-# poc/ is scaffolded for ALL types (curated exploit/PoC/flag shots); recon/ = auto
-# scan cards; ingest/ = raw tool output. Vulns/ is created lazily on the first FIND.
-mkdir -p "$DEST/ingest" "$DEST/recon" "$DEST/poc"
+# poc/ is scaffolded for ALL types (curated exploit/PoC/flag shots); ingest/ = raw
+# tool output. Vulns/ is created lazily on the first FIND.
+mkdir -p "$DEST/ingest" "$DEST/poc"
 
 # state/loot/paths/killchain from the type's own template dir (per-type columns).
 # Keep in sync with STATE_FILES in skills/hooks/_engagement.py.
@@ -148,7 +148,7 @@ printf '%s\n' "$NAME" > "$VAULT/targets/active.md"
 FILES="state, loot, paths, killchain, log, scope, walkthrough, Deadends"
 [ "$WITH_OOB" = 1 ] && FILES="$FILES, oob"
 [ "$TYPE" != "ctf" ] && FILES="$FILES, Vuln-index"
-echo "created $TYPE engagement: targets/$NAME/ ($FILES, ingest/, recon/, poc/)"
+echo "created $TYPE engagement: targets/$NAME/ ($FILES, ingest/, poc/)"
 echo "fill targets/$NAME/scope.md with in/out-of-scope + RoE before testing (or pass --scope <host> next time)."
 echo "active engagement set to: $NAME"
 echo "drop raw recon output into targets/$NAME/ingest/ then run the ingest skill."

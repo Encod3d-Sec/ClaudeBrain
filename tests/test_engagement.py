@@ -60,6 +60,11 @@ def test_state_files_includes_killchain():
     assert "killchain.md" in _engagement.STATE_FILES
 
 
+def test_recon_dir_not_scaffolded():
+    assert "recon" not in _engagement.STATE_DIRS
+    assert "ingest" in _engagement.STATE_DIRS and "poc" in _engagement.STATE_DIRS
+
+
 def test_killchain_healed_for_every_type(vault, monkeypatch):
     for etype in ("ctf", "pentest", "bugbounty"):
         eng = vault / "targets" / ("kc_" + etype)
