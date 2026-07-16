@@ -6,7 +6,7 @@
 - Injects the active-engagement summary, scope, OOB HITs, and the kill-chain board
   status (current phase + open/deadend counts) so you re-orient to the board.
 - Collapses the per-item maintenance nags (wordlist / wiki-candidate / hook-drift /
-  skill-drift / wiki-freshness) into one compact `harness:` line, silent at zero.
+  skill-drift / wiki-freshness / md-tables) into one compact `harness:` line, silent at zero.
 - Keeps wiki/index.md fresh (scripts/gen_index.py, idempotent) only when the wiki
   actually changed since last session.
 - Surfaces the active research project's loop state (scripts/research_status.py).
@@ -105,6 +105,21 @@ def harness_maintenance():
             tags.append("hook-drift: " + ",".join(miss) + " (install-hooks.sh)")
         if _ch.missing_skills():
             tags.append("skill-drift (install-skills.sh)")
+    except Exception:
+        pass
+    try:
+        import importlib.util
+        import _engagement
+        _lmt_path = os.path.join(_engagement.VAULT, "scripts", "lint-md-tables.py")
+        _spec = importlib.util.spec_from_file_location("lint_md_tables", _lmt_path)
+        _lmt = importlib.util.module_from_spec(_spec)
+        _spec.loader.exec_module(_lmt)
+        d = _engagement.active_dir()
+        if d:
+            broken = _lmt.lint_paths([d])
+            if broken:
+                tags.append("md-tables:%d broken (lint-md-tables.py %s)"
+                            % (len(broken), os.path.basename(d.rstrip("/"))))
     except Exception:
         pass
     return tags

@@ -91,6 +91,10 @@ if not has("PreCompact", "pre-compact.sh"):
     add("PreCompact", {"hooks": [{"type": "command",
         "command": "bash ~/.claude/vault-hooks/pre-compact.sh"}]})
     print("added PreCompact pre-compact")
+if not has("Stop", "close-out.py"):
+    add("Stop", {"hooks": [{"type": "command",
+        "command": "python3 ~/.claude/vault-hooks/close-out.py", "timeout": 10}]})
+    print("added Stop close-out")
 
 json.dump(d, open(p, "w"), indent=1)
 json.load(open(p))  # validate

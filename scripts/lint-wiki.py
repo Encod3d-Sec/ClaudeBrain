@@ -96,7 +96,11 @@ def check_dead_scriptrefs():
         if os.path.isfile(r):
             files.append(r)
         elif os.path.isdir(r):
-            for dp, _, fs in os.walk(r):
+            for dp, dirs, fs in os.walk(r):
+                # docs/superpowers/ is the gitignored planning workspace: specs/plans name
+                # scripts they propose to DELETE, so they legitimately reference removed
+                # scripts. Skip it so the dead-ref check reflects only shipping references.
+                dirs[:] = [d for d in dirs if d != "superpowers"]
                 files += [os.path.join(dp, f) for f in fs if f.endswith((".md", ".py", ".sh"))]
     for path in files:
         text = open(path, encoding="utf-8", errors="ignore").read()

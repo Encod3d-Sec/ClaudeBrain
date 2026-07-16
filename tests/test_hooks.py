@@ -557,6 +557,33 @@ def test_gate1_fires_once(vault):
     assert "GATE 1" not in out
 
 
+def test_close_out_nudges_walkthrough_when_solved_stale(vault):
+    # SOLVED state + no walkthrough.md (stale) -> Stop hook nudges to run walkthrough
+    eng = vault / "targets" / "acme"
+    (eng / "state.md").write_text(
+        (eng / "state.md").read_text() + "\n## STATUS: SOLVED\n", encoding="utf-8")
+    out = run_hook("close-out.py", {}, _env(vault)).stdout
+    assert "Close-out" in out and "walkthrough" in out.lower()
+
+
+def test_close_out_silent_when_not_solved(vault):
+    out = run_hook("close-out.py", {}, _env(vault)).stdout
+    assert out.strip() == ""
+
+
+def test_close_out_nudges_learn_when_walkthrough_done(vault):
+    # SOLVED + a real (non-stale) walkthrough + no .learn-done -> nudge to run learn
+    eng = vault / "targets" / "acme"
+    (eng / "state.md").write_text(
+        (eng / "state.md").read_text() + "\n## STATUS: SOLVED\n", encoding="utf-8")
+    (eng / "walkthrough.md").write_text(
+        "# Walkthrough - acme\n\n## 1. Recon\nran nmap, found ssh + web\n\n"
+        "## Evidence\n| shot | caption |\n|------|---------|\n| ![](poc/01.png) | login |\n",
+        encoding="utf-8")
+    out = run_hook("close-out.py", {}, _env(vault)).stdout
+    assert "Close-out" in out and "learn" in out.lower()
+
+
 def test_engagement_init_surfaces_wiki_candidates(vault):
     inbox = vault / "targets" / "acme" / "wiki-candidates"
     inbox.mkdir()

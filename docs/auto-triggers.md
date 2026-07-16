@@ -24,8 +24,9 @@ This page is a snapshot; regenerate the tables from those files if they change.
 | **PreToolUse (Write)** | `session-guard.py` | Warns when a write would put a client marker into a generic `session/*` file. |
 | **PostToolUse (Bash)** | `recon-capture.py` | Fingerprint auto-route (to the hunt Skill) + OOB callback correlation + a once-per-engagement GATE-1 wiki-first nudge (exploit-shaped command while `killchain.md` Weaponize is undone). A framework-meta guard suppresses false fires. Advisory. |
 | **PreCompact** | `pre-compact.sh` | Reminds to persist state (`gsd:pause-work`) before context compacts. |
+| **Stop** | `close-out.py` | Close-out reflex: when the engagement is SOLVED but its walkthrough is unassembled (or the learn harvest is due), nudges Skill(walkthrough) then Skill(learn). Advisory, self-clearing. |
 
-All 7 hooks inject context, route to a skill, or fire a deterministic safety guard; none prescribes methodology, blocks the model, or silently runs a tool, and all fail open. Canonical set: `scripts/check-hooks.py` `EXPECTED_HOOKS`.
+All 8 hooks inject context, route to a skill, or fire a deterministic safety guard; none prescribes methodology, blocks the model, or silently runs a tool, and all fail open. Canonical set: `scripts/check-hooks.py` `EXPECTED_HOOKS`.
 
 ---
 

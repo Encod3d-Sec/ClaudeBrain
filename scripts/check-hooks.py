@@ -36,6 +36,7 @@ EXPECTED_HOOKS = [
     ("PreToolUse", "scope-guard.py"),
     ("PreToolUse", "session-guard.py"),
     ("PreCompact", "pre-compact.sh"),
+    ("Stop", "close-out.py"),
 ]
 
 

@@ -41,7 +41,14 @@ nmap -p- --min-rate 2000 -T4 -Pn $T -oN nmap-all.txt
 nmap -sCV -p<found> -Pn $T -oN nmap-svc.txt
 nc -nv $T <port>                 # manual banner / custom-proto services (chatbots, etc.)
 dig any @$T <domain>; dig axfr @$T <domain>   # DNS if 53 open / vhost hints
-# Web (per http port):
+# --- WEB SERVICE FOUND -> do ALL of this; do NOT skip web enum to jump to the "obvious" path (password-audit box lesson):
+#  (a) CAPTURE IT AS-IS FIRST, before poking: screenshot the rendered page (Skill(screenshot)) AND save the
+#      raw HTML source to poc/ (the site as it was) -- capture.sh ev / curl -s > poc/<slug>-source.html.
+#  (b) LAUNCH THE SCANNERS IN PARALLEL -- each runs for MINUTES, so ONE tmux tab each, do not wait serially:
+#        scripts/vm-scan.sh <eng> <T>-ffuf 'ffuf ...'   ;   scripts/vm-scan.sh <eng> <T>-nuclei 'nuclei -u http://$T'
+#      whatweb + curl -I are quick (inline). Analyse the page/source WHILE ffuf+nuclei run in the background.
+#      NEVER conclude "no web vuln / no hidden route" until ffuf AND nuclei have actually run AND been read.
+# Web (per http port) -- the scans you launch in those tmux tabs:
 ffuf -u http://$T/FUZZ -w scripts/wordlists/harness-paths.txt -e .php,.py,.html,.txt -mc 200,301,302,401,403 -ac   # OUR high-signal list FIRST (non-obvious routes the big lists bury: /internal,/health,/customapi...)
 ffuf -u http://$T/FUZZ -w /usr/share/seclists/Discovery/Web-Content/ractf-medium.txt -ac      # then the big list
 ffuf -u "http://$T/?FUZZ=x" -w scripts/wordlists/harness-params.txt -fs <baseline>            # param mining (SSRF/LFI/cmdi names)
