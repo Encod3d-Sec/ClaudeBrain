@@ -375,9 +375,10 @@ def test_auto_combined_page_evidence_documented():
 def test_walkthrough_skill_exists_and_carries_required_steps():
     """Lock-in for the walkthrough auto-assembly skill: it must exist, name itself in
     frontmatter, carry the '## STATUS: SOLVED' close-out convention, the
-    scripts/build-walkthrough.py scaffold+gallery step, and the synchronous
-    (foreground, not the detached auto-drain) render step. ASCII only, no em-dash, and
-    image-free (no markdown image embeds -- vault skill docs never carry images)."""
+    scripts/build-walkthrough.py scaffold+gallery step, and the live capture.sh
+    evidence reference (evidence is captured into poc/ during the engagement, not
+    rendered from a staged drain). ASCII only, no em-dash, and image-free (no markdown
+    image embeds -- vault skill docs never carry images)."""
     path = os.path.join(REPO, "skills", "walkthrough", "SKILL.md")
     assert os.path.isfile(path), "skills/walkthrough/SKILL.md is missing"
     text = open(path, encoding="utf-8").read()
@@ -385,7 +386,7 @@ def test_walkthrough_skill_exists_and_carries_required_steps():
     assert "name: walkthrough" in text
     assert "STATUS: SOLVED" in text
     assert "build-walkthrough.py" in text
-    assert "--drain" in text                      # synchronous foreground drain, not the detached auto-drain
+    assert "capture.sh" in text                    # live evidence capture into poc/ (no staged drain)
     assert "poc/scripts" in text                   # exploit-script preservation step
 
     assert "![" not in text, "skill doc must stay image-free"
