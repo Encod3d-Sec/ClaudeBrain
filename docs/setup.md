@@ -17,7 +17,7 @@ VAULT="<vault-root>"   # e.g. /mnt/c/Users/<you>/Documents/ObsidianVaults/Claude
 ln -sf "$VAULT/skills/hooks" ~/.claude/vault-hooks
 ```
 
-Then register the vault hook set in `~/.claude/settings.json` (`bash setup/install-hooks.sh` does this for you; the canonical set spans 6 events -- see below). On a new machine, re-running `bash setup/bootstrap.sh` handles both steps automatically.
+Then register the vault hook set in `~/.claude/settings.json` (`bash setup/install-hooks.sh` does this for you; the canonical set spans 5 events -- see below). On a new machine, re-running `bash setup/bootstrap.sh` handles both steps automatically.
 
 ## Engagement-state automation (both machines)
 
@@ -40,7 +40,7 @@ bash setup/install-hooks.sh    # symlinks ~/.claude/vault-hooks + registers the 
 - **UserPromptSubmit** -- `hunt-trigger.py` (fires hunt skills from `skills/hunt/triggers.json`).
 - **PreToolUse (Bash)** -- `scope-guard.py` (scope / RoE / dead-end guard).
 - **PreToolUse (Write)** -- `session-guard.py` (client-marker leak guard).
-- **PostToolUse (Bash)** -- `recon-capture.py` (fingerprint router + capture nudge + OOB correlation + pending-test marker).
+- **PostToolUse (Bash)** -- `recon-capture.py` (fingerprint router + OOB callback correlation; a framework-meta guard suppresses false fires; routing only).
 - **PreCompact** -- `pre-compact.sh` (persist state before compaction).
 
 **Hooks self-locate the vault** via `realpath(__file__)` through the `~/.claude/vault-hooks` symlink -- no hardcoded paths, so the same code runs unmodified on every device.

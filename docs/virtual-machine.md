@@ -62,7 +62,7 @@ unlocks via `loginctl unlock-session`, wakes with `xset dpms force on`, and grab
 user with `XAUTHORITY` (a bare `scrot` as root-over-SSH fails with "Can't open X display").
 Install the deps once with `bash scripts/vm-provision.sh` (also run by `setup/bootstrap.sh`).
 This installs the screenshot/tmux capture deps AND the recon + test toolchain the
-recon-capture nudges point at (apt-first; `bash scripts/vm-provision.sh --list` prints the set,
+fingerprint router routes to (apt-first; `bash scripts/vm-provision.sh --list` prints the set,
 and the final line prints a verify one-liner). It is per-package tolerant, so a name that is not
 in your Kali release's repo is reported `MISS` rather than aborting the run.
 

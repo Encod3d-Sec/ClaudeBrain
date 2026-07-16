@@ -20,7 +20,7 @@ This mandate stands over every phase below. Before writing ANY custom script or 
 3. Privesc reference: `wiki/techniques/linux/linux-privesc.md` / `wiki/cheatsheets/linux-privesc.md` (or windows-privesc).
 Only after the wiki has nothing do you write a custom PoC. Do not reinvent what the wiki already documents.
 
-**Tooling home:** check `/opt/arsenal` first for pspy/linpeas/shot/capture; if a needed helper is missing, `bash scripts/vm-sync.sh <name>` pushes it there from the vault.
+**Tooling home:** check `/opt/arsenal` first for pspy/linpeas/shot/capture. pspy64/linpeas/winPEAS live in `/opt/arsenal`, seeded by `vm-provision.sh` from their GitHub releases; our own helpers (`shot.py`, `capture.sh`) are pushed on demand by `bash scripts/vm-sync.sh <name>` from the vault.
 
 **Anti-pattern:** a raw one-shot `bash /root/vm.sh '<exploit>'` (or an inline `node -e`/`python3 -c` payload through it) for a listener, shell, or chained exploit is the smell this mandate exists to catch -- it skips wiki-first and leaves no session to capture. Run persistent/interactive steps in their own named tmux tab instead: `scripts/vm-scan.sh <eng> <target> '<cmd>'`.
 

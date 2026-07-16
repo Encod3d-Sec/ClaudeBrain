@@ -61,7 +61,7 @@ SECTIONS = (
     "## Rabbit holes (skip on redo)",
 )
 
-NO_EVIDENCE = "_No rendered evidence found yet - run the engagement so the drain renders cards._"
+NO_EVIDENCE = "_No rendered evidence found yet - capture evidence live into poc/ via `capture.sh` (ev/req/tmux/burp)._"
 
 _MANIFEST_ROW = re.compile(r"^\|\s*!\[\]\(([^)]+)\)\s*\|\s*(.*?)\s*\|\s*$")
 _LEADING_SEQ = re.compile(r"^\d+-")

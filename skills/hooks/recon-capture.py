@@ -36,65 +36,6 @@ MAX_BLOB = 20000   # cap output scanned for fingerprints
 MAX_HITS = 3
 
 
-# hunt-<x> skill -> wiki/payloads/<file>.md. Most map by stripping "hunt-"; the alias
-# map covers the names that differ from the payload filename.
-_PAYLOAD_ALIAS = {
-    "auth": "auth-bypass", "injection": "ssti", "upload": "file-upload",
-    "cache": "web-cache", "cloud": "imds-cloud-metadata", "rce": "command-injection",
-    "federation": "oauth-saml", "m365": "oauth-saml", "bizlogic": "race-conditions",
-    "llm": "llm-prompt-injection", "ics": "modbus",
-}
-
-
-def _payload_page(skill):
-    """Relative wiki/payloads path for a hunt skill, or None if no arsenal file exists."""
-    try:
-        base = skill[5:] if skill.startswith("hunt-") else skill
-        name = _PAYLOAD_ALIAS.get(base, base)
-        import _engagement
-        rel = os.path.join("wiki", "payloads", name + ".md")
-        if os.path.exists(os.path.join(_engagement.VAULT, rel)):
-            return rel
-    except Exception:
-        pass
-    return None
-
-
-def _label_payload_pages(label):
-    """wiki/payloads pages whose filename exactly matches an alnum token (>=3 chars) in
-    the fingerprint label. Catches specific sub-classes the coarse skill->payload map
-    misses (graphql/jwt/ldap/xxe/nosql/xpath/cors/csrf/...). Existence-guarded."""
-    out = []
-    try:
-        import _engagement
-        for tok in re.findall(r"[a-z0-9]{3,}", (label or "").lower()):
-            rel = os.path.join("wiki", "payloads", tok + ".md")
-            if rel not in out and os.path.exists(os.path.join(_engagement.VAULT, rel)):
-                out.append(rel)
-    except Exception:
-        pass
-    return out
-
-
-# tool-name -> tools/ page basename, where the invoked binary differs from the page
-_TOOL_ALIAS = {"crackmapexec": "netexec", "cme": "netexec"}
-
-
-def _tool_page(tool):
-    """Relative wiki/tools path for a tool name (alias-aware), or None."""
-    if not tool:
-        return None
-    name = _TOOL_ALIAS.get(tool.lower(), tool.lower())
-    try:
-        import _engagement
-        rel = os.path.join("wiki", "tools", name + ".md")
-        if os.path.exists(os.path.join(_engagement.VAULT, rel)):
-            return rel
-    except Exception:
-        pass
-    return None
-
-
 # leading wrappers/env-assignments to strip before checking a segment's command
 _WRAP = re.compile(r"^(sudo|env|time|timeout|nice|nohup|stdbuf|doas|proxychains4?)\b", re.I)
 _ASSIGN = re.compile(r"^\w+=\S*")
@@ -272,7 +213,7 @@ def fingerprint_hits(blob):
 # tokens never appear in genuine target recon, so a plain presence check on the command is safe.
 _FRAMEWORK_META = re.compile(
     r"playbook\.json|triggers\.json|wiki-wiring|apply-wiring|wiring-exempt|"
-    r"recon-capture|loop-driver|hunt-trigger|scope-guard|engagement-init|"
+    r"recon-capture|hunt-trigger|scope-guard|engagement-init|"
     r"scripts/(?:playbook|wiki|gen_index|build_moc|wl-add|wiki-stage|check-hooks)|"
     r"skills/hooks|/vault-hooks/", re.IGNORECASE)
 
@@ -314,15 +255,12 @@ def main():
         _engagement = None
         d = None
 
-    # Skip pure documentation/discussion commands (a comment, echo, a cat/grep/rg of some
-    # file): they never invoke a probe tool, so there is nothing to fingerprint.
-    if re.match(r"\s*(#|echo\b|printf\b|cat\b|grep\b|rg\b)", cmd, re.IGNORECASE):
-        return
-
     blocks = []
 
-    # 0. OOB callback auto-correlation: flip a waiting oob.md row to HIT when its
-    #    token label appears in this command's output (operator polling OAST/Collaborator).
+    # 0. OOB callback auto-correlation: flip a waiting oob.md row to HIT when its token
+    #    appears in this command's output. Runs on EVERY command, INCLUDING a cat/grep/rg
+    #    poll of a saved OAST/Collaborator log (the most common poll method), so it is
+    #    placed BEFORE the doc-command skip below.
     if d and _engagement:
         blob_oob = cmd + "\n" + _response_text(data)
         flipped = []
@@ -340,29 +278,25 @@ def main():
                 + ". Gate passed: scaffold + validate the FIND now (oob.md row is HIT)."
             )
 
-    # 1. fingerprint router (runs on any discovery/probe command; engagement-agnostic).
-    #    command-position match: the tool must be invoked, not just named in a path/arg.
-    #    Also check inside vm.sh/ssh/wsl bridge wrappers, where the real tool sits inside a
-    #    quoted inner command that invokes() alone (outer cmd only) would miss.
-    #    Skip framework-meta commands: editing/reading the vault's own playbook/wiki/hooks
-    #    emits playbook tokens that would false-fingerprint as a discovered surface.
-    _inners = inner_cmds(cmd)
-    is_probe = invokes(cmd, PROBE_TOOLS) or next(
-        (m for ic in _inners if (m := invokes(ic, PROBE_TOOLS))), None)
-    if is_probe and not _is_framework_meta(cmd):
-        blob = (cmd + "\n" + _response_text(data))[:MAX_BLOB]
-        recs = fingerprint_records(blob)
-        if recs:
-            skills_lines = []
-            for label, spec in recs:
-                sk = spec.get("skills") or []
-                tail = (" -> load " + ", ".join("Skill(%s)" % s for s in sk)) if sk else ""
-                skills_lines.append("  %s detected%s" % (label, tail))
-            blocks.append(
-                "Tech fingerprinted (playbook.json) -> load the hunt Skill named below; it "
-                "carries the wiki-first, tooling-first, tests, and payload steps:\n"
-                + "\n".join(skills_lines)
-            )
+    # 1. fingerprint router. Pure documentation/discussion commands (a comment, echo, a
+    #    cat/grep/rg of some file) never invoke a probe tool, so the router is pointless on
+    #    them -- skip it (OOB correlation above already ran). command-position match: the
+    #    tool must be invoked, not just named in a path/arg; also check inside vm.sh/ssh/wsl
+    #    bridge wrappers. Skip framework-meta commands (editing/reading the vault's own
+    #    playbook/wiki/hooks emits playbook tokens that would false-fingerprint).
+    if not re.match(r"\s*(#|echo\b|printf\b|cat\b|grep\b|rg\b)", cmd, re.IGNORECASE):
+        _inners = inner_cmds(cmd)
+        is_probe = invokes(cmd, PROBE_TOOLS) or next(
+            (m for ic in _inners if (m := invokes(ic, PROBE_TOOLS))), None)
+        if is_probe and not _is_framework_meta(cmd):
+            blob = (cmd + "\n" + _response_text(data))[:MAX_BLOB]
+            lines = fingerprint_hits(blob)
+            if lines:
+                blocks.append(
+                    "Tech fingerprinted (playbook.json) -> load the hunt Skill named below; it "
+                    "carries the wiki-first, tooling-first, tests, and payload steps:\n"
+                    + "\n".join(lines)
+                )
 
     _emit(blocks)
 

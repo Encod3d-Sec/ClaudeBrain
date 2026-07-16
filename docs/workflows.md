@@ -76,7 +76,7 @@ When the user starts working on a target, follow the state-first discipline (ful
    - `loot.md` -- captured credentials + reuse map
    - `paths.md` -- open/blocked attack paths and their next moves
    - `Deadends.md` -- exhausted vectors (do not re-test without new input)
-   - `coverage.md` -- per-asset vuln classes already tested
+   - `killchain.md` -- per-asset vuln classes already tested (the `### 4a` table)
    - `Vuln-index.md` -- confirmed findings and chains; `hot.md` -- rolling session cache
 
 2. **Search wiki before each attack phase:**
@@ -88,7 +88,7 @@ When the user starts working on a target, follow the state-first discipline (ful
    - `state.md` / `loot.md` -- new hosts/services/access + credentials (drop raw tool output in `ingest/` and run the ingest skill, or edit the tables directly)
    - `paths.md` -- update when a path opens or blocks
    - `Vulns/` + `Vuln-index.md` -- write each finding as `FIND-NNN-SEVERITY-title.md`; run `scripts/find-lint.py` before /evidence
-   - `coverage.md` -- record a tested vuln class so `next_move` / `coverage` stop re-surfacing it
+   - record a tested vuln class in the killchain.md 4a table (add a row with status `[x]`) so `next_move` / `coverage` stop re-surfacing it
    - `Deadends.md` -- log a bounded-out vector immediately, one line, then switch vector
 
 4. **After the session:** run `gsd:pause-work` -- append a named entry to the engagement `log.md` (audit) and refresh `hot.md` (rolling cache). Generic/framework learnings (no client specifics) go to `session/log.md` + `session/hot.md`.

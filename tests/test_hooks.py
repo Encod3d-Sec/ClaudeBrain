@@ -473,36 +473,40 @@ def test_recon_capture_recognizes_added_natives():
     assert rc.invokes("ls /opt/katana/", rc.RECON_TOOLS) is None
 
 
-def test_payload_page_maps_skill_to_arsenal_file():
-    rc = _import_recon_capture()
-    assert rc._payload_page("hunt-sqli") == os.path.join("wiki", "payloads", "sqli.md")
-    assert rc._payload_page("hunt-auth").endswith("auth-bypass.md")
-    assert rc._payload_page("hunt-rce").endswith("command-injection.md")
-    assert rc._payload_page("hunt-secrets") is None   # no wiki/payloads/secrets.md
+def test_recon_capture_flips_oob_on_callback_via_grep_poll(vault):
+    # OOB auto-correlation (a KEPT behavior): a waiting oob.md row flips to HIT when its
+    # token appears in a command's output. Polling a saved OAST/Collaborator log with grep
+    # (a doc-command) must still flip it -- OOB correlation runs BEFORE the doc-command skip.
+    eng = vault / "targets" / "acme"
+    token = "oastxyz9k"
+    (eng / "oob.md").write_text(
+        "---\ntype: engagement-oob\n---\n\n# OOB\n\n"
+        "| token | sink | class | planted | status | source |\n"
+        "|-------|------|-------|---------|--------|--------|\n"
+        "| %s | http://t/?url= | ssrf | 2026-07-16 | waiting | |\n" % token,
+        encoding="utf-8")
+    payload = {"tool_name": "Bash",
+               "tool_input": {"command": "grep %s /tmp/collab.log" % token},
+               "tool_response": "1.2.3.4 - - GET /%s HTTP/1.1 200" % token}
+    out = run_hook("recon-capture.py", payload, _env(vault)).stdout
+    assert "OOB HIT auto-correlated" in out
+    assert "HIT" in (eng / "oob.md").read_text()      # row flipped to HIT on disk
 
 
-def test_tool_page_maps_tool_to_wiki_page():
-    rc = _import_recon_capture()
-    assert rc._tool_page("ffuf").endswith("ffuf.md")
-    assert rc._tool_page("nmap").endswith("nmap.md")
-    assert rc._tool_page("definitelynotatool") is None
-
-
-def test_label_payload_pages_exact_match():
-    rc = _import_recon_capture()
-    assert rc._label_payload_pages("graphql") == [os.path.join("wiki", "payloads", "graphql.md")]
-
-
-def test_label_payload_pages_contains_jwt():
-    rc = _import_recon_capture()
-    assert os.path.join("wiki", "payloads", "jwt.md") in rc._label_payload_pages("jwt")
-
-
-def test_label_payload_pages_no_match():
-    rc = _import_recon_capture()
-    # no wiki/payloads/linux.md or wiki/payloads/type.md
-    assert rc._label_payload_pages("linux") == []
-    assert rc._label_payload_pages("type") == []
+def test_recon_capture_oob_silent_without_callback(vault):
+    # no token in the output -> row stays waiting, no OOB block emitted
+    eng = vault / "targets" / "acme"
+    (eng / "oob.md").write_text(
+        "---\ntype: engagement-oob\n---\n\n# OOB\n\n"
+        "| token | sink | class | planted | status | source |\n"
+        "|-------|------|-------|---------|--------|--------|\n"
+        "| tok12345 | http://t/?url= | ssrf | 2026-07-16 | waiting | |\n",
+        encoding="utf-8")
+    payload = {"tool_name": "Bash", "tool_input": {"command": "nmap -sV t"},
+               "tool_response": "80/tcp open http"}
+    out = run_hook("recon-capture.py", payload, _env(vault)).stdout
+    assert "OOB HIT" not in out
+    assert "waiting" in (eng / "oob.md").read_text()   # unchanged
 
 
 def test_engagement_init_surfaces_wiki_candidates(vault):

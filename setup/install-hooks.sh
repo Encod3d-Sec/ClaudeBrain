@@ -68,8 +68,8 @@ if not has("PostToolUse", "recon-capture.py"):
     add("PostToolUse", {"matcher": "Bash", "hooks": [{"type": "command",
         "command": "python3 ~/.claude/vault-hooks/recon-capture.py", "timeout": 30}]})
     print("added PostToolUse recon-capture")
-# idempotent: ensure recon-capture timeout >= 30 (the live lead-card render -- a bounded
-# ~22s synchronous drain the moment a lead lands -- needs headroom over the old 10s default)
+# idempotent: ensure recon-capture timeout >= 30 (the fingerprint router + OOB correlation
+# work needs headroom over the old 10s default)
 for g in h.get("PostToolUse", []):
     for hk in g.get("hooks", []):
         if "recon-capture.py" in hk.get("command", "") and hk.get("timeout", 0) < 30:

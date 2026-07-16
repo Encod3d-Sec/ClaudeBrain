@@ -4,7 +4,7 @@
 #   bash setup/new-engagement.sh <name> <pentest|bugbounty|ctf> [--with-oob] [--scope <host>]...
 #   bash setup/new-engagement.sh --rename <old> <new>
 #
-# Scaffolds targets/<name>/ with the type-aware file set + ingest/ recon/ poc/ dirs,
+# Scaffolds targets/<name>/ with the type-aware file set + ingest/ poc/ dirs,
 # and points targets/active.md at it. Engagement data stays under targets/ (private).
 #   - pentest/bugbounty: full set (adds oob.md, Vuln-index.md).
 #   - ctf: lean set (state,loot,paths,killchain,log,scope,walkthrough,Deadends); oob is

@@ -11,7 +11,7 @@ The close-out retrospective, in two phases:
   harness so the next box does not repeat it. This is the "improve the harness on it" half.
 - **Phases 1-7 (knowledge):** read the WHOLE finished engagement, diff it against the existing
   wiki, and promote only the DELTA as durable, generic knowledge. The safety net that catches
-  everything the live `recon-capture` staging nudge missed during the box.
+  everything not captured live during the box.
 
 The client-data boundary is enforced by code, not by this prose: engagement-derived
 content reaches `wiki/` ONLY through `wiki-stage.py` -> `wiki-promote.py`, which runs

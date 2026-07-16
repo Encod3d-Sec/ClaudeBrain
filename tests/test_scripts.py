@@ -377,7 +377,12 @@ def test_tested_classes_list_affected_and_dash(tmp_path):
     (d / "Vulns").mkdir(parents=True)
     (d / "Vulns" / "FIND-001-HIGH-xss.md").write_text(   # block-list affected
         '---\ntitle: "Stored XSS"\ntype: finding\naffected:\n  - host-a\n  - host-b\n---\n')
-    (d / "coverage.md").write_text("| asset | tested |\n|---|---|\n| host-a | - |\n")  # dash placeholder
+    # killchain.md 4a row with a dash in the 'vuln class' cell (done status): the dash
+    # placeholder must NOT be credited as a tested class (the re.fullmatch('-+') guard).
+    (d / "killchain.md").write_text(
+        "| asset | vuln class | wiki | payload/tool | status | poc |\n"
+        "|---|---|---|---|---|---|\n"
+        "| host-a | - | - | - | [x] | - |\n")
     per_asset, glob = _engagement.tested_classes(str(d), "bugbounty", _bb_classes())
     assert "xss" in per_asset.get("host-a", set())      # credited to each list item...
     assert "xss" in per_asset.get("host-b", set())

@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Provision the Kali VM: screenshot/tmux capture deps AND the recon + test toolchain that
-# the recon-capture nudges point at, so those nudges reference tools that
-# actually exist on the box.
+# Provision the Kali VM: screenshot/tmux capture deps AND the recon + test toolchain the
+# fingerprint router routes to, so a fingerprinted tool actually exists on the box.
 #
 # apt-first by design: Kali packages the whole ProjectDiscovery suite, which avoids the
 # fragile `go install` path through the VPN tunnel (often egress-blocked) and installs the

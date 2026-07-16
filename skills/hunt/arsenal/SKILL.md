@@ -50,6 +50,7 @@ Read the matching page(s) BEFORE hand-rolling a payload/exploit. The full class-
 methodology lives in the matching `hunt-*` skill - hand off to it.
 
 ## 3. Capture the moment
-Something lands (a confirmed vuln, creds, a shell, a flag) -> screenshot it AS it lands, not at
-the end. `recon-capture` auto-nudges on a flag/shell; use `Skill(screenshot)` for the deliberate
-exploited/authed state so it can be manually reviewed.
+Something lands (a confirmed vuln, creds, a shell, a flag) -> capture it AS it lands, not at
+the end. Capture is manual and live: run `capture.sh` (or `Skill(screenshot)`) into `poc/`
+the moment a flag/shell lands, for the deliberate exploited/authed state so it can be
+manually reviewed.

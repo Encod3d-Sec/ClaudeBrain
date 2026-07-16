@@ -696,7 +696,7 @@ def ensure_state_files():
         c = _emit(os.path.join(d, fn), os.path.join(tpldir, fn))
         if c:
             created.append(c)
-    # 2. shared type-agnostic files, type-aware set (ctf omits coverage/Vuln-index/oob)
+    # 2. shared type-agnostic files, type-aware set (ctf omits Vuln-index/oob)
     for fn, tplname in _heal_shared_set(etype):
         c = _emit(os.path.join(d, fn), os.path.join(TEMPLATES, tplname))
         if c:

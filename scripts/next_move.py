@@ -169,8 +169,8 @@ def _ranked(limit=5):
         sugg.extend(sorted(acq, key=lambda x: -x[0])[:3])
 
     # 4b. coverage-gap floor: untested base vuln classes (per-type checklist in
-    #     coverage-classes.json, ordered high-to-low impact) minus whatever coverage.md
-    #     records as tested anywhere. Ranked BELOW every concrete move (scores 24-28,
+    #     coverage-classes.json, ordered high-to-low impact) minus whatever the killchain.md
+    #     4a table records as tested anywhere. Ranked BELOW every concrete move (scores 24-28,
     #     under the acquisition floor of 30), so a gap never displaces a real lead but
     #     systematic breadth still reaches the shortlist when no fingerprint matched.
     #     Skill(coverage) holds the per-asset matrix; this is only the "test class X"
