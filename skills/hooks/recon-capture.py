@@ -39,6 +39,18 @@ EXPLOIT_TOOLS = (r"sqlmap|hydra|medusa|msfconsole|msfvenom|evil-winrm|"
                  r"(?:crackmapexec|cme|nxc|netexec)\s+\S.*\s-x\b")
 _REVSHELL_RE = re.compile(r"/dev/tcp/|\bnc\b[^\n]*\s-e\b|\bbash\s+-i\b|\brlwrap\s+nc\b", re.I)
 
+# --- capture/coverage reflexes (restored + hardened after the de-bloat over-removed them;
+#     both are pure nudges, no staging/render machinery -- capture/route only, per charter) ---
+_DISCOVERY_TOOLS = r"ffuf|feroxbuster|gobuster|dirb|dirsearch"        # content-discovery axis
+# unambiguous web-app activity: probing/exploiting a web surface -> discovery should have run
+_WEB_ACTIVITY = r"curl|wget|whatweb|httpx|nikto|wpscan|sqlmap|dalfox"
+_RECON_GAP_CAP = 3   # escalate the recon-completeness nudge up to N times, then go silent
+# a LANDED finding: a full flag value, or a shell/privesc `id` -- narrow, unambiguous SUCCESS
+_FINDING_RE = re.compile(
+    r"(?:THM|FLAG|HTB|CTF)\{[^}\n]{0,80}\}"            # a full flag value (dedup key)
+    r"|uid=\d+\([a-z_][^)]*\)\s*gid=",                  # `id` output = shell / privesc landing
+    re.I)
+
 MAX_BLOB = 20000   # cap output scanned for fingerprints
 MAX_HITS = 3
 
@@ -80,6 +92,13 @@ def invokes(cmd, tools):
         if m:
             return m
     return None
+
+
+def _invokes_any(cmd, tools):
+    """invokes() for the outer command OR any inner vm.sh/ssh/wsl-wrapped command (scans run
+    through the bridge, so the tool token lives inside the wrapper)."""
+    return invokes(cmd, tools) or next(
+        (m for ic in inner_cmds(cmd) if (m := invokes(ic, tools))), None)
 
 
 # Bridge wrappers: this harness runs remote tooling via `bash /root/vm.sh '<cmd>'`,
@@ -325,6 +344,67 @@ def main():
                 open(marker, "w").close()
             except OSError:
                 pass
+
+    # recon-completeness reflex (coverage, not methodology): record which discovery axes ran
+    # (content-discovery + nuclei), and while EITHER is missing, nudge on each web exploit/probe --
+    # ESCALATING, not fire-once: two boxes ignored a single nudge and reached foothold with
+    # ffuf/nuclei never run. Requires BOTH axes because "nuclei launched but never
+    # read" and "content ran but nuclei didn't" are the observed gaps. Bounded to _RECON_GAP_CAP.
+    if d and _engagement and not _is_framework_meta(cmd):
+        try:
+            rec = os.path.join(d, ".recon-tools")
+            for axis, pat in (("content", _DISCOVERY_TOOLS), ("nuclei", r"nuclei")):
+                if _invokes_any(cmd, pat):
+                    with open(rec, "a", encoding="utf-8") as fh:
+                        fh.write(axis + "\n")
+            ran = open(rec, encoding="utf-8", errors="ignore").read() if os.path.exists(rec) else ""
+            missing = [a for a in ("content", "nuclei") if a not in ran]
+            if missing and _invokes_any(cmd, _WEB_ACTIVITY):
+                capf = os.path.join(d, ".recon-gap-fires")
+                n = 0
+                if os.path.exists(capf):
+                    try:
+                        n = int((open(capf).read().strip() or "0"))
+                    except ValueError:
+                        n = 0
+                if n < _RECON_GAP_CAP:
+                    with open(capf, "w") as fh:
+                        fh.write(str(n + 1))
+                    sharper = (" [reminder %d/%d]" % (n + 1, _RECON_GAP_CAP)) if n else ""
+                    blocks.append(
+                        "RECON COMPLETENESS: web activity but discovery is incomplete (missing: "
+                        + ", ".join(missing) + "). A hidden route/param/CVE is often the intended "
+                        "path -- launch ffuf/feroxbuster (content) + nuclei (CVE) in parallel tmux "
+                        "tabs (scripts/vm-scan.sh) and READ their output before concluding no web "
+                        "vuln." + sharper)
+        except Exception:
+            pass
+
+    # screenshot-on-finding reflex (capture, not methodology): when a finding lands in the OUTPUT
+    # -- a flag read or a shell/privesc `id` -- nudge Skill(screenshot) of the deliberate state.
+    # Fires PER DISTINCT finding (dedup by the full matched value), NOT once-per-engagement:
+    # a nested multi-level chain got under-shot because the old fire-once nudge planted the discipline
+    # only at level 1. A repeated `id` as the same uid dedups to one nudge; each new flag re-fires.
+    if d and _engagement:
+        try:
+            raw = _response_text(data)
+            m = _FINDING_RE.search(raw[:MAX_BLOB]) if raw else None
+            if m:
+                import hashlib
+                sig = hashlib.sha1(m.group(0).lower().encode()).hexdigest()[:12]
+                seenf = os.path.join(d, ".shot-nudged")
+                seen = (open(seenf, encoding="utf-8", errors="ignore").read().split()
+                        if os.path.exists(seenf) else [])
+                if sig not in seen:
+                    with open(seenf, "a", encoding="utf-8") as fh:
+                        fh.write(sig + "\n")
+                    blocks.append(
+                        "FINDING landed -> Skill(screenshot) the live exploited/authed STATE now "
+                        "(the flag in place, the payload firing, or the shell via --tmux) to poc/. "
+                        "Capture at EACH success as it lands, not at the end -- a transient state "
+                        "cannot be re-shot after this turn.")
+        except Exception:
+            pass
 
     # 1. fingerprint router. Pure documentation/discussion commands (a comment, echo, a
     #    cat/grep/rg of some file) never invoke a probe tool, so the router is pointless on

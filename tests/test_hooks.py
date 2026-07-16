@@ -319,6 +319,56 @@ def test_recon_capture_ignores_quoted_tool_alternation(vault):
     assert not os.path.isfile(str(vault / "targets" / "acme" / ".pending-capture"))  # no marker
 
 
+def test_recon_completeness_fires_on_web_activity_without_discovery(vault):
+    # restored+hardened reflex: web activity (curl) while ffuf/nuclei never ran -> nudge, and
+    # the message names BOTH missing axes (one box left nuclei launched-but-unread; another never ran it)
+    out = run_hook("recon-capture.py",
+                   {"tool_name": "Bash",
+                    "tool_input": {"command": "curl -s http://10.0.0.5/login"}}, _env(vault)).stdout
+    assert "RECON COMPLETENESS" in out
+    assert "missing: content, nuclei" in out
+    assert (vault / "targets" / "acme" / ".recon-gap-fires").read_text().strip() == "1"
+
+
+def test_recon_completeness_silent_once_both_axes_ran(vault):
+    env = _env(vault)
+    run_hook("recon-capture.py",
+             {"tool_name": "Bash", "tool_input": {"command": "ffuf -u http://10.0.0.5/FUZZ -w w.txt"}}, env)
+    run_hook("recon-capture.py",
+             {"tool_name": "Bash", "tool_input": {"command": "nuclei -u http://10.0.0.5"}}, env)
+    out = run_hook("recon-capture.py",
+                   {"tool_name": "Bash", "tool_input": {"command": "curl -s http://10.0.0.5/login"}}, env).stdout
+    assert "RECON COMPLETENESS" not in out
+    rec = (vault / "targets" / "acme" / ".recon-tools").read_text()
+    assert "content" in rec and "nuclei" in rec
+
+
+def test_recon_completeness_escalates_then_caps(vault):
+    # fire-once was ignored under momentum on two boxes; escalate but bound the noise
+    env = _env(vault)
+    fires = sum(
+        "RECON COMPLETENESS" in run_hook(
+            "recon-capture.py",
+            {"tool_name": "Bash", "tool_input": {"command": "curl -s http://10.0.0.5/x"}}, env).stdout
+        for _ in range(5))
+    assert fires == 3   # _RECON_GAP_CAP: more than once, not unbounded
+    assert (vault / "targets" / "acme" / ".recon-gap-fires").read_text().strip() == "3"
+
+
+def test_screenshot_on_finding_fires_per_distinct_flag(vault):
+    # once-per-engagement under-shot a multi-level chain; fire per distinct finding instead
+    env = _env(vault)
+
+    def shot(resp):
+        return run_hook("recon-capture.py",
+                        {"tool_name": "Bash", "tool_input": {"command": "cat /root/flag"},
+                         "tool_response": resp}, env).stdout
+
+    assert "FINDING landed" in shot("the flag is flag{alpha}")   # first finding -> nudge
+    assert "FINDING landed" not in shot("the flag is flag{alpha}")  # same flag -> deduped
+    assert "FINDING landed" in shot("next level flag{bravo}")     # distinct flag -> re-fires
+
+
 def test_engagement_init_reports_state(vault):
     out = run_hook("engagement-init.py", {"source": "startup"}, _env(vault)).stdout
     assert "acme" in out
