@@ -124,7 +124,7 @@ import json, os, subprocess, sys
 cli = os.path.expanduser("~/burp-mcp-cli.py")
 host, port, https, method, path, tab = sys.argv[1:7]
 bf = sys.argv[7] if len(sys.argv) > 7 and sys.argv[7] else ""
-lines = ["%s %s HTTP/1.1" % (method, path), "Host: %s:%s" % (host, port), "Connection: close"]
+lines = ["%s %s HTTP/1.1" % (method, path), "Host: %s:%s" % (host, port), "Accept: */*", "Connection: close"]
 body = ""
 if bf:
     body = open(bf).read().strip()

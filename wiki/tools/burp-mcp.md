@@ -192,3 +192,49 @@ Same order the `hunt-burp` skill enforces:
 - hacktricks.wiki: AI / Burp MCP (LLM-assisted traffic review)
 - humanoid.sh/blog/burp-mcp-kali (Claude Code + Burp MCP on Kali)
 - github.com/six2dez/burp-ai-agent
+
+## Driving Burp's GUI to capture Repeater req/resp PoC images
+
+`create_repeater_tab` / `send_http1_request` inject requests over MCP, but turning a Repeater tab into a
+request+response PoC image means driving Burp's Swing GUI over X (the `scripts/capture.sh burp` flow). The
+harness encapsulates all of it: `Skill(screenshot-burp)`, or directly
+`bash scripts/capture.sh burp <eng> <slug> <host> <port> <https:true|false> <method> <path> [bodyfile] [tabname]`,
+which stages the tab, sends, grabs the request/response panes, and pulls the PNG into `poc/`. The gotchas
+below are the ones it already handles; they are documented here so a hand-rolled variant does not re-hit them:
+
+- **Use XTEST, not `--window`.** Java/Swing IGNORES synthetic `XSendEvent` input, which is exactly what
+  `xdotool key --window <id> ...` / `xdotool click --window <id>` send. Drive with XTEST instead: focus
+  the window (`xdotool windowactivate --sync <id>`), then `xdotool key ...` / `xdotool mousemove X Y click 1`
+  with NO `--window` flag, using SCREEN coordinates.
+- **Burp runs as root but draws on the seat user's X.** Grab and inject as the desktop user with their
+  `$XAUTHORITY`: `sudo -u <seatuser> env DISPLAY=:0 XAUTHORITY=/home/<seatuser>/.Xauthority xdotool ...`.
+- **`create_repeater_tab` does NOT bring the Repeater tool to front**, and does NOT auto-select its new
+  sub-tab. A grab taken right after shows whatever tool was last active (often the MCP config tab). Switch
+  to Repeater first with `Ctrl+Shift+R` (XTEST), then click the target sub-tab, then focus the request
+  editor and `Ctrl+Space` (Send), then grab with `import -window <id>`.
+- **Coordinate mapping.** `import -window <id>` grabs window-relative pixels, but xdotool input uses
+  SCREEN coords. Read the client origin from `xdotool getwindowgeometry` (`Position: X,Y`) and add it: a
+  UI element at window `(wx,wy)` is clicked at screen `(X+wx, Y+wy)`.
+- **Add an `Accept` header.** The Joomla/JSON API (and many apps) return `406 Not Acceptable` for a raw
+  Repeater request carrying only `Host`/`Connection`; add `Accept: */*` (curl sends this by default, which
+  is why the same request "worked" from curl but 406'd in Repeater).
+
+### Headless-display trap (verify BEFORE driving)
+A VMware/virtual `:0` with no compositor can leave app windows with a grabbable backing PIXMAP but no
+presentation for INPUT: `import -window` still returns the window image, but clicks/keys route to the ROOT
+window and never reach Burp, so every grab silently shows the same (wrong) tab. Detect it first:
+```bash
+# over Burp's own area: window:<id> is good; window:0 (root) == headless/unmapped, input will not land
+xdotool mousemove $((X+600)) $((Y+300)) getmouselocation
+wmctrl -lG          # empty list == no managed windows presented
+```
+If dead, foreground Burp on the real desktop or restart the X session; xdotool cannot fix it. (`capture.sh burp`
+now prechecks this and fails loud instead of grabbing the wrong tab.)
+
+### MCP SSE server wedge
+The Burp MCP SSE server can wedge after a call: `burp-mcp-cli.py list` still returns the tool inventory, but
+a real tool call (`send_http1_request`) hangs/times out. Recovery is a GUI action - toggle the MCP Server
+BApp off/on in the MCP tab, or restart Burp (a fresh Burp also clears it). `create_repeater_tab` often
+survives when `send_http1_request` does not, so prefer create-tab + a GUI Send for capture.
+
+<!-- promoted-slug: burp-mcp-gui-driving -->
