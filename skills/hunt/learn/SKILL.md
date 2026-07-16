@@ -19,8 +19,9 @@ content reaches `wiki/` ONLY through `wiki-stage.py` -> `wiki-promote.py`, which
 generic knowledge; it never edits the engagement's own files.
 
 ## When it fires
-- Auto: the loop-driver Stop-hook nudges `Skill(learn)` once the engagement is marked
-  `## STATUS: SOLVED` (OWNED/ROOTED/COMPLETE) AND its `walkthrough.md` is assembled.
+- At close-out: run `Skill(learn)` once the engagement is marked
+  `## STATUS: SOLVED` (OWNED/ROOTED/COMPLETE) AND its `walkthrough.md` is assembled
+  (the CLAUDE.md execution-loop close-out step).
   It self-clears the moment this skill writes `<eng>/.learn-done`.
 - On demand: "extract learnings", "what did we learn", "harvest lessons", "distill",
   "post-mortem into the wiki" - the same steps apply.

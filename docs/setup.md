@@ -35,14 +35,13 @@ bash setup/install-hooks.sh    # symlinks ~/.claude/vault-hooks + registers the 
 # 3. restart Claude Code
 ```
 
-`install-hooks.sh` is self-locating (works on any user/path/spelling) and idempotent. It registers the canonical set (mirrored in `scripts/check-hooks.py` `EXPECTED_HOOKS`; `engagement-init` warns at SessionStart if any is unregistered) -- 9 hook commands across 6 events:
-- **SessionStart** -- `session-start.sh` (session bootstrap / context7-lock cleanup), `engagement-init.py` (self-heals the `state/loot/paths/...` set, injects the state summary + top next-moves + drift/CVE warnings).
+`install-hooks.sh` is self-locating (works on any user/path/spelling) and idempotent. It registers the canonical set (mirrored in `scripts/check-hooks.py` `EXPECTED_HOOKS`; `engagement-init` warns at SessionStart if any is unregistered) -- 7 hook commands across 5 events:
+- **SessionStart** -- `session-start.sh` (skill auto-register + hot.md cache), `engagement-init.py` (self-heals the `state/loot/paths/killchain/...` set, injects the state summary + kill-chain board status + top next-moves + one compact `harness:` maintenance line).
 - **UserPromptSubmit** -- `hunt-trigger.py` (fires hunt skills from `skills/hunt/triggers.json`).
 - **PreToolUse (Bash)** -- `scope-guard.py` (scope / RoE / dead-end guard).
 - **PreToolUse (Write)** -- `session-guard.py` (client-marker leak guard).
 - **PostToolUse (Bash)** -- `recon-capture.py` (fingerprint router + capture nudge + OOB correlation + pending-test marker).
 - **PreCompact** -- `pre-compact.sh` (persist state before compaction).
-- **Stop** -- `loop-driver.py` (render-only evidence drain: renders staged PoC cards at turn-end; never blocks or forces continuation).
 
 **Hooks self-locate the vault** via `realpath(__file__)` through the `~/.claude/vault-hooks` symlink -- no hardcoded paths, so the same code runs unmodified on every device.
 

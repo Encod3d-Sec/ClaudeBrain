@@ -65,6 +65,43 @@ def test_recon_dir_not_scaffolded():
     assert "ingest" in _engagement.STATE_DIRS and "poc" in _engagement.STATE_DIRS
 
 
+def _load_engagement_init():
+    import importlib.util
+    p = os.path.join(os.path.dirname(_engagement.__file__), "engagement-init.py")
+    spec = importlib.util.spec_from_file_location("engagement_init", p)
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m
+
+
+def test_board_status_surfaces_phase_and_counts(vault, monkeypatch):
+    ei = _load_engagement_init()
+    eng = vault / "targets" / "acme"
+    (eng / "killchain.md").write_text(
+        "# Kill-Chain Board\n\n"
+        "## 1. Recon\n- [x] rustscan\n- [ ] nmap\n\n"
+        "## 4. Exploit\n### 4a. Foothold\n- [~] sqli\n- [!] xxe deadend\n",
+        encoding="utf-8")
+    monkeypatch.setattr(_engagement, "active_dir", lambda: str(eng))
+    s = ei.board_status()
+    assert s is not None
+    assert "Phase 4 Exploit" in s   # highest-numbered phase with an open item
+    assert "2 open" in s            # [ ] nmap + [~] sqli
+    assert "1 deadends" in s        # [!] xxe
+
+
+def test_board_status_none_without_board(vault, monkeypatch):
+    eng = vault / "targets" / "noboard"
+    os.makedirs(eng)
+    monkeypatch.setattr(_engagement, "active_dir", lambda: str(eng))
+    assert _load_engagement_init().board_status() is None
+
+
+def test_harness_maintenance_returns_list(vault, monkeypatch):
+    monkeypatch.setattr(_engagement, "active_dir", lambda: str(vault / "targets" / "acme"))
+    assert isinstance(_load_engagement_init().harness_maintenance(), list)
+
+
 def test_killchain_healed_for_every_type(vault, monkeypatch):
     for etype in ("ctf", "pentest", "bugbounty"):
         eng = vault / "targets" / ("kc_" + etype)

@@ -1,6 +1,6 @@
 ---
 name: walkthrough
-description: Auto-assemble a report-ready walkthrough.md for a SOLVED engagement - render staged evidence synchronously, populate the Evidence gallery, and draft the step-by-step reproduction from state/loot/paths/log.md without fabricating. Use when asked to "write the walkthrough", "assemble the walkthrough", "close out the box/engagement", or fired automatically by the loop-driver Stop-hook once an engagement is marked SOLVED and its walkthrough is stale.
+description: Assemble a report-ready walkthrough.md for a SOLVED engagement - populate the Evidence gallery from the poc/ images captured during the engagement, and draft the step-by-step reproduction from state/loot/paths/log.md without fabricating. Use when asked to "write the walkthrough", "assemble the walkthrough", "close out the box/engagement", or at close-out once an engagement is marked SOLVED.
 ---
 
 # Walkthrough auto-assembly
@@ -15,24 +15,23 @@ At close-out, write a STATUS heading into `state.md`:
 ```
 ## STATUS: SOLVED
 ```
-(`OWNED` / `ROOTED` / `COMPLETE` also count.) This is the signal the loop-driver Stop-hook
-watches for -- once present, it nudges `Skill(walkthrough)` on every Stop until the walkthrough
-is actually assembled (self-clears the moment it is complete).
+(`OWNED` / `ROOTED` / `COMPLETE` also count.) This is the close-out signal: once present, the
+CLAUDE.md execution loop runs `Skill(walkthrough)` (then `Skill(learn)`).
 
 ## Steps
 
-### (a) Render all staged evidence SYNCHRONOUSLY and verify
-Do NOT rely on the flaky detached auto-drain. Run the loop-driver drain in the FOREGROUND for
-every area that has staged cards, then confirm the PNGs actually landed on disk:
+### (a) Confirm the evidence is on disk (capture any missing key state now)
+Evidence is captured LIVE during the engagement, straight into `poc/` (via `capture.sh` /
+`Skill(screenshot)`) -- there is no staging/drain step anymore. Confirm the PNGs are on disk,
+and if a key state (foothold shell, the flag, an exploited render) was never captured, capture
+it now before assembling:
 ```bash
-python3 skills/hooks/loop-driver.py --drain "$(pwd)/targets/<eng>" recon
-python3 skills/hooks/loop-driver.py --drain "$(pwd)/targets/<eng>" poc/leads
-python3 skills/hooks/loop-driver.py --drain "$(pwd)/targets/<eng>" poc/pages
-python3 skills/hooks/loop-driver.py --drain-tmux "$(pwd)/targets/<eng>"
-ls targets/<eng>/**/*.png targets/<eng>/poc/**/*.png targets/<eng>/poc/**/**/*.png 2>/dev/null
+ls targets/<eng>/poc/*.png targets/<eng>/poc/**/*.png 2>/dev/null
+# missing a key state? capture it live, e.g.:
+#   bash scripts/capture.sh ev <eng> <slug> <url> "<cmd-label>"
 ```
-The drain retries + verifies on-disk before clearing a staged card, so this foreground run is
-the reliable path (this is the step that would have caught a walkthrough shipping empty).
+A walkthrough with an empty gallery means evidence was not captured as steps landed -- fix that
+by capturing the reproducible states now, not by fabricating.
 
 ### (b) Scaffold + gallery
 ```bash
@@ -65,12 +64,10 @@ rather than leaving the walkthrough half-done.
 
 ## Scope and safety
 All output stays under `targets/<eng>/` (gitignored) -- never write client data into `session/*`
-or `wiki/`. Every step here is best-effort: `build-walkthrough.py` is idempotent and no-clobber,
-the drain is bounded and fails open (a card that still won't render stays staged for a later
-attempt, not a blocker). Real client engagements still go through `Skill(evidence)` for redaction
-before the walkthrough ships in a report; CTF/lab work can skip that.
+or `wiki/`. Every step here is best-effort: `build-walkthrough.py` is idempotent and no-clobber.
+Real client engagements still go through `Skill(evidence)` for redaction before the walkthrough
+ships in a report; CTF/lab work can skip that.
 
-## On demand (not just the Stop-hook)
-This skill is not only auto-fired. Invoke it directly whenever you are ready to write the
-walkthrough, assemble the walkthrough, or close out the box/engagement -- the same five steps
-apply whether triggered by the nudge or asked for explicitly.
+## On demand
+Invoke this skill directly whenever you are ready to write the walkthrough, assemble the
+walkthrough, or close out the box/engagement -- the same steps apply.
