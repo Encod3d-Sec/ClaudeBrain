@@ -359,7 +359,9 @@ def main():
                         fh.write(axis + "\n")
             ran = open(rec, encoding="utf-8", errors="ignore").read() if os.path.exists(rec) else ""
             missing = [a for a in ("content", "nuclei") if a not in ran]
-            if missing and _invokes_any(cmd, _WEB_ACTIVITY):
+            # gate the NUDGE (not the recording) on an unsolved box: recon completeness is moot
+            # once the box is owned, so a post-solve curl should not re-nudge.
+            if missing and _invokes_any(cmd, _WEB_ACTIVITY) and not _engagement.is_solved(d):
                 capf = os.path.join(d, ".recon-gap-fires")
                 n = 0
                 if os.path.exists(capf):

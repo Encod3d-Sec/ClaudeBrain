@@ -373,6 +373,15 @@ def test_recon_completeness_escalates_then_caps(vault):
     assert (vault / "targets" / "acme" / ".recon-gap-fires").read_text().strip() == "3"
 
 
+def test_recon_completeness_silent_when_solved(vault):
+    # once the box is owned, recon completeness is moot -> a post-solve curl must not nudge
+    state = vault / "targets" / "acme" / "state.md"
+    state.write_text(state.read_text() + "\n## STATUS: SOLVED\nowned it\n", encoding="utf-8")
+    out = run_hook("recon-capture.py",
+                   {"tool_name": "Bash", "tool_input": {"command": "curl -s http://10.0.0.5/x"}}, _env(vault)).stdout
+    assert "RECON COMPLETENESS" not in out
+
+
 def test_screenshot_on_finding_fires_per_distinct_flag(vault):
     # once-per-engagement under-shot a multi-level chain; fire per distinct finding instead
     env = _env(vault)
