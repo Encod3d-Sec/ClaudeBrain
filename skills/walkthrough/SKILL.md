@@ -50,7 +50,7 @@ invent it -- leave a clearly marked `_TODO: <what is missing>_` for the operator
 
 ### (d) Preserve exploit scripts
 Copy any exploit script (payload, escape/forge script, webshell) into
-`targets/<eng>/poc/scripts/`, the same thm_tricipher discipline `ctf-box` and `screenshot` use --
+`targets/<eng>/poc/scripts/`, the same exploit-script-preservation discipline `ctf-box` and `screenshot` use --
 the reviewer needs the code and the state together, not just a screenshot.
 
 ### (e) Verify complete

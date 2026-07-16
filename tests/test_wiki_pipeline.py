@@ -335,10 +335,10 @@ def test_all_hunt_skills_footer_converted():
 
 
 def test_exploit_script_preservation_step_present():
-    """Lock-in for the thm_tricipher preservation standard: an exploit script
+    """Lock-in for the exploit-script preservation standard: an exploit script
     (payload HTML, escape/forge script, webshell) or a read target source must be
     copied into targets/<eng>/poc/scripts/, not just screenshotted. Both ctf-box
-    (Capture section) and screenshot (its thm_tricipher lesson) must carry the
+    (Capture section) and screenshot (its capture-live lesson) must carry the
     poc/scripts step. New lines must not carry a U+2014 em-dash."""
     skills = (
         os.path.join(REPO, "skills", "hunt", "ctf-box", "SKILL.md"),

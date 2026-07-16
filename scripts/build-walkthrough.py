@@ -2,7 +2,7 @@
 """build-walkthrough.py - populate an engagement walkthrough.md's Evidence gallery.
 
 The canonical walkthrough structure is `setup/templates/_walkthrough.md` (the
-thm_tricipher-structure skeleton: Access/Recon/Foothold/Privesc/Flags/Evidence/
+standard boot-to-root skeleton: Access/Recon/Foothold/Privesc/Flags/Evidence/
 One-shot/Rabbit-holes), which `engagement-init`'s self-heal already writes for a
 fresh engagement (substituting <ENGAGEMENT>/<DATE> before it ever reaches disk).
 This tool does NOT impose a second, competing structure: it keeps the "## Evidence"
@@ -191,7 +191,7 @@ def _is_bare(text):
 
 def _framework_template_text(eng_dir):
     """Read the canonical setup/templates/_walkthrough.md (the framework's
-    thm_tricipher-structure skeleton, maintained by engagement-init) and substitute
+    standard boot-to-root skeleton, maintained by engagement-init) and substitute
     <ENGAGEMENT>/<DATE> exactly the way _emit() in skills/hooks/_engagement.py does
     when it first self-heals the file. Returns None if the template cannot be read
     (defensive: build() falls back to the built-in _skeleton() in that case)."""

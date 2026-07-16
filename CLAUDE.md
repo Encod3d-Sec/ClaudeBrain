@@ -81,7 +81,7 @@ in context. On every engagement, run each step in order, do not skip under momen
    installed tools (borg/borgmatic/restic/duplicity, backup + secret managers) as a loot/privesc lead -
    a leaked backup passphrase + a reused key beats grinding a hardened-container escape.
 3. **Capture the request AND each landing, live.** `capture.sh req` the real request+response for every
-   exploit/lead request (the thm_tricipher standard), and screenshot each success to `poc/` the moment
+   exploit/lead request, and screenshot each success to `poc/` the moment
    it lands (`capture.sh ev` / `capture.sh tmux` / `shot.py`), never at the end. Evidence is captured
    live now (no auto-card staging). NEVER hand-write / fabricate an evidence card.
 4. **Persist immediately.** A host/cred/path/flag lands -> write `state.md`/`loot.md`/`paths.md` before

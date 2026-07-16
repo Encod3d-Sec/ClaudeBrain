@@ -165,7 +165,7 @@ bash /root/vm.sh 'base64 -w0 /tmp/poc/03-dashboard-after-sqli.png' | base64 -d >
 ```
 Images live only under `targets/<eng>/` (gitignored) - never embed images in `wiki/` (image-free rule).
 
-## Lesson: capture live, not at the end (THM TriCipher)
+## Lesson: capture live, not at the end
 The whole box was solved (3 flags: supply-chain cred intercept -> OTP crypto crack -> smart-contract
 `reset()`), and only THEN screenshotted by re-running the commands. Two real costs: (1) no mid-engagement
 evidence to reason from while stuck - the long dead-end hunting the login username would have been easier
@@ -178,7 +178,7 @@ flag/cred) never clips, and every card carries BOTH the command and the request 
 **Preserve the exploit code too, not just the screenshot.** When you write an exploit script (a
 payload HTML, an escape/forge script, a webshell) or read a target's source, copy it into
 `targets/<eng>/poc/scripts/` alongside its card, so the reviewer has the code and the state together,
-the thm_tricipher standard.
+not just a screenshot.
 
 ## Redaction (real engagements only)
 Before a client report, run `Skill(evidence)`: black-bar session cookies / PII, strip

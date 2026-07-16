@@ -213,7 +213,7 @@ container -> internal Flask app pickle-deser RCE -> `cap_sys_module` kmod escape
 
 After each phase, write to `targets/<eng>/`: hosts/access -> `state.md`, creds -> `loot.md`, chain -> `paths.md`, vulns -> `Vuln-index.md`, dead-ends -> `Deadends.md`, narrative -> `log.md`. Flags go in the writeup, never in `session/*` or `wiki/`.
 
-**Preserve exploit scripts and read source.** When you write the exploit script Rule 0 has you fall back to (a payload HTML, an escape/forge script, a webshell) or read a target's source, copy it into `targets/<eng>/poc/scripts/` and card the source with its URL (e.g. `shot.py --term --url-bar`); the reviewer needs the code and the state together, the thm_tricipher standard.
+**Preserve exploit scripts and read source.** When you write the exploit script Rule 0 has you fall back to (a payload HTML, an escape/forge script, a webshell) or read a target's source, copy it into `targets/<eng>/poc/scripts/` and card the source with its URL (e.g. `shot.py --term --url-bar`); the reviewer needs the code and the state together, not just a screenshot.
 
 **Screenshot EVERY successful step as you go (not at the end).** The walkthrough must be report-ready
 from the `.md` alone. The moment a step LANDS - valid cred / Pwn3d, a BloodHound edge, a GUI foothold
