@@ -509,6 +509,54 @@ def test_recon_capture_oob_silent_without_callback(vault):
     assert "waiting" in (eng / "oob.md").read_text()   # unchanged
 
 
+def _write_board(eng, weaponize_body):
+    (eng / "killchain.md").write_text(
+        "---\ntype: engagement-killchain\n---\n\n# Board\n\n"
+        "## 1. Recon\n- [x] nmap\n\n"
+        "## 2. Weaponize\n" + weaponize_body + "\n\n"
+        "## 3. Deliver\n- [ ] shell\n", encoding="utf-8")
+
+
+def test_gate1_nudges_on_exploit_before_weaponize(vault):
+    # exploit tool + Weaponize all [ ] -> GATE 1 nudge fires once, marker written
+    eng = vault / "targets" / "acme"
+    _write_board(eng, "- [ ] searchsploit + wiki CVE lookup\n- [ ] pick payload")
+    out = run_hook("recon-capture.py",
+                   {"tool_name": "Bash", "tool_input": {"command": "sqlmap -u http://t/?id=1 --batch"},
+                    "tool_response": "sqlmap testing"}, _env(vault)).stdout
+    assert "GATE 1" in out and "Weaponize" in out
+    assert (eng / ".gate1-nudged").exists()
+
+
+def test_gate1_silent_when_weaponize_started(vault):
+    eng = vault / "targets" / "acme"
+    _write_board(eng, "- [~] searchsploit + wiki CVE lookup\n- [ ] pick payload")
+    out = run_hook("recon-capture.py",
+                   {"tool_name": "Bash", "tool_input": {"command": "hydra -l admin -P rock ssh://t"},
+                    "tool_response": "x"}, _env(vault)).stdout
+    assert "GATE 1" not in out
+
+
+def test_gate1_silent_on_recon_command(vault):
+    # a recon tool is not exploitation -> no GATE 1 nudge even with Weaponize undone
+    eng = vault / "targets" / "acme"
+    _write_board(eng, "- [ ] searchsploit + wiki CVE lookup")
+    out = run_hook("recon-capture.py",
+                   {"tool_name": "Bash", "tool_input": {"command": "nmap -sV t"},
+                    "tool_response": "80 open"}, _env(vault)).stdout
+    assert "GATE 1" not in out
+
+
+def test_gate1_fires_once(vault):
+    eng = vault / "targets" / "acme"
+    _write_board(eng, "- [ ] searchsploit")
+    (eng / ".gate1-nudged").write_text("")   # already nudged this engagement
+    out = run_hook("recon-capture.py",
+                   {"tool_name": "Bash", "tool_input": {"command": "sqlmap -u http://t --batch"},
+                    "tool_response": "x"}, _env(vault)).stdout
+    assert "GATE 1" not in out
+
+
 def test_engagement_init_surfaces_wiki_candidates(vault):
     inbox = vault / "targets" / "acme" / "wiki-candidates"
     inbox.mkdir()

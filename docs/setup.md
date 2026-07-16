@@ -40,7 +40,7 @@ bash setup/install-hooks.sh    # symlinks ~/.claude/vault-hooks + registers the 
 - **UserPromptSubmit** -- `hunt-trigger.py` (fires hunt skills from `skills/hunt/triggers.json`).
 - **PreToolUse (Bash)** -- `scope-guard.py` (scope / RoE / dead-end guard).
 - **PreToolUse (Write)** -- `session-guard.py` (client-marker leak guard).
-- **PostToolUse (Bash)** -- `recon-capture.py` (fingerprint router + OOB callback correlation; a framework-meta guard suppresses false fires; routing only).
+- **PostToolUse (Bash)** -- `recon-capture.py` (fingerprint router + OOB callback correlation + a once-per-engagement GATE-1 wiki-first nudge; a framework-meta guard suppresses false fires; advisory).
 - **PreCompact** -- `pre-compact.sh` (persist state before compaction).
 
 **Hooks self-locate the vault** via `realpath(__file__)` through the `~/.claude/vault-hooks` symlink -- no hardcoded paths, so the same code runs unmodified on every device.

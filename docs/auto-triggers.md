@@ -22,7 +22,7 @@ This page is a snapshot; regenerate the tables from those files if they change.
 | **UserPromptSubmit** | `hunt-trigger.py` | Keyword-matches the prompt against `triggers.json` (code-stripped, intent-gated): a hard hit surfaces the relevant **Skill(x)** to load (routing; the skill carries the mandate), a surface hit a softer "consider Skill(x)". Leak-safe telemetry to `.trigger-fire.jsonl`. |
 | **PreToolUse (Bash)** | `scope-guard.py` | scope / RoE advisory (deterministic safety guard). |
 | **PreToolUse (Write)** | `session-guard.py` | Warns when a write would put a client marker into a generic `session/*` file. |
-| **PostToolUse (Bash)** | `recon-capture.py` | Fingerprint auto-route (to the hunt Skill) + OOB callback correlation. A framework-meta guard suppresses false fires. Routing only. |
+| **PostToolUse (Bash)** | `recon-capture.py` | Fingerprint auto-route (to the hunt Skill) + OOB callback correlation + a once-per-engagement GATE-1 wiki-first nudge (exploit-shaped command while `killchain.md` Weaponize is undone). A framework-meta guard suppresses false fires. Advisory. |
 | **PreCompact** | `pre-compact.sh` | Reminds to persist state (`gsd:pause-work`) before context compacts. |
 
 All 7 hooks inject context, route to a skill, or fire a deterministic safety guard; none prescribes methodology, blocks the model, or silently runs a tool, and all fail open. Canonical set: `scripts/check-hooks.py` `EXPECTED_HOOKS`.
@@ -78,7 +78,7 @@ Prompt contains the keyword (case-insensitive) -> that skill is suggested. Multi
 
 Fails open: a missing scope entry = no warning, never a block. No active engagement = silent.
 
-### After a recon command: fingerprint router + OOB correlation (`recon-capture.py`, PostToolUse)
+### After a bash command: fingerprint router + OOB correlation + GATE-1 nudge (`recon-capture.py`, PostToolUse)
 
 **Fingerprint auto-route** - scans the command + its output for tech and injects the hunt skill to fire. A framework-meta guard suppresses false fires when the command reads/edits the vault's own playbook/hook/wiring machinery (its output is full of playbook tokens). Detected tech (from `playbook.json`):
 
@@ -93,6 +93,8 @@ coldfusion  php-cgi  vcenter  screenconnect  papercut  ofbiz
 (80 fingerprints. Each emits the hunt skill to load, e.g. `jenkins detected -> load Skill(hunt-rce)`. The tech list above is an illustrative subset; regenerate from `playbook.json`.)
 
 **OOB callback correlation** - flips a waiting `oob.md` row to HIT when its planted token appears in the command + output blob (operator polling OAST/Collaborator), so a confirmed blind-bug callback is surfaced immediately instead of being missed.
+
+**GATE-1 wiki-first nudge** - the only enforcement the kill-chain board's GATE lines get. When an exploit-shaped command runs (`sqlmap`/`hydra`/`medusa`/`msfconsole`/`evil-winrm`/`nxc ... -x`/a reverse shell, incl. inside a vm.sh/ssh/wsl wrapper) while the active `killchain.md` `## 2. Weaponize` section has no `[~]`/`[x]` progress, it nudges once per engagement to query the wiki + pick the payload + mark the Weaponize item BEFORE hand-rolling. Fire-once (`.gate1-nudged` marker), framework-meta exempt, advisory + fail-open.
 
 Tools whose output is fingerprinted (matched at command position, including inside `vm.sh`/`ssh`/`wsl` bridge wrappers): `nmap masscan nxc netexec crackmapexec ffuf httpx subfinder rustscan naabu dnsx katana gau amass gowitness arjun nuclei gobuster feroxbuster curl wget whatweb wpscan nikto nslookup dig sqlmap dalfox swaks`. (Capturing results into `state.md`/`loot.md` is now state-first discipline, not a hook nudge.)
 

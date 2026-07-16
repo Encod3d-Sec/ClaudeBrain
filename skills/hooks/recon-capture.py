@@ -32,6 +32,13 @@ CRED_TOOLS = (r"secretsdump|getuserspns|getnpusers|gettgt|certipy|kerbrute|hashc
 # commands whose output is worth fingerprinting (discovery/probes/testers)
 PROBE_TOOLS = RECON_TOOLS + r"|curl|wget|whatweb|wpscan|nikto|whatwaf|nslookup|dig|sqlmap|dalfox|swaks"
 
+# unambiguous EXPLOITATION tools/patterns: their use means we are past recon into
+# foothold/exploit -- the point GATE 1 (wiki-first) must have been cleared. Kept tight to
+# avoid false-firing on recon (a bare nxc/cme enum is recon; `-x` command-exec is not).
+EXPLOIT_TOOLS = (r"sqlmap|hydra|medusa|msfconsole|msfvenom|evil-winrm|"
+                 r"(?:crackmapexec|cme|nxc|netexec)\s+\S.*\s-x\b")
+_REVSHELL_RE = re.compile(r"/dev/tcp/|\bnc\b[^\n]*\s-e\b|\bbash\s+-i\b|\brlwrap\s+nc\b", re.I)
+
 MAX_BLOB = 20000   # cap output scanned for fingerprints
 MAX_HITS = 3
 
@@ -235,6 +242,31 @@ def _emit(blocks):
     }))
 
 
+def _is_exploit_cmd(cmd):
+    """True if cmd (or an inner vm.sh/ssh/wsl-wrapped cmd) invokes an exploitation tool or a
+    reverse-shell pattern -- past recon, into foothold/exploit."""
+    for c in [cmd] + inner_cmds(cmd):
+        if invokes(c, EXPLOIT_TOOLS) or _REVSHELL_RE.search(c):
+            return True
+    return False
+
+
+def _weaponize_undone(d):
+    """GATE 1 signal: True iff the active killchain.md has a '## 2. Weaponize' section that
+    has open '[ ]' items but NO '[~]'/'[x]' -- i.e. exploitation is starting before the
+    wiki/CVE weaponization step. Fail-closed to False (no nudge) if the board or section is
+    absent/unreadable, so this never fires spuriously."""
+    try:
+        txt = open(os.path.join(d, "killchain.md"), encoding="utf-8", errors="ignore").read()
+    except OSError:
+        return False
+    m = re.search(r"^##\s+2\.\s+Weaponize\b.*?(?=^##\s+\d|\Z)", txt, re.M | re.S)
+    if not m:
+        return False
+    body = m.group(0)
+    return "[x]" not in body and "[~]" not in body and "[ ]" in body
+
+
 def main():
     raw = sys.stdin.read()
     try:
@@ -277,6 +309,22 @@ def main():
                 "OOB HIT auto-correlated -- callback landed for: " + "; ".join(flipped[:4])
                 + ". Gate passed: scaffold + validate the FIND now (oob.md row is HIT)."
             )
+
+    # GATE 1 nudge (fire-once per engagement, advisory, fail-open): an exploit-shaped command
+    # while killchain.md Weaponize shows no progress means jumping to exploitation without the
+    # wiki/CVE lookup. Framework-meta commands are exempt. This is the only ENFORCEMENT the
+    # board's GATE lines get -- one cheap reminder, not a block.
+    if d and _engagement and not _is_framework_meta(cmd):
+        marker = os.path.join(d, ".gate1-nudged")
+        if not os.path.exists(marker) and _is_exploit_cmd(cmd) and _weaponize_undone(d):
+            blocks.append(
+                "GATE 1 (wiki-first): exploiting, but killchain.md Weaponize has no progress. "
+                "Query the wiki for this tech/CVE first (Skill(arsenal) / qmd_query), pull the "
+                "payload from wiki/payloads/, mark the Weaponize item, THEN exploit.")
+            try:
+                open(marker, "w").close()
+            except OSError:
+                pass
 
     # 1. fingerprint router. Pure documentation/discussion commands (a comment, echo, a
     #    cat/grep/rg of some file) never invoke a probe tool, so the router is pointless on
