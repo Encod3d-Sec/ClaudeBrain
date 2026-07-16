@@ -56,12 +56,32 @@ if ! command -v jwt_tool >/dev/null 2>&1 && [ ! -x /usr/local/bin/jwt_tool ]; th
   [ -d /opt/jwt_tool ] || \$SUDO git clone -q https://github.com/ticarpi/jwt_tool /opt/jwt_tool 2>/dev/null
   [ -f /opt/jwt_tool/jwt_tool.py ] && \$SUDO ln -sf /opt/jwt_tool/jwt_tool.py /usr/local/bin/jwt_tool && echo "  jwt_tool (git)" || echo "  MISS jwt_tool"
 fi
+# /opt/arsenal: canonical on-VM home for OUR helpers + fetched offensive tools. World-writable
+# so the base64 push (below, from the vault side) and the model can drop scripts here.
+\$SUDO mkdir -p /opt/arsenal && \$SUDO chmod 0777 /opt/arsenal
+[ -f /opt/arsenal/pspy64 ] || { curl -sSfL https://github.com/DominicBreuker/pspy/releases/latest/download/pspy64 -o /opt/arsenal/pspy64 && chmod +x /opt/arsenal/pspy64 && echo "  arsenal pspy64" || echo "  MISS pspy64"; }
+[ -f /opt/arsenal/linpeas.sh ] || { curl -sSfL https://github.com/peass-ng/PEASS-ng/releases/latest/download/linpeas.sh -o /opt/arsenal/linpeas.sh && chmod +x /opt/arsenal/linpeas.sh && echo "  arsenal linpeas.sh" || echo "  MISS linpeas.sh"; }
+[ -f /opt/arsenal/winPEASx64.exe ] || { curl -sSfL https://github.com/peass-ng/PEASS-ng/releases/latest/download/winPEASx64.exe -o /opt/arsenal/winPEASx64.exe && echo "  arsenal winPEASx64.exe" || echo "  MISS winPEASx64.exe"; }
 REMOTE_EOF
 )
 
 echo "[..] provisioning toolchain on the VM (apt-first, per-package tolerant)"
 B64=$(printf '%s' "$REMOTE" | base64 -w0)
 bash /root/vm.sh "echo $B64 | base64 -d | bash"
+
+# Seed /opt/arsenal with OUR vault-side helpers (base64 over the bridge, unconditional so a
+# re-provision refreshes them): shot.py + capture.sh + any harness wordlists.
+echo "[..] seeding /opt/arsenal with our helpers (shot.py, capture.sh, harness wordlists)"
+HERE="$(cd "$(dirname "$0")" && pwd)"
+for f in shot.py capture.sh; do
+  [ -f "$HERE/$f" ] || continue
+  bash /root/vm.sh "mkdir -p /opt/arsenal; printf %s '$(base64 -w0 "$HERE/$f")' | base64 -d > /opt/arsenal/$f && chmod +x /opt/arsenal/$f && echo '  arsenal $f'"
+done
+for wl in "$HERE"/wordlists/harness-*.txt; do
+  [ -f "$wl" ] || continue
+  bn="$(basename "$wl")"
+  bash /root/vm.sh "printf %s '$(base64 -w0 "$wl")' | base64 -d > /opt/arsenal/$bn && echo '  arsenal $bn'"
+done
 
 echo "[ok] provisioning attempted. Verify installed binaries with:"
 echo "     bash /root/vm.sh 'for t in httpx subfinder ffuf naabu dnsx katana gau dalfox arjun sqlmap swaks jwt_tool trufflehog gitleaks; do command -v \$t >/dev/null 2>&1 && echo \"ok \$t\" || echo \"MISSING \$t\"; done'"

@@ -66,6 +66,26 @@ recon-capture nudges point at (apt-first; `bash scripts/vm-provision.sh --list` 
 and the final line prints a verify one-liner). It is per-package tolerant, so a name that is not
 in your Kali release's repo is reported `MISS` rather than aborting the run.
 
+## `/opt/arsenal` (canonical on-VM tool/script home)
+
+`/opt/arsenal` is the canonical home on the VM for OUR helpers and fetched offensive tools -
+`shot.py`, `capture.sh`, harness wordlists, and privesc binaries (`pspy64`, `linpeas.sh`,
+`winPEASx64.exe`). `vm-provision.sh` creates it (world-writable) and seeds it: it fetches the
+privesc tools from their GitHub releases on the VM, and base64-pushes `shot.py` + `capture.sh` +
+`scripts/wordlists/harness-*.txt` from the vault.
+
+On a box, reach for a helper from `/opt/arsenal` first (e.g. `/opt/arsenal/pspy64`,
+`/opt/arsenal/linpeas.sh`). If a script you need is not there yet, push it from the vault on
+demand:
+
+```
+bash scripts/vm-sync.sh <name>     # pushes scripts/<name> -> /opt/arsenal/<name> if missing
+```
+
+`vm-sync.sh` is idempotent (skips when the file is already present) and base64-pushes over the
+`vm.sh` bridge (which forwards no stdin). It fails open with a clear message when the VM is
+unreachable.
+
 ## Secrets boundary
 
 The VM IP and password live only in `/root/creds.txt` (device-local). Never write them
