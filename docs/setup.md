@@ -39,7 +39,7 @@ bash setup/install-hooks.sh    # symlinks ~/.claude/vault-hooks + registers the 
 - **SessionStart** -- `session-start.sh` (skill auto-register + hot.md cache), `engagement-init.py` (self-heals the `state/loot/paths/killchain/...` set, injects the state summary + kill-chain board status + top next-moves + one compact `harness:` maintenance line).
 - **UserPromptSubmit** -- `hunt-trigger.py` (fires hunt skills from `skills/hunt/triggers.json`).
 - **PreToolUse (Bash)** -- `scope-guard.py` (scope / RoE / dead-end guard).
-- **PreToolUse (Write)** -- `session-guard.py` (client-marker leak guard).
+- **PreToolUse (Write)** -- `session-guard.py` (client-marker leak guard: session/* AND git-tracked framework trees; targets/ + docs/superpowers/ exempt).
 - **PostToolUse (Bash)** -- `recon-capture.py` (fingerprint router + OOB callback correlation + a once-per-engagement GATE-1 wiki-first nudge; a framework-meta guard suppresses false fires; advisory).
 - **PreCompact** -- `pre-compact.sh` (persist state before compaction).
 - **Stop** -- `close-out.py` (close-out reflex: when the engagement is SOLVED but its walkthrough is unassembled / the learn harvest is due, nudges Skill(walkthrough) then Skill(learn); advisory, self-clearing).

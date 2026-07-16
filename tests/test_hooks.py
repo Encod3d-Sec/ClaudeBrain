@@ -97,6 +97,24 @@ def test_session_guard_silent_for_generic_content(vault):
     assert out.strip() == ""
 
 
+def test_session_guard_flags_marker_in_tracked_framework_file(vault):
+    # the recurring leak: the active codename baked into a tracked comment (skills/scripts/docs/wiki)
+    payload = {"tool_name": "Edit",
+               "tool_input": {"file_path": str(vault / "skills" / "hooks" / "recon-capture.py"),
+                              "new_string": "# lesson observed on the acme box"}}
+    out = run_hook("session-guard.py", payload, _env(vault)).stdout
+    assert "CLIENT-DATA BOUNDARY" in out and "acme" in out and "git-TRACKED" in out
+
+
+def test_session_guard_silent_for_superpowers_retro(vault):
+    # docs/superpowers/ is gitignored planning+retro -> may name the engagement -> silent
+    payload = {"tool_name": "Write",
+               "tool_input": {"file_path": str(vault / "docs" / "superpowers" / "harness-retro.md"),
+                              "content": "on the acme box the reflex mis-fired"}}
+    out = run_hook("session-guard.py", payload, _env(vault)).stdout
+    assert out.strip() == ""
+
+
 def test_hunt_trigger_secrets_keyword(vault):
     # "found" is past-tense (excluded from the intent-verb gate), so hunt-secrets now
     # DOWNGRADES to the soft "consider" tier -- the assertion still holds via that line.
