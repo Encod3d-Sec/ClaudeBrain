@@ -29,15 +29,15 @@ ENTITY_KEY = {"pentest": ("host", "ip"), "ctf": ("target",), "bugbounty": ("asse
 # Per-engagement-type heal set. state/loot/paths/killchain (STATE_FILES) come from the
 # type's own template dir and are healed for every type. The shared type-agnostic files
 # split into a common core (every type) and a pentest/bugbounty-only extension
-# (coverage/Vuln-index/oob). CTF rooms never use the severity/OOB/coverage machinery
-# (dead across every THM room), so ctf heals only the core; those three become
-# opt-in via ensure_optional_file() (see below) or new-engagement.sh --with-* flags.
+# (Vuln-index/oob). CTF rooms never use the severity/OOB machinery (dead across every
+# THM room), so ctf heals only the core; those two become opt-in via
+# ensure_optional_file() (see below) or new-engagement.sh --with-oob. Per-asset test
+# coverage now lives in the killchain.md 4a table (killchain.md is in STATE_FILES).
 SHARED_CORE = (("log.md", "_log.md"), ("scope.md", "_scope.md"),
                ("walkthrough.md", "_walkthrough.md"),
                ("Deadends.md", "_deadends.md"),
                ("poc.md", "_poc.md"))
-SHARED_FULL = (("coverage.md", "_coverage.md"),
-               ("Vuln-index.md", "_vuln-index.md"),
+SHARED_FULL = (("Vuln-index.md", "_vuln-index.md"),
                ("oob.md", "_oob.md"))
 # Standard dirs scaffolded for every type. poc/ = curated exploit/PoC/flag shots,
 # recon/ = auto scan-tool cards, ingest/ = raw tool output. Vulns/ is intentionally
@@ -47,21 +47,20 @@ STATE_DIRS = ("ingest", "recon", "poc")
 
 def _heal_shared_set(etype):
     """Shared (dest, templatefile) pairs to heal for an engagement type. ctf gets the
-    lean core only; pentest/bugbounty get core + the coverage/Vuln-index/oob machinery."""
+    lean core only; pentest/bugbounty get core + the Vuln-index/oob machinery."""
     return SHARED_CORE if etype == "ctf" else SHARED_CORE + SHARED_FULL
 
 
 # Opt-in shared files a ctf engagement omits at init. Created on demand: the
-# new-engagement.sh --with-oob/--with-coverage flags, ensure_optional_file() when a
-# blind bug (oob) or a coverage check (coverage) actually runs, or a manual findings
-# roll-up (vuln-index). vuln-index is type-aware: ctf uses a slim findings list.
+# new-engagement.sh --with-oob flag, ensure_optional_file() when a blind bug (oob)
+# actually runs, or a manual findings roll-up (vuln-index). vuln-index is type-aware:
+# ctf uses a slim findings list.
 OPTIONAL_FILES = {"oob": ("oob.md", "_oob.md"),
-                  "coverage": ("coverage.md", "_coverage.md"),
                   "vuln-index": ("Vuln-index.md", "_vuln-index.md")}
 
 
 def ensure_optional_file(kind, d=None):
-    """Back-fill one opt-in shared file (oob/coverage/vuln-index) on demand for the
+    """Back-fill one opt-in shared file (oob/vuln-index) on demand for the
     active (or given) engagement. Returns the created filename, or '' if it already
     exists / kind is unknown / no engagement / the template is missing. For
     kind='vuln-index' a ctf engagement gets the slim setup/templates/ctf/vuln-index.md;
@@ -249,7 +248,7 @@ def tested_classes(d, etype, classes):
     """Vuln classes credited as TESTED for the engagement, inferred from the files the
     state-first discipline already produces -- so coverage stays current with no manual
     bookkeeping:
-      1. coverage.md 'tested' column  -> explicit, per-asset (tokens taken verbatim)
+      1. killchain.md 4a table        -> explicit, per-asset ('vuln class' when status done)
       2. Vulns/**/FIND-*.md           -> tested-and-found, per 'affected' asset
       3. Deadends.md lines            -> tested-and-cleared (a named class, bounded-out)
     Returns (per_asset: {asset_lower: set}, glob: set); glob credits apply to every asset
@@ -267,13 +266,17 @@ def tested_classes(d, etype, classes):
         else:
             glob.update(hits)
 
-    # 1. explicit coverage.md (verbatim tokens, not matched). Drop dash placeholders.
+    # 1. explicit killchain.md 4a table: credit a row's 'vuln class' as tested when its
+    #    status cell is done ([x] or "done"). Drop dash placeholders.
     try:
-        for r in _parse_table(os.path.join(d, "coverage.md")):
+        for r in _parse_table(os.path.join(d, "killchain.md")):
+            status = (r.get("status", "") or "").strip().lower()
+            if "[x]" not in status and "done" not in status:
+                continue
             a = (r.get("asset") or r.get("host") or r.get("target") or "").strip().lower()
-            toks = {c for c in (x.strip().lower() for x in (r.get("tested", "") or "").split(","))
-                    if c and not re.fullmatch(r"-+", c)}
-            credit(toks, a)
+            cls = (r.get("vuln class", "") or "").strip().lower()
+            if cls and not re.fullmatch(r"-+", cls):
+                credit({cls}, a)
     except Exception:
         pass
 
@@ -663,8 +666,8 @@ def learn_pending(d):
 def ensure_state_files():
     """Create any missing per-engagement files (from the type's template) and the
     standard dirs in the active engagement. The shared set is type-aware: a ctf
-    engagement heals only the lean core (state/loot/paths/log/scope/walkthrough/hot/
-    Deadends), skipping the coverage/Vuln-index/oob severity machinery that is dead
+    engagement heals only the lean core (state/loot/paths/killchain/log/scope/
+    walkthrough/Deadends), skipping the Vuln-index/oob severity machinery that is dead
     across CTF rooms; pentest/bugbounty heal the full set. poc/ is scaffolded for
     every type; Vulns/ is created lazily on the first FIND, never here. Returns the
     created names. Idempotent: never overwrites an existing file."""

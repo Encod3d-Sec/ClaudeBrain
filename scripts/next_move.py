@@ -8,9 +8,9 @@ on demand via the `next-move` skill; the SessionStart hook surfaces the top few.
 
 Also emits low-ranked [gap] floor moves for untested vuln classes (the per-type
 checklist in coverage-classes.json minus classes auto-credited as tested from
-coverage.md + written findings + Deadends.md), so systematic breadth reaches the
-shortlist even when nothing was fingerprinted. Skill(coverage) has the full
-per-asset matrix; these are just the "don't forget class X" nudge.
+the killchain.md 4a table + written findings + Deadends.md), so systematic breadth
+reaches the shortlist even when nothing was fingerprinted. Skill(coverage) has the
+full per-asset matrix; these are just the "don't forget class X" nudge.
 
 CLI:  python3 scripts/next_move.py [-v]
 API:  next_move.suggest(limit=5) -> list[str]

@@ -84,7 +84,7 @@ Read the full engagement and list every candidate GENERIC lesson:
 - `Deadends.md` - what failed. Negative knowledge is reusable: a bypass that does NOT
   work on tech X, a default cred changed in vendor version Y, a false-positive pattern.
 - `Vuln-index.md` / `Vulns/` - findings and their reusable exploitation technique.
-- `coverage.md`, `log.md` - anything else non-obvious that recurs.
+- `killchain.md`, `log.md` - anything else non-obvious that recurs.
 
 A candidate is worth harvesting only if it is REUSABLE on the next engagement. Skip
 one-off client trivia.

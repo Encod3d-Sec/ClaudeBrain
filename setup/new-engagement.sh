@@ -1,15 +1,16 @@
 #!/usr/bin/env bash
 # Create a new engagement from a type template and set it active, or rename one.
 #
-#   bash setup/new-engagement.sh <name> <pentest|bugbounty|ctf> [--with-oob] [--with-coverage] [--scope <host>]...
+#   bash setup/new-engagement.sh <name> <pentest|bugbounty|ctf> [--with-oob] [--scope <host>]...
 #   bash setup/new-engagement.sh --rename <old> <new>
 #
 # Scaffolds targets/<name>/ with the type-aware file set + ingest/ recon/ poc/ dirs,
 # and points targets/active.md at it. Engagement data stays under targets/ (private).
-#   - pentest/bugbounty: full set (adds coverage.md, oob.md, Vuln-index.md).
-#   - ctf: lean set (state,loot,paths,log,scope,walkthrough,Deadends); coverage/oob
-#     are opt-in via --with-coverage/--with-oob; the severity Vuln-index is skipped (a
-#     slim ctf findings list is created on demand by ensure_optional_file).
+#   - pentest/bugbounty: full set (adds oob.md, Vuln-index.md).
+#   - ctf: lean set (state,loot,paths,killchain,log,scope,walkthrough,Deadends); oob is
+#     opt-in via --with-oob; the severity Vuln-index is skipped (a slim ctf findings
+#     list is created on demand by ensure_optional_file). Per-asset coverage lives in
+#     the killchain.md 4a table for all types.
 #   - --scope <host> (repeatable): seed scope.md's "## In scope" bullets at creation
 #     time, so scope-gated evidence auto-capture is live immediately instead of
 #     waiting on a hand-edit. Validated against a conservative host/CIDR charset;
@@ -71,11 +72,10 @@ fi
 NAME="${1:-}"
 NAME="$(printf '%s' "$NAME" | tr ' /' '--' | tr -cd 'A-Za-z0-9._-')"   # sanitize before it reaches sed/paths
 TYPE="${2:-pentest}"
-[ -n "$NAME" ] || { echo "usage: new-engagement.sh <name> <pentest|bugbounty|ctf> [--with-oob] [--with-coverage] [--scope <host>]..."; exit 1; }
+[ -n "$NAME" ] || { echo "usage: new-engagement.sh <name> <pentest|bugbounty|ctf> [--with-oob] [--scope <host>]..."; exit 1; }
 case "$TYPE" in pentest|bugbounty|ctf) ;; *) echo "type must be pentest|bugbounty|ctf"; exit 1;; esac
 
 WITH_OOB=0
-WITH_COV=0
 SCOPE_HOSTS=()
 ARGS=("${@:3}")
 i=0
@@ -83,7 +83,6 @@ while [ "$i" -lt "${#ARGS[@]}" ]; do
   arg="${ARGS[$i]}"
   case "$arg" in
     --with-oob) WITH_OOB=1 ;;
-    --with-coverage) WITH_COV=1 ;;
     --scope)
       i=$((i + 1))
       val="${ARGS[$i]:-}"
@@ -97,8 +96,8 @@ while [ "$i" -lt "${#ARGS[@]}" ]; do
   esac
   i=$((i + 1))
 done
-# pentest/bugbounty always carry the full severity/OOB/coverage machinery.
-if [ "$TYPE" != "ctf" ]; then WITH_OOB=1; WITH_COV=1; fi
+# pentest/bugbounty always carry the full severity/OOB machinery.
+if [ "$TYPE" != "ctf" ]; then WITH_OOB=1; fi
 
 TPL="$VAULT/setup/templates/$TYPE"
 DEST="$VAULT/targets/$NAME"
@@ -141,14 +140,12 @@ fi
 
 sub "$VAULT/setup/templates/_deadends.md" "$NAME" "$TODAY" "$DEST/Deadends.md"
 # full-set extras (SHARED_FULL): default for pentest/bugbounty, opt-in for ctf
-[ "$WITH_COV" = 1 ] && sub "$VAULT/setup/templates/_coverage.md" "$NAME" "$TODAY" "$DEST/coverage.md"
 [ "$WITH_OOB" = 1 ] && sub "$VAULT/setup/templates/_oob.md" "$NAME" "$TODAY" "$DEST/oob.md"
 [ "$TYPE" != "ctf" ] && sub "$VAULT/setup/templates/_vuln-index.md" "$NAME" "$TODAY" "$DEST/Vuln-index.md"
 
 printf '%s\n' "$NAME" > "$VAULT/targets/active.md"
 
 FILES="state, loot, paths, killchain, log, scope, walkthrough, Deadends"
-[ "$WITH_COV" = 1 ] && FILES="$FILES, coverage"
 [ "$WITH_OOB" = 1 ] && FILES="$FILES, oob"
 [ "$TYPE" != "ctf" ] && FILES="$FILES, Vuln-index"
 echo "created $TYPE engagement: targets/$NAME/ ($FILES, ingest/, recon/, poc/)"

@@ -39,7 +39,7 @@ research ingest (external source -> wiki): the source here is the finished engag
 Use `Skill(learn)`; it auto-fires via the loop-driver once the engagement is `SOLVED`
 and its walkthrough is assembled.
 
-1. **Inventory** what the engagement taught from `state/loot/paths/Deadends/coverage/
+1. **Inventory** what the engagement taught from `state/loot/paths/killchain/Deadends/
    Vuln-index/walkthrough/hot/log`.
 2. **Generalize** each lesson (product + technique/cred/endpoint + impact); strip every
    client host/IP/domain/cred value.

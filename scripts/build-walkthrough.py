@@ -38,7 +38,7 @@ import sys
 from datetime import date
 
 # self-locate vault, reuse the hooks' active-engagement resolver (same pattern as
-# scripts/coverage.py and scripts/next_move.py)
+# scripts/next_move.py)
 VAULT = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 sys.path.insert(0, os.path.join(VAULT, "skills", "hooks"))
 import _engagement  # noqa: E402

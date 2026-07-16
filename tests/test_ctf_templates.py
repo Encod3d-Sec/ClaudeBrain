@@ -50,8 +50,8 @@ def test_ensure_pentest_heals_full_set(vault, monkeypatch):
     eng = _mk(vault / "targets" / "pt", "pentest")
     monkeypatch.setattr(_engagement, "active_dir", lambda: str(eng))
     created = _engagement.ensure_state_files()
-    for f in ("oob.md", "coverage.md", "Vuln-index.md",
-              "loot.md", "paths.md", "walkthrough.md"):
+    for f in ("oob.md", "Vuln-index.md",
+              "loot.md", "paths.md", "killchain.md", "walkthrough.md"):
         assert f in created and (eng / f).exists()
     assert (eng / "poc").is_dir()
 
@@ -63,16 +63,15 @@ def test_ensure_ctf_idempotent(vault, monkeypatch):
     assert _engagement.ensure_state_files() == []
 
 
-def test_ensure_optional_backfills_oob_and_coverage(vault, monkeypatch):
+def test_ensure_optional_backfills_oob(vault, monkeypatch):
     eng = _mk(vault / "targets" / "room3", "ctf")
     monkeypatch.setattr(_engagement, "active_dir", lambda: str(eng))
-    _engagement.ensure_state_files()          # lean: no oob/coverage
+    _engagement.ensure_state_files()          # lean: no oob
     assert not (eng / "oob.md").exists()
     assert _engagement.ensure_optional_file("oob") == "oob.md"
     assert (eng / "oob.md").exists() and "room3" in (eng / "oob.md").read_text()
-    assert _engagement.ensure_optional_file("coverage") == "coverage.md"
-    assert (eng / "coverage.md").exists()
     assert _engagement.ensure_optional_file("oob") == ""       # already exists -> ''
+    assert _engagement.ensure_optional_file("coverage") == ""  # coverage retired -> unknown kind
     assert _engagement.ensure_optional_file("bogus") == ""     # unknown kind -> ''
 
 
@@ -91,21 +90,6 @@ def test_ensure_optional_vuln_index_full_for_pentest(vault, monkeypatch):
     monkeypatch.setattr(_engagement, "active_dir", lambda: str(eng))
     assert _engagement.ensure_optional_file("vuln-index") == "Vuln-index.md"
     assert "Severity Count" in (eng / "Vuln-index.md").read_text()   # full template
-
-
-def test_coverage_materializes_coverage_md_on_run(vault, monkeypatch):
-    eng = _mk(vault / "targets" / "room5", "ctf")
-    (eng / "state.md").write_text(
-        "---\ntype: engagement-state\nengagement_type: ctf\n---\n\n"
-        "| target | service | port | foothold | access | flag | notes |\n"
-        "|--------|---------|------|----------|--------|------|-------|\n"
-        "| 10.0.0.9 | http | 80 | - | port-open | - | - |\n", encoding="utf-8")
-    monkeypatch.setattr(_engagement, "active_dir", lambda: str(eng))
-    _engagement.ensure_state_files()
-    assert not (eng / "coverage.md").exists()
-    cov = _load("scripts/coverage.py", "cov_run")
-    cov.main()
-    assert (eng / "coverage.md").exists()      # coverage check actually ran -> materialized
 
 
 @pytest.fixture
@@ -145,16 +129,18 @@ def test_new_engagement_pentest_full(eng_vault):
     r = _run_new(eng_vault, "pt", "pentest")
     assert r.returncode == 0, r.stderr
     d = eng_vault / "targets" / "pt"
-    for f in ("coverage.md", "oob.md", "Vuln-index.md"):
+    for f in ("oob.md", "Vuln-index.md"):
         assert (d / f).exists()          # full set (backward compat)
+    assert not (d / "coverage.md").exists()   # coverage retired -> board 4a table
     assert (d / "poc").is_dir()          # poc/ now scaffolded at init
 
 
 def test_new_engagement_ctf_with_flags(eng_vault):
-    r = _run_new(eng_vault, "room2", "ctf", "--with-oob", "--with-coverage")
+    r = _run_new(eng_vault, "room2", "ctf", "--with-oob")
     assert r.returncode == 0, r.stderr
     d = eng_vault / "targets" / "room2"
-    assert (d / "oob.md").exists() and (d / "coverage.md").exists()
+    assert (d / "oob.md").exists()
+    assert not (d / "coverage.md").exists()     # coverage retired
     assert not (d / "Vuln-index.md").exists()   # ctf still omits the severity index
 
 
