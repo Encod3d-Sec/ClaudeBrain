@@ -180,7 +180,8 @@ ClaudeBrain/
 │   ├── conventions.md           <- cross-referencing, log format, style guide
 │   └── auto-triggers.md         <- what auto-fires (hooks, triggers.json, playbook) and when
 ├── scripts/                     <- automation (self-documenting via docstrings): next_move,
-│                                   find-lint, lint-wiki, gen_index, build_moc, cve_feed, freshness,
+│                                   status.py (on-demand engagement dashboard: phase/counts/evidence/deadends/moves),
+│                                   find-lint, lint-wiki, lint-md-tables.py (GFM table integrity), gen_index, build_moc, cve_feed, freshness,
 │                                   check-hooks, check-leaks.sh, trigger-stats, wordlist-* (+wordlists/),
 │                                   shot.py, capture.sh (one entrypoint, modes: ev=live cmd+url card / req=curl
 │                                   request-response / tmux=real tmux-session card / burp=Burp Repeater PoC), vm-scan.sh, burp-mcp-cli.py,

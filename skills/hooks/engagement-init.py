@@ -274,6 +274,20 @@ def main():
     except Exception:
         pass
 
+    # evidence captured (observability): a multi-finding box with few deliberate shots is a
+    # capture gap the operator should see at a glance. Silent at zero. Full view: scripts/status.py.
+    try:
+        import glob as _glob
+        _d = _engagement.active_dir()
+        if _d:
+            _poc = len(_glob.glob(os.path.join(_d, "poc", "**", "*.png"), recursive=True))
+            _rec = len(_glob.glob(os.path.join(_d, "recon", "*.png")))
+            if _poc or _rec:
+                out.append("evidence: %d poc shot(s), %d recon card(s) "
+                           "(scripts/status.py = full status)" % (_poc, _rec))
+    except Exception:
+        pass
+
     # ranked next-moves from the analyzer (top 3)
     try:
         sys.path.insert(0, os.path.join(_engagement.VAULT, "scripts"))

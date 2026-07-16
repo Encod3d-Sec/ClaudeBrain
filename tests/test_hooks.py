@@ -393,6 +393,15 @@ def test_engagement_init_reports_state(vault):
     assert "Recent engagement log" in out  # surfaces private log
 
 
+def test_engagement_init_surfaces_evidence_count(vault):
+    # observability: deliberate poc shots are surfaced at SessionStart (silent at zero)
+    poc = vault / "targets" / "acme" / "poc"
+    poc.mkdir(parents=True, exist_ok=True)
+    (poc / "01-foothold.png").write_bytes(b"x")
+    out = run_hook("engagement-init.py", {"source": "startup"}, _env(vault)).stdout
+    assert "evidence: 1 poc shot(s)" in out and "scripts/status.py" in out
+
+
 def test_engagement_init_surfaces_tunnel_safe(vault):
     (vault / "targets" / "acme" / "scope.md").write_text(
         "---\ntype: engagement-scope\ntunnel_safe: true\n---\n\n"
