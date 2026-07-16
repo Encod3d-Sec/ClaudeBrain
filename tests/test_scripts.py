@@ -13,6 +13,29 @@ def _load(path, name):
     return mod
 
 
+def test_capture_sh_exists_and_executable():
+    p = os.path.join(REPO, "scripts", "capture.sh")
+    assert os.path.exists(p) and os.access(p, os.X_OK)
+
+
+def test_capture_sh_usage_lists_all_modes():
+    import subprocess
+    r = subprocess.run(["bash", os.path.join(REPO, "scripts", "capture.sh")],
+                       capture_output=True, text=True)
+    combined = r.stdout + r.stderr
+    for mode in ("ev", "req", "tmux", "burp"):
+        assert mode in combined
+    assert r.returncode != 0   # no mode -> usage + nonzero
+
+
+def test_capture_sh_rejects_unknown_mode():
+    import subprocess
+    r = subprocess.run(["bash", os.path.join(REPO, "scripts", "capture.sh"), "bogus", "e", "s"],
+                       capture_output=True, text=True)
+    assert r.returncode != 0
+    assert "unknown mode" in (r.stdout + r.stderr)
+
+
 def test_wiki_gaps_normalize_filters_junk():
     wg = _load("scripts/wiki-gaps.py", "wiki_gaps")
     assert wg.normalize("Sql-Injection") == "sql-injection"

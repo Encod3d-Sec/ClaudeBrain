@@ -33,24 +33,25 @@ state**, the **flag**. Tell the arc (Entry -> Trigger -> Impact) AND capture the
   anything you missed rather than shipping evidence with gaps.
 Name `NN-slug.png` (NN = step order) so the evidence reads top-to-bottom.
 
-## Fastest path: `evshot.sh` (one call, live - USE THIS by default)
+## Fastest path: `capture.sh ev` (one call, live - USE THIS by default)
 Batching captures at the end of a box is the failure mode: you lose transient state AND the live
-situational awareness that helps pick the next move when stuck. `scripts/evshot.sh` collapses the whole
-capture (render a card showing **command + request URL**, pull the PNG into `poc/`, print the md ref)
-into ONE call, so live capture has no friction. `cmd` and `url` are REQUIRED args - no anonymous card.
+situational awareness that helps pick the next move when stuck. The `ev` mode of `scripts/capture.sh`
+collapses the whole capture (render a card showing **command + request URL**, pull the PNG into `poc/`,
+print the md ref) into ONE call, so live capture has no friction. `cmd` and `url` are REQUIRED args - no
+anonymous card.
 ```bash
 # 1) tee the step's output on the VM as you run it (safe for stateful exploits - no re-run needed):
 bash /root/vm.sh 'python3 /tmp/exploit.py 2>&1 | tee /tmp/poc/flag3.log'
 # 2) card it the MOMENT it lands:
-scripts/evshot.sh <eng> flag3-contract "POST http://T:8545 eth_sendTransaction" "reset()+transferDeposit()"
+scripts/capture.sh ev <eng> flag3-contract "POST http://T:8545 eth_sendTransaction" "reset()+transferDeposit()"
 #   args: <eng> <slug> <request-url> <cmd-label> [logfile=/tmp/poc/<slug>.log]
 #   -> saves targets/<eng>/poc/NN-flag3-contract.png (NN auto-numbered), prints the ![]() ref
 ```
 The card shows `$ <cmd-label>` in the title bar AND `<request-url>` in a browser address bar (both
 required) so every image says what was run and where. Use the manual `shot.py` calls below only for the
-modes evshot does not wrap (a live web page, a `--tmux` scan tab, a GUI `--window`/`--screen`).
+modes `capture.sh ev` does not wrap (a live web page, a `--tmux` scan tab, a GUI `--window`/`--screen`).
 
-## Request/response leads: automatic capture + `reqshot.sh`
+## Request/response leads: automatic capture + `capture.sh req`
 The highest-value CTF/pentest evidence is the **real curl request and response** for a lead (creds, a
 flag, a leaked source) - presentable as full-file PoC. Two live mechanisms, so a lead is never missed:
 
@@ -58,18 +59,18 @@ flag, a leaked source) - presentable as full-file PoC. Two live mechanisms, so a
 signal (credential/key/flag/leaked source/dir-listing), the `recon-capture.py` hook auto-stages a
 request+response card to `targets/<eng>/poc/leads/` and the Stop-hook drain renders it. This is why
 leads get captured even mid-exploit. Curate the good ones into the walkthrough; if a plain `curl` (no
-`-i/-v`) fired it, the hook nudges you to re-capture the full headers with reqshot.
+`-i/-v`) fired it, the hook nudges you to re-capture the full headers with `capture.sh req`.
 
-**Deliberate + full fidelity (`reqshot.sh`):** for a request you want as a clean PoC (request line +
-headers + body, response status + headers + body), run it through reqshot - it runs `curl -sS -iv`,
+**Deliberate + full fidelity (`capture.sh req`):** for a request you want as a clean PoC (request line +
+headers + body, response status + headers + body), run it through the `req` mode - it runs `curl -sS -iv`,
 colors the request(`>`)/response(`<`) Burp-style, and pulls the PNG into `poc/`:
 ```bash
-scripts/reqshot.sh <eng> <slug> -- -sk -X POST https://T:5000/login --data @/tmp/body.txt
+scripts/capture.sh req <eng> <slug> -- -sk -X POST https://T:5000/login --data @/tmp/body.txt
 ```
 For a **crypto-forged** request (envelope/signature), give the exploit script a `--curl` mode: it writes
-the forged body to a file and prints the reqshot args, so the PoC is a reproducible curl, not "run my
-python". Never settle for a script-summary card (`POST https://T/login` + python output) when the real
-curl request/response is the artifact a client / writeup needs.
+the forged body to a file and prints the `capture.sh req` args, so the PoC is a reproducible curl, not
+"run my python". Never settle for a script-summary card (`POST https://T/login` + python output) when the
+real curl request/response is the artifact a client / writeup needs.
 
 ## Page evidence: also automatic now (`poc/pages`)
 An in-scope HTML GET is covered by the same net: `recon-capture.py` stages the page and the loop-driver
@@ -78,12 +79,12 @@ the curl request/response card underneath, landing in `targets/<eng>/poc/pages/*
 screenshot step is needed for a normal in-scope page GET (same pattern as the `poc/leads/` and `recon/`
 auto-capture above). This skill's DELIBERATE capture is for what that auto path does NOT cover:
 authenticated/exploited states (post-login dashboard, the vuln firing, the flag page) and the
-narrative `pocshot`/`--tmux` real-session cards, not a plain in-scope page GET.
+narrative `capture.sh tmux`/`--tmux` real-session cards, not a plain in-scope page GET.
 
-## Real tmux-session cards: `pocshot.sh`
+## Real tmux-session cards: `capture.sh tmux`
 When the evidence should look like an ACTUAL Kali terminal session (real commands + real output, the way
 recon scans are captured), run the proof in a real tmux pane and screenshot the pane:
-`scripts/pocshot.sh <eng> <slug> <script.sh>` runs the script in a wide tmux pane, waits for its
+`scripts/capture.sh tmux <eng> <slug> <script.sh>` runs the script in a wide tmux pane, waits for its
 `echo POC-DONE`, `--tmux`-captures the pane (FULL scrollback), colors it, and pulls the PNG into `poc/`.
 Write the script to `echo "# comment"` and `echo "$ <command>"` then run the real `curl -i`/exploit
 command. The card colors **comment (green) / command (cyan) / response (default)** so the three are
@@ -91,9 +92,9 @@ visually distinct (`shot.py --reqresp`, works on `--term` and `--tmux`).
 
 **NEVER truncate or abbreviate evidence.** Show the FULL command, FULL request, FULL response - no `...`,
 no `<result=...>` placeholder, no eliding a base64 blob or a long body. A reviewer must verify/reproduce
-from the image ALONE. The tooling enforces this (pocshot captures full pane scrollback via `--history`
-and never caps rendered lines); keep the same discipline in the script content - paste the real value,
-never summarize it.
+from the image ALONE. The tooling enforces this (`capture.sh tmux` captures full pane scrollback via
+`--history` and never caps rendered lines); keep the same discipline in the script content - paste the
+real value, never summarize it.
 
 ## Capture (run on Kali via vm.sh)
 Push the script once, then shoot. `T` = target host, `PORT` = web port, `<eng>` = engagement dir.
@@ -189,7 +190,7 @@ The whole box was solved (3 flags: supply-chain cred intercept -> OTP crypto cra
 evidence to reason from while stuck - the long dead-end hunting the login username would have been easier
 to unstick with the intercepted-creds card and the cipher-response card already in hand; (2) re-running is
 unsafe for stateful steps (a spent padding-oracle or a contract `transferDeposit()` that zeroes a balance
-cannot be re-fired for a clean card). Fix: `evshot.sh` after EACH landing step, not at the end. Also
+cannot be re-fired for a clean card). Fix: `capture.sh ev` after EACH landing step, not at the end. Also
 banked into `shot.py`: `--term` cards budget generous bottom headroom so the last line (usually the
 flag/cred) never clips, and every card carries BOTH the command and the request URL.
 
