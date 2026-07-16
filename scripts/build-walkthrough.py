@@ -63,7 +63,6 @@ SECTIONS = (
 
 NO_EVIDENCE = "_No rendered evidence found yet - capture evidence live into poc/ via `capture.sh` (ev/req/tmux/burp)._"
 
-_MANIFEST_ROW = re.compile(r"^\|\s*!\[\]\(([^)]+)\)\s*\|\s*(.*?)\s*\|\s*$")
 _LEADING_SEQ = re.compile(r"^\d+-")
 _DASH_RUN = re.compile(r"[-_]+")
 
@@ -74,36 +73,8 @@ _PAGE_CARD = re.compile(r"^\d+-page-")
 _SOURCE_CARD = re.compile(r"^\d+-source-")
 _LEAD_CARD = re.compile(r"^\d+-lead-")
 
-# _clean_caption helpers
-_WHITESPACE_RUN = re.compile(r"\s+")
-_LEADING_PROMPT = re.compile(r"^\$\s+")
-_SHELL_VAR = re.compile(r"\$\w+|\$\{[^}]+\}")
-
-
-def _clean_caption(text):
-    """Clean a caption sourced from the drain manifest (or, defensively, a
-    filename-derived one): collapse internal whitespace, strip a single
-    unbalanced trailing quote left by a truncated manifest command, strip a
-    leading '$ ' prompt marker, and drop bare unexpanded shell-var tokens
-    ($VAR / ${VAR}) without trying to expand them - never raises; an empty
-    (or otherwise unusable) result falls back to the original text."""
-    if not text:
-        return text
-    original = text
-    try:
-        cleaned = _WHITESPACE_RUN.sub(" ", text).strip()
-        if cleaned and cleaned[-1] in ("\"", "'") and cleaned.count(cleaned[-1]) % 2 == 1:
-            cleaned = cleaned[:-1].rstrip()
-        cleaned = _LEADING_PROMPT.sub("", cleaned)
-        cleaned = _SHELL_VAR.sub("", cleaned)
-        cleaned = _WHITESPACE_RUN.sub(" ", cleaned).strip()
-    except Exception:
-        return original
-    return cleaned or original
-
-
 def _caption_from_filename(png_basename):
-    """Caption derived from a PNG basename when it has no manifest entry.
+    """Caption derived from a PNG basename.
     Recognizes the known evidence-card shapes and yields a clearer label;
     anything else falls back to stripping a leading NNNN- sequence and the
     extension, turning -/_ into spaces (pure function of the basename)."""
@@ -125,42 +96,19 @@ def _caption_from_filename(png_basename):
     return stem or png_basename
 
 
-def _load_manifest(area_dir):
-    """Map PNG basename -> caption, parsed from <area_dir>/.pending/manifest.md
-    rows shaped '| ![](<area>/<png>) | <caption> |'. Missing/unreadable file, or a
-    line that does not match the row shape, is simply skipped (fail gracefully)."""
-    captions = {}
-    path = os.path.join(area_dir, ".pending", "manifest.md")
-    if not os.path.isfile(path):
-        return captions
-    try:
-        with open(path, encoding="utf-8", errors="ignore") as fh:
-            for line in fh:
-                m = _MANIFEST_ROW.match(line.strip())
-                if not m:
-                    continue
-                relpath, caption = m.group(1), m.group(2)
-                captions[os.path.basename(relpath)] = caption
-    except OSError:
-        pass
-    return captions
-
-
 def scan_evidence(eng_dir):
     """Scan the fixed evidence areas (in deterministic AREAS order) for *.png, each
-    area sorted by filename. Returns a list of (relpath-from-eng_dir, caption).
-    A missing area directory is simply an empty scan, not an error."""
+    area sorted by filename. Returns a list of (relpath-from-eng_dir, caption), the
+    caption derived from the PNG filename. A missing area directory is simply an empty
+    scan, not an error."""
     rows = []
     for area in AREAS:
         area_dir = os.path.join(eng_dir, *area.split("/"))
         if not os.path.isdir(area_dir):
             continue
-        captions = _load_manifest(area_dir)
         for png in sorted(glob.glob(os.path.join(area_dir, "*.png"))):
             base = os.path.basename(png)
-            manifest_caption = captions.get(base)
-            caption = _clean_caption(manifest_caption) if manifest_caption else _caption_from_filename(base)
-            rows.append((area + "/" + base, caption))
+            rows.append((area + "/" + base, _caption_from_filename(base)))
     return rows
 
 
