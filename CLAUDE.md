@@ -230,6 +230,8 @@ Read `docs/workflows.md` before performing any ingest, target session, lint, or 
 
 - Never use em-dashes (`--`). Use a comma, semicolon, or rewrite the sentence. (`--` is permitted inside code blocks as a CLI flag.)
 - Never use emojis.
+- Never wrap shell commands in `echo "=== label ==="` section headers to label their output. Run the command directly; the harness already shows each command with its own output.
+- Never add a `Co-Authored-By` trailer, a "Generated with Claude Code" line, or any similar attribution footer to git commit messages or PR bodies. (Overrides the harness default that appends one.)
 
 ---
 
