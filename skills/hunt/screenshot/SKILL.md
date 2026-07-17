@@ -48,7 +48,22 @@ scripts/capture.sh ev <eng> flag3-contract "POST http://T:8545 eth_sendTransacti
 ```
 The card shows `$ <cmd-label>` in the title bar AND `<request-url>` in a browser address bar (both
 required) so every image says what was run and where. Use the manual `shot.py` calls below only for the
-modes `capture.sh ev` does not wrap (a live web page, a `--tmux` scan tab, a GUI `--window`/`--screen`).
+modes `capture.sh` does not wrap (a GUI `--window`/`--screen`, an authed `--html` render).
+
+## Rendered web page: `capture.sh web`
+The most operator-legible shot is the target **as a browser renders it** - the actual page, not a curl
+card. `capture.sh web <eng> <slug> <url>` renders the live URL through chromium on the VM (browser-chrome
+frame + address bar) and pulls the PNG into `poc/`. This is the FIRST evidence to grab on any web target
+(capture-as-is before poking), and again at each rendered exploit state (an SSTI/cmdi output page, the
+flag page):
+```bash
+scripts/capture.sh web <eng> home http://T:PORT/            # the landing page, as seen in a browser
+scripts/capture.sh web <eng> flag http://T:PORT/admin       # a rendered exploited/authed state
+# opts: --no-bar (drop the address-bar frame), trailing `W H` to resize (default 1440 900)
+```
+A dead target makes it fail loud (chromium `net::ERR` -> non-zero exit, no error-page PNG pulled). For an
+**authed** page (needs a session cookie), curl-save the HTML and render it with the manual `shot.py --html
+--url-bar` call below; `web` is for GET-able live pages.
 
 ## Request/response leads: `capture.sh req`
 The highest-value CTF/pentest evidence is the **real curl request and response** for a lead (creds, a

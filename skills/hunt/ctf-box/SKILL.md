@@ -42,8 +42,9 @@ nmap -sCV -p<found> -Pn $T -oN nmap-svc.txt
 nc -nv $T <port>                 # manual banner / custom-proto services (chatbots, etc.)
 dig any @$T <domain>; dig axfr @$T <domain>   # DNS if 53 open / vhost hints
 # --- WEB SERVICE FOUND -> do ALL of this; do NOT skip web enum to jump to the "obvious" path (password-audit box lesson):
-#  (a) CAPTURE IT AS-IS FIRST, before poking: screenshot the rendered page (Skill(screenshot)) AND save the
-#      raw HTML source to poc/ (the site as it was) -- capture.sh ev / curl -s > poc/<slug>-source.html.
+#  (a) CAPTURE IT AS-IS FIRST, before poking: render the page (`capture.sh web <eng> <slug> http://T:PORT/`
+#      -> a browser shot with the URL bar) AND save the raw HTML source to poc/ (the site as it was) --
+#      curl -s http://T:PORT/ > poc/<slug>-source.html. `web` renders; `ev`/`req` card a request/response.
 #  (b) LAUNCH THE SCANNERS IN PARALLEL -- each runs for MINUTES, so ONE tmux tab each, do not wait serially:
 #        scripts/vm-scan.sh <eng> <T>-ffuf 'ffuf ...'   ;   scripts/vm-scan.sh <eng> <T>-nuclei 'nuclei -u http://$T'
 #      whatweb + curl -I are quick (inline). Analyse the page/source WHILE ffuf+nuclei run in the background.

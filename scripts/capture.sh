@@ -8,6 +8,7 @@
 #   ev   <eng> <slug> <request-url> <cmd-label> [logfile]   terminal card (cmd + url) from a tee'd log
 #   req  <eng> <slug> [--] <curl-args...>                   real `curl -iv` request/response card
 #   tmux <eng> <slug> <local-script.sh>                     run a script in a real tmux pane, grab the pane
+#   web  <eng> <slug> <url> [--no-bar] [width height]        render a LIVE page via chromium (address-bar frame)
 #   burp <eng> <slug> <host> <port> <https> <method> <path> [bodyfile] [tabname]
 #                                                           Burp Repeater request/response grab (via MCP)
 #
@@ -23,6 +24,7 @@ usage: capture.sh <mode> <eng> <slug> [args]
   ev   <eng> <slug> <request-url> <cmd-label> [logfile]
   req  <eng> <slug> [--] <curl-args...>
   tmux <eng> <slug> <local-script.sh>
+  web  <eng> <slug> <url> [--no-bar] [width height]
   burp <eng> <slug> <host> <port> <https> <method> <path> [bodyfile] [tabname]
 U
   exit 2
@@ -106,6 +108,24 @@ tmux send-keys -t $SESS 'clear; bash /tmp/$SESS.sh' C-m
 for i in \$(seq 1 60); do tmux capture-pane -p -t $SESS 2>/dev/null | grep -q POC-DONE && break; sleep 1; done
 python3 /tmp/shot.py --tmux $SESS --reqresp --history --maxlines 100000 -o /tmp/poc/$PNG >/dev/null 2>&1
 tmux kill-session -t $SESS 2>/dev/null || true" >&2
+  _pull_and_report "/tmp/poc/$PNG" "$SLUG"
+}
+
+# web: render a LIVE target URL through chromium (browser-chrome frame + address bar) into poc/.
+# The operator-legible shot: the page as a browser shows it. Use `req` for a request/response card,
+# `web` for the rendered page. Runs on the VM (chromium there has the VPN path to the target). URL is
+# %q-quoted so query strings (?a=1&b=2) survive the SSH hop; a dead target makes shot.py exit non-zero
+# (net::ERR) so set -e aborts before an error-page PNG is pulled.
+mode_web() {
+  [ $# -ge 3 ] || { echo "usage: capture.sh web <eng> <slug> <url> [--no-bar] [width height]" >&2; exit 2; }
+  ENG="$1"; local SLUG="$2" URL="$3"; shift 3
+  local BAR=""
+  [ "${1:-}" = "--no-bar" ] && { BAR="--no-bar"; shift; }
+  local W="${1:-1440}" H="${2:-900}"
+  _poc_target "$ENG" "$SLUG"
+  local SHOT_B64; SHOT_B64=$(base64 -w0 "$VAULT/scripts/shot.py")
+  bash "$VM_SH" "echo '$SHOT_B64' | base64 -d > /tmp/shot.py; mkdir -p /tmp/poc
+python3 /tmp/shot.py $(printf '%q' "$URL") $BAR --width $W --height $H -o /tmp/poc/$PNG" >&2
   _pull_and_report "/tmp/poc/$PNG" "$SLUG"
 }
 
@@ -197,6 +217,7 @@ case "$MODE" in
   ev)   mode_ev "$@" ;;
   req)  mode_req "$@" ;;
   tmux) mode_tmux "$@" ;;
+  web)  mode_web "$@" ;;
   burp) mode_burp "$@" ;;
   -h|--help|help) usage ;;
   *)    echo "capture: unknown mode '$MODE'" >&2; usage ;;
