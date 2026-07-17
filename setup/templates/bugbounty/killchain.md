@@ -39,7 +39,7 @@ GATE 3 (loop): a vector exhausted -> mark `[!]`, one Deadends line, move to the 
 | asset | vuln class | wiki | payload/tool | status | poc |
 |-------|-----------|------|--------------|--------|-----|
 
-route by class: Skill(arsenal) -> Skill(hunt-<class>)
+route by class: Skill(arsenal) -> Skill(`hunt-<class>`)
 chains to impact: e.g. ssrf -> imds -> creds -> ato  -> [[imds-cloud-metadata]] [[account-takeover]]
 
 ### 4c. Impact

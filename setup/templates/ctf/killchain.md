@@ -26,7 +26,7 @@ GATE 3 (loop): a vector exhausted -> mark `[!]`, one Deadends line, move to the 
 - [ ] arjun param mining                 -> [[arjun]]
 - [ ] nuclei                             -> [[nuclei]] [[nuclei-arsenal]]
 - [ ] nikto ; wpscan (if WordPress)      -> [[nikto]] [[wpscan]]
-- [ ] katana/gau crawl -> review links, <script>, .js  -> [[katana]] [[gau]] [[javascript-source-map-exploitation]]
+- [ ] katana/gau crawl -> review links, `<script>`, .js  -> [[katana]] [[gau]] [[javascript-source-map-exploitation]]
 - [ ] trufflehog / .git exposure         -> [[trufflehog]] [[git-exposure]]
   (recon, multi-host / subdomains:)
 - [ ] subfinder + dnsx + gowitness       -> [[subfinder]] [[dnsx]] [[gowitness]]
@@ -52,7 +52,7 @@ GATE 3 (loop): a vector exhausted -> mark `[!]`, one Deadends line, move to the 
 
 cred attacks:  sqlmap / hydra / medusa / john / hashcat
   -> [[sqlmap]] [[hydra]] [[medusa]] [[john]] [[hashcat]] [[password-attacks]] [[wordlists]] [[default-credentials]]
-route by class: Skill(arsenal) -> Skill(hunt-<class>)
+route by class: Skill(arsenal) -> Skill(`hunt-<class>`)
 
 ### 4b. Post-Ex / Privesc  ([[linux-privesc]] · [[privesc-exploit-arsenal]])
 - [ ] pspy (cron/timers/bg jobs)     -> [[pspy]]
