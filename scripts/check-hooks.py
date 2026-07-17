@@ -33,6 +33,7 @@ EXPECTED_HOOKS = [
     ("SessionStart", "engagement-init.py"),
     ("UserPromptSubmit", "hunt-trigger.py"),
     ("PostToolUse", "recon-capture.py"),
+    ("PostToolUse", "tool-telemetry.py"),
     ("PreToolUse", "scope-guard.py"),
     ("PreToolUse", "session-guard.py"),
     ("PreCompact", "pre-compact.sh"),

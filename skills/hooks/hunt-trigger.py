@@ -176,6 +176,12 @@ def main():
     if not hard and not soft:
         return
 
+    try:
+        import _telemetry
+        _telemetry.hook("hunt-trigger", tier=("hard" if hard else "soft"))
+    except Exception:
+        pass
+
     out = []
     if hard:
         out.append(

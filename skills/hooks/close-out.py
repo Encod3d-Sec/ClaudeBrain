@@ -47,9 +47,18 @@ def main():
                       "close-out." % gap)
                 try:
                     open(marker, "w").write(str(gap))
+                    import _telemetry
+                    _telemetry.drift("close-out", "loot captured but paths.md empty (state discipline)")
+                    _telemetry.hook("close-out", action="paths-nudge")
                 except Exception:
                     pass
         return
+    # box is SOLVED: stamp the finish time once (the far end of the start->finish delta)
+    try:
+        import _telemetry
+        _telemetry.stamp_once("finished_at", _telemetry.now_iso(), d=d)
+    except Exception:
+        pass
     gaps = _engagement.web_evidence_gaps(d)
     if gaps:
         print("Close-out INCOMPLETE (web box marked SOLVED but evidence missing): "

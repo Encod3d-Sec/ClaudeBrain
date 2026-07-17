@@ -116,9 +116,13 @@ for f in state loot paths killchain; do
   sub "$TPL/$f.md" "$NAME" "$TODAY" "$DEST/$f.md"
 done
 # shared core, healed for EVERY type (SHARED_CORE in _engagement.py)
-for f in log scope walkthrough; do
+for f in log scope walkthrough eval; do
   sub "$VAULT/setup/templates/_$f.md" "$NAME" "$TODAY" "$DEST/$f.md"
 done
+
+# stamp the precise box start time for the metrics/eval system (engagement-init back-fills
+# this for boxes created before telemetry; here we record the real creation instant).
+printf '{\n  "started_at": "%s"\n}\n' "$(date -u +%Y-%m-%dT%H:%M:%S+00:00)" > "$DEST/.metrics.json"
 
 # seed scope.md's "## In scope" bullet list from --scope, if any were given;
 # replaces the template's lone empty "-" bullet with one "- <host>" per value,
@@ -145,7 +149,7 @@ sub "$VAULT/setup/templates/_deadends.md" "$NAME" "$TODAY" "$DEST/Deadends.md"
 
 printf '%s\n' "$NAME" > "$VAULT/targets/active.md"
 
-FILES="state, loot, paths, killchain, log, scope, walkthrough, Deadends"
+FILES="state, loot, paths, killchain, log, scope, walkthrough, eval, Deadends"
 [ "$WITH_OOB" = 1 ] && FILES="$FILES, oob"
 [ "$TYPE" != "ctf" ] && FILES="$FILES, Vuln-index"
 echo "created $TYPE engagement: targets/$NAME/ ($FILES, ingest/, poc/)"

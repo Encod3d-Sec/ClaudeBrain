@@ -237,6 +237,17 @@ def main():
     if created:
         out.append("Self-heal: created " + ", ".join(created) + " from template.")
 
+    # telemetry: back-fill the box start time on first sight (new-engagement.sh stamps the precise
+    # start; this covers pre-existing boxes) and record the session-start hook fire.
+    try:
+        import _telemetry
+        _d = _engagement.active_dir()
+        if _d:
+            _telemetry.stamp_once("started_at", _telemetry.now_iso(), d=_d)
+            _telemetry.hook("engagement-init", d=_d, action="session-start")
+    except Exception:
+        pass
+
     summ = _engagement.summary_text()
     if summ:
         out.append(summ)

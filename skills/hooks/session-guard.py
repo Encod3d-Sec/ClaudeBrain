@@ -76,6 +76,12 @@ def main():
     if not hits:
         return
     joined = ", ".join(hits[:5])
+    try:
+        import _telemetry
+        _telemetry.drift("session-guard", "client marker %s -> %s file" % (joined, kind))
+        _telemetry.hook("session-guard", action="leak-warn")
+    except Exception:
+        pass
     if kind == "session":
         msg = ("CLIENT-DATA BOUNDARY - this write puts engagement marker(s) " + joined
                + f" into session/{os.path.basename(fp)}, which is generic and auto-loaded "

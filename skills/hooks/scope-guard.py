@@ -126,6 +126,14 @@ def main():
     if not deny:
         return
     body = "\n- ".join(deny)
+    # telemetry: every block/advise is a recorded drift signal (a wrong action the guard caught)
+    try:
+        import _telemetry
+        reason = ("blocked " if _enforcing() else "advised ") + " | ".join(x.split(":")[0] for x in deny)
+        _telemetry.drift("scope-guard", reason)
+        _telemetry.hook("scope-guard", action=("deny" if _enforcing() else "advise"))
+    except Exception:
+        pass
     if _enforcing():
         print(json.dumps({"hookSpecificOutput": {
             "hookEventName": "PreToolUse",

@@ -253,6 +253,11 @@ def _is_framework_meta(cmd):
 def _emit(blocks):
     if not blocks:
         return
+    try:
+        import _telemetry
+        _telemetry.hook("recon-capture", action="route")
+    except Exception:
+        pass
     print(json.dumps({
         "hookSpecificOutput": {
             "hookEventName": "PostToolUse",

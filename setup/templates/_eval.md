@@ -8,19 +8,16 @@ date_updated: "{{DATE}}"
 
 # Agent Eval
 
-Close-out self-assessment of how the AGENT (not the target) performed, to steer harness
-improvement. Filled at close-out by Skill(learn) Phase 0. Time/token figures are honest
-ESTIMATES (the agent cannot self-measure them precisely) - the value is the RATIO and the
-named drift moments, not the absolute numbers.
+Close-out assessment of how the AGENT (not the target) performed, to steer harness improvement.
+Two halves:
+- **Hard numbers = the `## Metrics (auto)` block** (skill/hook/tool counts, drift signals, tokens,
+  start->finish time). NOT hand-typed - `Skill(learn)` Phase 0d runs `scripts/eval_metrics.py <eng>
+  --write` to fill it from the hook telemetry (`.events.jsonl`) + the session transcript. The agent
+  cannot self-measure tokens/time; the transcript is ground truth.
+- **Judgement = the sections below** (what the numbers can't say): WHY drift happened, what went right,
+  scores. Filled by the agent at close-out.
 
-## Budget (estimates)
-| metric | value | notes |
-|--------|-------|-------|
-| tokens (approx) | | order-of-magnitude |
-| wall-clock total | | |
-| tool calls (approx) | | |
-
-## Time allocation (estimate the split, ~100% total)
+## Time allocation (judgement of the split, ~100% total; the auto block has the real totals)
 | bucket | share | what it was |
 |--------|-------|-------------|
 | productive (toward the flag) | | |

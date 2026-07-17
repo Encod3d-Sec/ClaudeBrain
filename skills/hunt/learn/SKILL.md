@@ -66,15 +66,22 @@ so it is generic and tracked - describe failures generically ("on a web box ffuf
 never with client host/IP/cred; refer to the engagement by its (codename) dir name only.
 
 ### 0d. Fill the engagement's agent eval (per-engagement, gitignored)
-Populate `targets/$ENG/eval.md` (self-healed from `_eval.md`) with an HONEST self-assessment of how
-the AGENT performed on THIS box. It is estimates, not instrumentation - the value is the ratio + the
-named drift moments, which mirror the retro:
-- **Budget:** order-of-magnitude tokens, rough tool-call count, wall-clock if knowable (leave blank if not).
-- **Time allocation:** estimate the split productive / research / dead-ends / drift (~100%). Dead-ends
-  come straight from `Deadends.md`; drift = the avoidable rework named in 0a.
-- **Drift moments / what went right / score:** one line each; be honest, low scores are the point.
-Unlike the retro (generic, tracked), eval.md is per-engagement and may name specifics (it lives under
-the gitignored `targets/`).
+`targets/$ENG/eval.md` (self-healed from `_eval.md`) has two halves - auto (real data) and judgement (you):
+
+**Auto first - REAL numbers, no estimation:**
+```bash
+python3 scripts/eval_metrics.py $ENG --write
+```
+This injects a `## Metrics (auto)` block from the hook telemetry (`.events.jsonl`) + the session
+transcript recorded in `.metrics.json`: exact skill / hook / tool call counts, auto-detected drift
+signals (every scope-guard block, state-discipline nudge, leak-warn), the start->finish time delta +
+idle-filtered active time, and the box's token usage (windowed to its active period). NEVER hand-type
+these - the transcript is ground truth (a real box's true output was ~12x an earlier hand-estimate).
+
+**Then the judgement half - only you can write it:** in the same file, fill the Drift moments (what
+the auto drift-count can't say: WHY each drift happened + the one-line fix), What went right, and the
+Scores. The auto block counts drift; you narrate its cause. Dead-ends come from `Deadends.md`.
+Unlike the retro (generic, tracked), eval.md is per-engagement and may name specifics (gitignored `targets/`).
 
 Only after Phase 0 is done, proceed to the knowledge harvest below.
 
