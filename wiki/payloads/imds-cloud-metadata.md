@@ -9,7 +9,7 @@ date_updated: 2026-06-05
 
 # Payloads: Cloud Metadata (IMDS)
 
-Endpoints to hit once SSRF reaches the metadata IP. Goal: cloud creds. See [[ssrf]], [[aws-metadata-ssrf]].
+Endpoints to hit once SSRF reaches the metadata IP. Goal: cloud creds. See [[wiki/payloads/ssrf]], [[aws-metadata-ssrf]].
 
 ## AWS (169.254.169.254)
 ```

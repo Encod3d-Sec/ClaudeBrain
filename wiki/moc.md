@@ -28,7 +28,7 @@ Top-level hub. Each domain has its own MOC linking every page.
 
 ## Reference
 
-- [[index|Full page catalog]] - flat index of every page
+- [[wiki/index|Full page catalog]] - flat index of every page
 - [[default-credentials|Default credentials]] - product defaults, reuse across engagements
 - [[api-request-findings|API request findings]] - reusable request patterns
 - Tools: see `wiki/tools/`
@@ -69,7 +69,7 @@ Top-level hub. Each domain has its own MOC linking every page.
 - [[session]]
 - [[smuggling]]
 - [[sqli]]
-- [[ssrf]]
+- [[wiki/payloads/ssrf]]
 - [[ssti]]
 - [[web-cache]]
 - [[webauthn-passkey]]

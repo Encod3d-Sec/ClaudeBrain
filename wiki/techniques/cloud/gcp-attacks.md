@@ -73,6 +73,6 @@ gcloud compute instances list; gcloud sql instances list
 Least-privilege SAs (no project Editor by default), disable SA key creation (org policy), restrict metadata via Workload Identity, Cloud Audit Logs alerting on `actAs`/`setIamPolicy`, VPC-SC around storage/secrets.
 
 ## Tools
-`gcloud`, `gsutil`, ScoutSuite, GCP-IAM-Privilege-Escalation (Rhino), `enumerate-iam`-style scripts. SSRF entry -> [[ssrf]], payload [[imds-cloud-metadata]]. Drive with the `hunt-cloud` skill.
+`gcloud`, `gsutil`, ScoutSuite, GCP-IAM-Privilege-Escalation (Rhino), `enumerate-iam`-style scripts. SSRF entry -> [[wiki/payloads/ssrf]], payload [[imds-cloud-metadata]]. Drive with the `hunt-cloud` skill.
 
 ## Sources

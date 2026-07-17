@@ -60,7 +60,7 @@ nuclei -l $RECON_DIR/live.txt -t ~/nuclei-templates/ \
 ### Stage 5: Attack Surface Triage
 ```bash
 # Content discovery on live hosts: OUR high-signal list first (non-obvious routes the crawl missed)
-ffuf -u https://HOST/FUZZ -w scripts/wordlists/harness-paths.txt -e .php,.py -mc 200,301,302,401,403 -ac
+ffuf -c -u https://HOST/FUZZ -w scripts/wordlists/harness-paths.txt -e .php,.py -mc 200,301,302,401,403 -ac
 
 # High-value URL patterns
 cat $RECON_DIR/urls.txt | grep -E "\?.*=" | grep -E "url=|redirect=|src=|dest=|fetch=" > $RECON_DIR/ssrf_candidates.txt

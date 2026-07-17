@@ -52,7 +52,7 @@ T=<target>
 for P in $(seq 1 65535); do R=$(curl -s -m3 "http://$T/preview.php?url=http://127.0.0.1:$P/"); [ -n "$R" ] && echo "OPEN $P len=${#R}"; done
 ```
 - **Sweep wide.** "Common ports only" misses the box: THM Extract hid its objective (a Next.js app)
-  on internal **:10000**. Threaded drop-in + curated high-value ports in [[ssrf]] payloads.
+  on internal **:10000**. Threaded drop-in + curated high-value ports in [[wiki/payloads/ssrf]] payloads.
 - **Fingerprint each internal service and run it through `playbook.json` / the matching hunt skill
   exactly as if it were external** (`<title>`, `Server` / `x-powered-by`, `/_next/static` ->
   Next.js -> CVE-2025-29927, `/solr`, `/actuator`, Jenkins, GitLab...). recon-capture only
@@ -77,7 +77,7 @@ req=b'GET /admin HTTP/1.1\r\nHost: 127.0.0.1\r\nx-middleware-subrequest: middlew
 Unlocks: **custom headers for header-based CVEs** (Next.js CVE-2025-29927 `x-middleware-subrequest`),
 **HTTP Basic auth** (`Authorization: Basic`), **POST logins**, **forged cookies** (serialized-object
 / JWT swaps), and raw protocols (Redis / FastCGI / SMTP). Full `send(method,path,headers,cookie,body)`
-builder in [[ssrf]] payloads. Gopher cannot read files - it is for TCP services, not `file://`.
+builder in [[wiki/payloads/ssrf]] payloads. Gopher cannot read files - it is for TCP services, not `file://`.
 
 ## Methodology
 1. Map all URL-input parameters across the target

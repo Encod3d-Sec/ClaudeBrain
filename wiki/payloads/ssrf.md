@@ -9,7 +9,7 @@ date_updated: 2026-07-14
 
 # Payloads: SSRF
 
-Reusable SSRF probes + filter bypasses. Always confirm with OOB (Collaborator/interactsh) - channel setup in [[oob-callbacks]]. See [[ssrf]].
+Reusable SSRF probes + filter bypasses. Always confirm with OOB (Collaborator/interactsh) - channel setup in [[oob-callbacks]]. See [[wiki/payloads/ssrf]].
 
 ## OOB confirm
 ```

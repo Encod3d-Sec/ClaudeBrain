@@ -12,7 +12,7 @@ sources: [payloadsallthethings-dnsrebinding]
 
 ## What it is
 
-DNS rebinding repoints an attacker-controlled domain from a public IP to an **internal** IP after the victim's browser has loaded attacker JavaScript - so the browser, still treating the page as the same origin, makes and **reads** requests to internal services (`127.0.0.1`, `192.168.x.x`, IoT/router admin, internal APIs). It turns any victim browser into an SSRF proxy into the LAN, bypassing the Same-Origin Policy. Related: [[ssrf]].
+DNS rebinding repoints an attacker-controlled domain from a public IP to an **internal** IP after the victim's browser has loaded attacker JavaScript - so the browser, still treating the page as the same origin, makes and **reads** requests to internal services (`127.0.0.1`, `192.168.x.x`, IoT/router admin, internal APIs). It turns any victim browser into an SSRF proxy into the LAN, bypassing the Same-Origin Policy. Related: [[wiki/techniques/web/ssrf]].
 
 ## How it works
 
@@ -42,7 +42,7 @@ cname.example.com.      381   IN   CNAME   target.local.
 localhost.example.com.  381   IN   CNAME   localhost.
 ```
 ### IP encodings
-Decimal/hex/octal forms of internal IPs (`2130706433`, `0x7f000001`) to dodge string filters - same set as [[ssrf]].
+Decimal/hex/octal forms of internal IPs (`2130706433`, `0x7f000001`) to dodge string filters - same set as [[wiki/techniques/web/ssrf]].
 
 ## Tools
 ```bash

@@ -50,6 +50,6 @@ Pacu> run iam__backdoor_users_keys # persistence: new access key on a user
 - Pairs with [[scoutsuite]] (posture) and the `hunt-cloud` skill (methodology). For Azure/Entra use [[roadtools]].
 
 ## Related techniques
-[[aws-attacks]], [[cloud-iam-attacks]]. SSRF entry to keys -> [[ssrf]] + [[imds-cloud-metadata]]. Driven by the `hunt-cloud` skill.
+[[aws-attacks]], [[cloud-iam-attacks]]. SSRF entry to keys -> [[wiki/payloads/ssrf]] + [[imds-cloud-metadata]]. Driven by the `hunt-cloud` skill.
 
 ## Sources

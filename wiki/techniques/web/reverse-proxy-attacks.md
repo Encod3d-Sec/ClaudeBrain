@@ -12,7 +12,7 @@ sources: [payloadsallthethings-reverseproxy, orange-confusion-attacks, hacktrick
 
 ## What it is
 
-Reverse proxies (Nginx, Apache, HAProxy, Traefik, Envoy, Caddy, CDNs) forward client requests to backends and add caching/LB/auth. Misconfigurations - alias traversal, trusting client headers, path-normalization gaps, or `proxy_pass` with user input - yield access-control bypass, file read, SSRF, and SSTI. Related: [[http-request-smuggling]], [[ssrf]], [[ssti]].
+Reverse proxies (Nginx, Apache, HAProxy, Traefik, Envoy, Caddy, CDNs) forward client requests to backends and add caching/LB/auth. Misconfigurations - alias traversal, trusting client headers, path-normalization gaps, or `proxy_pass` with user input - yield access-control bypass, file read, SSRF, and SSTI. Related: [[http-request-smuggling]], [[wiki/techniques/web/ssrf]], [[ssti]].
 
 ## How it works / where found
 The proxy and backend can disagree on the path, the trusted client IP, or where a `location` maps. Attackers exploit that gap. Fingerprint the proxy (`Server`, error pages, header behavior) first.
@@ -45,7 +45,7 @@ curl -H 'Referer: {{readFile "etc/passwd"}}' http://target/
 `{{env "VAR"}}`, `{{listFiles "/"}}`, `{{readFile "..."}}`.
 
 ### proxy_pass SSRF
-`proxy_pass http://$host...` or user-controlled upstream -> SSRF into internal services ([[ssrf]]).
+`proxy_pass http://$host...` or user-controlled upstream -> SSRF into internal services ([[wiki/techniques/web/ssrf]]).
 
 ### Apache HTTP Server Confusion Attacks (Orange Tsai, Black Hat USA 2024)
 Within one Apache httpd `request_rec`, the fields `r->filename`, `r->handler`, and `r->content_type` can be coerced into each other, and path/DocumentRoot handling is ambiguous. Three classes:

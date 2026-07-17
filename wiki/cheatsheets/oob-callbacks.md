@@ -9,7 +9,7 @@ sources: [interactsh-github, canarytokens-docs, portswigger-collaborator]
 
 ## Why
 
-Blind bug classes (blind SSRF, blind XXE, blind SSTI, blind/OOB SQLi, blind RCE, blind CRLF/SMTP) produce **no response signal**. The engagement rule is hard: an OOB callback is required to prove them, never inference. This page is the channel setup the hunt skills and payload pages assume when they say "confirm with Collaborator/interactsh". Cross-refs: [[ssrf]], [[xxe]], [[ssti]], [[os-command-injection]], [[sql-injection]].
+Blind bug classes (blind SSRF, blind XXE, blind SSTI, blind/OOB SQLi, blind RCE, blind CRLF/SMTP) produce **no response signal**. The engagement rule is hard: an OOB callback is required to prove them, never inference. This page is the channel setup the hunt skills and payload pages assume when they say "confirm with Collaborator/interactsh". Cross-refs: [[wiki/payloads/ssrf]], [[xxe]], [[ssti]], [[os-command-injection]], [[sql-injection]].
 
 ## Channel choice
 

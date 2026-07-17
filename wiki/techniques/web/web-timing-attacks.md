@@ -46,7 +46,7 @@ GET /?foo=random  -> 22ms   (cache hit  => 'foo' unkeyed)
 
 ### Scoped SSRF detection via timing
 
-When a proxy only forwards to internal subdomains, classic OAST/pingback fails. Prove a back-end DNS lookup happens purely by timing (see [[ssrf]], [[dns-rebinding]]):
+When a proxy only forwards to internal subdomains, classic OAST/pingback fails. Prove a back-end DNS lookup happens purely by timing (see [[wiki/techniques/web/ssrf]], [[dns-rebinding]]):
 
 ```
 Host: abc.example.com  -> 25ms  (first lookup)

@@ -59,7 +59,7 @@ sources: []
 [[sql-injection]] · [[nosql-injection]] · [[os-command-injection]] · [[xxe]] · [[ssti]]
 
 ### Web — Server-Side
-[[ssrf]] · [[file-upload]] · [[path-traversal-lfi]] · [[race-conditions]]
+[[wiki/payloads/ssrf]] · [[file-upload]] · [[path-traversal-lfi]] · [[race-conditions]]
 
 ### Web — Authentication & Session
 [[authentication-attacks]] · [[access-control]] · [[session-management-attacks]] · [[jwt-attacks]] · [[oauth-attacks]] · [[mfa-bypass]] · [[csrf]]

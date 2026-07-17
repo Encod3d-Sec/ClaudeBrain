@@ -724,3 +724,18 @@ def test_fingerprint_hits_is_routing_only():
     assert "Skill(%s)" in body and "detected" in body
 
 
+
+
+def test_scope_guard_flags_echo_banner(vault):
+    """scope-guard warns on `echo "=== ... ==="` banners (CLAUDE.md forbids them), engagement or not."""
+    env = _env(vault)
+    banner = run_hook("scope-guard.py", {"tool_name": "Bash",
+                      "tool_input": {"command": 'echo "=== recon ==="; ls -la'}}, env).stdout
+    assert "OUTPUT-HYGIENE" in banner
+    clean = run_hook("scope-guard.py", {"tool_name": "Bash",
+                     "tool_input": {"command": "ls -la; grep foo bar.txt"}}, env).stdout
+    assert "OUTPUT-HYGIENE" not in clean
+    # banner inside a vm.sh single-quoted wrapper is still caught (the text is in the command)
+    wrapped = run_hook("scope-guard.py", {"tool_name": "Bash",
+                       "tool_input": {"command": "bash /root/vm.sh 'echo \"### ports ###\"; nmap x'"}}, env).stdout
+    assert "OUTPUT-HYGIENE" in wrapped

@@ -32,7 +32,7 @@ as blind RCE and pivot to DNS/HTTP callbacks, file writes, or time delays. When 
 through XML this is XML encoding (use `&amp;` for a literal `&`, not `%26`).
 
 Wordlist: carlospolop/Auto_Wordlists xslt.txt. Payload strings: [[xslt]] (payloads).
-Related: [[xxe]], [[ssrf]].
+Related: [[xxe]], [[wiki/techniques/web/ssrf]].
 
 ## Sources
 - HackTricks (pentesting-web)

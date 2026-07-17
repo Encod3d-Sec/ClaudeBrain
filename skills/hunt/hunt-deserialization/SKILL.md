@@ -9,7 +9,7 @@ description: Insecure deserialization hunting across Java / .NET / PHP / Python 
 ```
 qmd_query "insecure deserialization gadget chain ysoserial" via wiki-search MCP -> read matching page.
 ```
-Core page: [[insecure-deserialization]]. Related: [[os-command-injection]] (RCE sink), [[ssrf]] (URLDNS/blind probe).
+Core page: [[insecure-deserialization]]. Related: [[os-command-injection]] (RCE sink), [[wiki/payloads/ssrf]] (URLDNS/blind probe).
 
 **Self-heal:** wiki query empty -> create stub `wiki/techniques/web/insecure-deserialization.md` before proceeding.
 

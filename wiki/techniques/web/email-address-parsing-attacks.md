@@ -74,7 +74,7 @@ collab\@psres.net!oastify.com           # backslash-escaped @, ! triggers UUCP -
 - **Domain-allowlist bypass / privilege escalation:** register or verify as `admin@company.com` when only `@company.com` is permitted.
 - **SSO account takeover:** verify an attacker-controlled mailbox while the IdP trusts the spoofed domain. Real chain - GitHub as IdP for Cloudflare Zero Trust restricted to `@company.com`: register GitHub with an encoded-word address that the `Mail` gem decodes to `attacker@company.com`, verify it, then log into Zero Trust as a `company.com` user and reach the internal network. Ties into [[account-takeover]], [[oauth-attacks]], [[saml-attacks]], [[open-redirect]].
 - **XSS / RCE via the email field:** malformed Punycode rendered on display; Joomla (CVE-2024-21725) reached RCE via style-tag injection and CSS exfiltration through the email field. See [[xss]], [[dom-attacks]].
-- **SSRF / OOB:** crafted addresses route mail through attacker infrastructure for interaction. See [[ssrf]].
+- **SSRF / OOB:** crafted addresses route mail through attacker infrastructure for interaction. See [[wiki/techniques/web/ssrf]].
 
 ## Affected (fixed 2024)
 

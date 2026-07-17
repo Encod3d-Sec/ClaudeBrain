@@ -12,7 +12,7 @@ sources: [git-apistrike, h1-scraped-api-security, 0xdf-specialty-web]
 
 API-specific attack techniques targeting the OWASP API Security Top 10 (2023 edition). REST APIs expose authorization and injection flaws that differ from traditional web application vulnerabilities because they are object-centric, role-permutation-driven, and schema-defined. Many APIs are implicitly trusted by developers and receive far less access-control scrutiny than user-facing web pages.
 
-See also: [[access-control]], [[authentication-attacks]], [[jwt-attacks]], [[ssrf]], [[sql-injection]]
+See also: [[access-control]], [[authentication-attacks]], [[jwt-attacks]], [[wiki/techniques/web/ssrf]], [[sql-injection]]
 
 ---
 

@@ -28,9 +28,9 @@ Only after the wiki has nothing do you write a custom PoC. Do not reinvent what 
 
 Use the standard toolkit. Do NOT hand-roll recon scripts.
 
-Tooling-first: use rustscan/nmap/ffuf/nuclei/nxc - never hand-roll a /dev/tcp port loop or a curl fuzz loop (weaker, skips the fingerprint router).
+Tooling-first: use rustscan/nmap/feroxbuster/ffuf/nuclei/nxc - never hand-roll a /dev/tcp port loop or a curl fuzz loop (weaker, skips the fingerprint router). **feroxbuster is the DEFAULT web content-discovery tool** (recursive, faster, finds nested paths ffuf/big.txt miss) - launch it the moment nmap shows a web port; keep ffuf for param-mining + vhosts.
 
-**Card EVERY scan tab AS it finishes (before exploiting), not at the end of the box:** `scripts/capture.sh recon <eng> <slug> <tab>` renders the tmux tab into `recon/`. Do this for rustscan, nmap, ffuf, AND nuclei - even an empty/unhelpful result gets a card, so the operator can see exactly what ran. `<tab>` = the `@id` or sanitized name `vm-scan.sh` printed. (`status.py` surfaces the recon-card count; 0 cards on a web box = you skipped this.)
+**Card EVERY scan tab AS it finishes (before exploiting), not at the end of the box:** `scripts/capture.sh recon <eng> <slug> <tab>` renders the tmux tab into `recon/`. Do this for rustscan, nmap, feroxbuster, ffuf, nuclei, AND whatweb (run whatweb in its OWN tab so it can be carded) - even an empty/unhelpful result gets a card, so the operator can see exactly what ran. `<tab>` = the `@id` or sanitized name `vm-scan.sh` printed. (`status.py` surfaces the recon-card count; 0 cards on a web box = you skipped this.)
 
 Run each scan in its own tmux tab on the VM (root, persistent, survives a dropped `vm.sh` call), one tab per target: `bash scripts/vm-scan.sh <eng> <target> '<scan>'` (multi-web target -> `<target>-web-<ip-or-domain>`, one tab each). Screenshot a live/finished tab with `Skill(screenshot)` `--tmux <eng>:<tab>` (use the `@NN` id or sanitized tab name `vm-scan.sh` prints, not a dotted target). The scan commands below are what you launch inside each tab.
 
@@ -48,17 +48,25 @@ dig any @$T <domain>; dig axfr @$T <domain>   # DNS if 53 open / vhost hints
 #  (a) CAPTURE IT AS-IS FIRST, before poking: render the page (`capture.sh web <eng> <slug> http://T:PORT/`
 #      -> a browser shot with the URL bar) AND save the raw HTML source to poc/ (the site as it was) --
 #      curl -s http://T:PORT/ > poc/<slug>-source.html. `web` renders; `ev`/`req` card a request/response.
-#  (b) LAUNCH THE SCANNERS IN PARALLEL -- each runs for MINUTES, so ONE tmux tab each, do not wait serially:
-#        scripts/vm-scan.sh <eng> <T>-ffuf 'ffuf ...'   ;   scripts/vm-scan.sh <eng> <T>-nuclei 'nuclei -u http://$T'
-#      whatweb + curl -I are quick (inline). Analyse the page/source WHILE ffuf+nuclei run in the background.
-#      NEVER conclude "no web vuln / no hidden route" until ffuf AND nuclei have actually run AND been read.
+#  (c) SOURCE-READ PRIMITIVE first (LFI / file-disclosure / .git / exposed backup): the MOMENT you can
+#      read files, READ ALL THE APP SOURCE (every .php feroxbuster finds), fully, BEFORE attacking a
+#      login or brute-forcing a DB/panel. The real vuln - a SQLi param, a hardcoded cred, a logic flaw,
+#      the flag path - is almost always IN the source you can already read. Grinding phpMyAdmin/creds
+#      while an unread `?search=` SQLi sits in dashboard.php source is the recurring "drift to manual".
+#  (b) LAUNCH THE SCANNERS IN PARALLEL the MOMENT nmap shows a web port -- ONE tmux tab each, do not wait serially:
+#        feroxbuster (PRIMARY dir/file discovery), nuclei (CVE/misconfig), whatweb (fingerprint, its OWN tab):
+#        scripts/vm-scan.sh <eng> <T>-ferox 'feroxbuster ...' ; <T>-nuclei 'nuclei -u http://$T' ; <T>-whatweb 'whatweb -a3 http://$T'
+#      Analyse the page/source WHILE they run, then CARD each tab (feroxbuster + whatweb + nuclei) when it finishes.
+#      NEVER conclude "no web vuln / no hidden route" until feroxbuster AND nuclei have actually run AND been read.
 # Web (per http port) -- the scans you launch in those tmux tabs:
-ffuf -u http://$T/FUZZ -w scripts/wordlists/harness-paths.txt -e .php,.py,.html,.txt -mc 200,301,302,401,403 -ac   # OUR high-signal list FIRST (non-obvious routes the big lists bury: /internal,/health,/customapi...)
-ffuf -u http://$T/FUZZ -w /usr/share/seclists/Discovery/Web-Content/ractf-medium.txt -ac      # then the big list
-ffuf -u "http://$T/?FUZZ=x" -w scripts/wordlists/harness-params.txt -fs <baseline>            # param mining (SSRF/LFI/cmdi names)
-ffuf -u http://$T/ -H "Host: FUZZ.$T" -w <vhost-wordlist> -ac                                  # vhosts
+# PRIMARY dir/file discovery = feroxbuster (recursive; run FIRST, with backup/log exts). base64-push harness-paths.txt to the VM first.
+feroxbuster -u http://$T -w /tmp/harness-paths.txt -x php,txt,log,sql,bak,zip,env,old,conf -d 2 --no-state -o ferox.txt   # OUR high-signal list, recursive
+feroxbuster -u http://$T -w /usr/share/seclists/Discovery/Web-Content/raft-medium-words.txt -x php,txt,log,bak -d 2 --no-state   # then a big list (fallback: /usr/share/wordlists/dirb/big.txt)
+# ffuf for what feroxbuster does NOT do -- param mining + vhosts:
+ffuf -c -u "http://$T/?FUZZ=x" -w scripts/wordlists/harness-params.txt -fs <baseline>          # param mining (SSRF/LFI/cmdi names); -c = colored output (readable recon card)
+ffuf -c -u http://$T/ -H "Host: FUZZ.$T" -w <vhost-wordlist> -ac                                # vhosts
 nuclei -u http://$T -o nuclei.txt                                                              # known CVEs/misconfig
-whatweb http://$T ; curl -s -I http://$T                                                       # fingerprint + cookies (ID the app/version)
+whatweb -a3 http://$T ; curl -s -I http://$T                                                   # fingerprint + cookies (whatweb in its OWN tmux tab -> recon card)
 wpscan -u http://$T                                                                            # If there is a wordpress
 ```
 **Wordlists live on the attacker box, not always on the scan VM.** `scripts/wordlists/*` (vault path)

@@ -2419,7 +2419,7 @@ git clone https://github.com/horizon3ai/CVE-2021-38647    # working PoC
 
 ## Squid proxy abuse for internal port scan and SSRF pivot (port 3128)
 
-Squid is a caching forward HTTP proxy on 3128/tcp. A misconfigured or open Squid becomes a pivot: relay traffic out (open proxy) or, more usefully, reach RFC1918/loopback services and cloud metadata that are otherwise unreachable, turning the proxy into an SSRF and internal-scan gateway. Cross-ref [[ssrf]] and [[pivoting-tunneling]].
+Squid is a caching forward HTTP proxy on 3128/tcp. A misconfigured or open Squid becomes a pivot: relay traffic out (open proxy) or, more usefully, reach RFC1918/loopback services and cloud metadata that are otherwise unreachable, turning the proxy into an SSRF and internal-scan gateway. Cross-ref [[wiki/payloads/ssrf]] and [[pivoting-tunneling]].
 
 ### Enumeration
 ```bash

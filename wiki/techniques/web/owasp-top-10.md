@@ -78,7 +78,7 @@ Server fetches an attacker-controlled URL.
 - **Real-world:** Capital One (2019) - SSRF -> EC2 IMDS role creds -> S3 -> 100M records. The canonical SSRF breach.
 - **CVEs:** CVE-2021-26855 (Exchange ProxyLogon SSRF chain), Confluence/Jira SSRF.
 - **Payloads:** `wiki/payloads/ssrf.md`, [[imds-cloud-metadata]]; PDF/headless [[headless-browser-attacks]].
-- **Pages:** [[ssrf]], [[headless-browser-attacks]]. **Skills:** `hunt-ssrf`, `hunt-cloud`. **Chain:** [[attack-chains]] #1.
+- **Pages:** [[wiki/techniques/web/ssrf]], [[headless-browser-attacks]]. **Skills:** `hunt-ssrf`, `hunt-cloud`. **Chain:** [[attack-chains]] #1.
 
 ## Use
 Map a finding to its category for reporting; pivot from a category to the deep page + payload arsenal to exploit. Recon -> [[recon-dorks]]; perimeter/known-CVE -> [[cve-arsenal]]; end-to-end -> [[attack-chains]].

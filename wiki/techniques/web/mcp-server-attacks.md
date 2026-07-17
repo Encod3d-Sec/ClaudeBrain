@@ -85,7 +85,7 @@ Test/detect: scan rules files and READMEs for non-printing codepoints, for examp
 - Authenticate and network-isolate MCP servers and Inspector; never expose them unauthenticated.
 
 ## Tools
-See [[llm-attacks]] for the broader LLM and agent attack surface, [[ssrf]] for out-of-band confirmation patterns, and the payloads in [[llm-prompt-injection]].
+See [[llm-attacks]] for the broader LLM and agent attack surface, [[wiki/techniques/web/ssrf]] for out-of-band confirmation patterns, and the payloads in [[llm-prompt-injection]].
 
 ## Sources
 - Invariant Labs, "MCP Security Notification: Tool Poisoning Attacks" (slug: invariant-mcp-tool-poisoning).

@@ -12,7 +12,7 @@ sources: [payloadsallthethings-ssi]
 
 ## What it is
 
-Server Side Includes are directives the web server evaluates while serving an HTML page. If user input is reflected into a page the server parses for SSI, an attacker injects directives to read files or get RCE. The proxy-layer cousin, **ESI** (Edge Side Includes), is processed by caching surrogates and yields SSRF/XSS. Related: [[ssti]], [[xss]], [[ssrf]].
+Server Side Includes are directives the web server evaluates while serving an HTML page. If user input is reflected into a page the server parses for SSI, an attacker injects directives to read files or get RCE. The proxy-layer cousin, **ESI** (Edge Side Includes), is processed by caching surrogates and yields SSRF/XSS. Related: [[ssti]], [[xss]], [[wiki/techniques/web/ssrf]].
 
 ## How it works
 The server (Apache `mod_include`, nginx SSI module, IIS) parses files - typically `.shtml`/`.stm`/`.shtm`, or any type when `Options +Includes`/`XBitHack` is on - for `<!--#directive ... -->`. Reflected user input inside such a page is executed. ESI works the same way but at a caching proxy (Varnish/Squid/Fastly/Akamai/Oracle) that cannot tell genuine ESI tags from ones you inject into the upstream response.

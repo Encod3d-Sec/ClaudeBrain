@@ -13,7 +13,7 @@ Proven end-to-end paths from how real engagements actually win. Each step links 
 
 ## 1. Web SSRF -> cloud account takeover
 **Scenario:** a fetch/preview/PDF feature on an internet app hosted in AWS.
-1. Find SSRF (URL param, webhook, [[headless-browser-attacks]]) -> [[ssrf]], payloads [[ssrf]].
+1. Find SSRF (URL param, webhook, [[headless-browser-attacks]]) -> [[wiki/payloads/ssrf]], payloads [[wiki/payloads/ssrf]].
 2. Hit metadata: `169.254.169.254/latest/meta-data/iam/security-credentials/<role>` -> [[imds-cloud-metadata]].
 3. Use the role creds: `aws sts get-caller-identity`, then S3/Secrets/SSM -> [[aws-attacks]], `hunt-cloud`.
 4. Privesc the role (`iam__privesc_scan`) -> [[pacu]] -> admin / cross-account.

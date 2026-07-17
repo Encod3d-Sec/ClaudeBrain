@@ -37,7 +37,7 @@ gau target.com | katana -silent                         # seed the crawler, see 
 ## Tips and gotchas
 
 - Results include dead, duplicate, and noise URLs; dedupe and [[httpx]]-filter before use.
-- Historical params are gold for [[idor]] / [[ssrf]] and forgotten endpoints.
+- Historical params are gold for [[idor]] / [[wiki/payloads/ssrf]] and forgotten endpoints.
 - Old JS pulled from Wayback often leaks endpoints/keys (see [[javascript-source-map-exploitation]]).
 - Complementary to `waybackurls`; run both for coverage.
 

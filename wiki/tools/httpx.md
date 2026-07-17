@@ -42,7 +42,7 @@ httpx -l hosts.txt -favicon                        # favicon hash -> fingerprint
 
 ## Tips and gotchas
 - `-silent` for clean pipe output; without it you get the banner.
-- `-favicon` hash pivots to other hosts running the same app (Shodan `http.favicon.hash:`); useful for [[ssrf]]/origin-IP discovery.
+- `-favicon` hash pivots to other hosts running the same app (Shodan `http.favicon.hash:`); useful for [[wiki/payloads/ssrf]]/origin-IP discovery.
 - Default probes both http/https and common ports; widen with `-ports`. Tune `-rate-limit`/`-threads` to respect RoE.
 - Chain order: `subfinder/amass -> httpx -> nuclei/gowitness`. Capture output into `targets/<eng>/` for the engagement state.
 

@@ -22,7 +22,7 @@ Every input string is parsed against a grammar (URL, HTTP framing, hostname, JSO
 
 Canonical differential axes:
 
-- **URL parsing**: `scheme://user@host@evil/path`, backslash vs slash, `#`/`?` placement, `@`, `[]`, percent-encoding, embedded credentials. The check reads the authority as `host`, the fetcher reads it as `evil`. Drives [[ssrf]] and [[open-redirect]].
+- **URL parsing**: `scheme://user@host@evil/path`, backslash vs slash, `#`/`?` placement, `@`, `[]`, percent-encoding, embedded credentials. The check reads the authority as `host`, the fetcher reads it as `evil`. Drives [[wiki/payloads/ssrf]] and [[open-redirect]].
 - **HTTP request framing**: `Content-Length` vs `Transfer-Encoding`, obsolete line folding, header duplication, HTTP/2-to-HTTP/1.1 downgrade. Front end and back end disagree on where one request ends and the next begins: [[http-request-smuggling]].
 - **Hostname / Host header**: absolute-URI request line vs `Host` header, duplicate `Host`, port confusion, trailing dot, `X-Forwarded-Host`: [[http-host-header-attacks]].
 - **Parameter parsing**: duplicate keys, array syntax, `;` vs `&` separators, encoding, where one layer takes the first value and another the last: [[hpp-attacks]].
@@ -49,7 +49,7 @@ Primarily exploitation and access-control bypass. Also enumeration: probing how 
 2. **Identify the check and the sink** on the same input. The differential only matters when a validator and a dangerous consumer read the same bytes.
 3. **Enumerate the parsers.** Fingerprint each layer's stack (nginx, Envoy, HAProxy, Node/undici, Python urllib/requests, Go net/url, Java URL, browser). Parser behaviour is version and library specific.
 4. **Craft ambiguous input** on the relevant axis (URL, framing, host, params, content-type, encoding) so the check accepts one meaning and the sink acts on another.
-5. **Confirm the split.** Prove the two layers disagreed: an out-of-band callback for [[ssrf]], a timing or differential response for [[http-request-smuggling]], a cached poisoned response, an auth bypass reaching a forbidden route.
+5. **Confirm the split.** Prove the two layers disagreed: an out-of-band callback for [[wiki/payloads/ssrf]], a timing or differential response for [[http-request-smuggling]], a cached poisoned response, an auth bypass reaching a forbidden route.
 6. **Escalate** to the sink's native impact (SSRF to metadata, smuggling to request hijack, cache poisoning to stored XSS, access-control bypass to admin route).
 
 ## Key payloads and examples
@@ -118,4 +118,4 @@ Content-type / polyglot (declared JSON, parsed as HTML by a sniffing sink) and U
 ## Sources
 
 - PortSwigger, "Top 10 Web Hacking Techniques of 2025": "Parser Differentials: When Interpretation Becomes a Vulnerability" (joernchen); plus Unicode normalization, SSRF via HTTP redirect loops, HTTP/2 CONNECT, and Next.js cache-chain entries as members of the family.
-- Unifies existing wiki pages: [[http-request-smuggling]], [[http-host-header-attacks]], [[hpp-attacks]], [[web-cache-poisoning]], [[web-cache-deception]], [[ssrf]], [[open-redirect]], [[crlf-injection]], [[reverse-proxy-attacks]], [[nextjs-middleware-bypass]].
+- Unifies existing wiki pages: [[http-request-smuggling]], [[http-host-header-attacks]], [[hpp-attacks]], [[web-cache-poisoning]], [[web-cache-deception]], [[wiki/payloads/ssrf]], [[open-redirect]], [[crlf-injection]], [[reverse-proxy-attacks]], [[nextjs-middleware-bypass]].
