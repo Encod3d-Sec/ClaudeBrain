@@ -35,3 +35,5 @@ fi
 
 VM_SH="${VM_SH:-/root/vm.sh}"
 bash "$VM_SH" "$REMOTE"
+# reminder at the point of action: card this tab into recon/ WHEN it finishes (every tool, even empty)
+echo "tip: card it when done -> scripts/capture.sh recon $SESSION <slug> $NAME" >&2

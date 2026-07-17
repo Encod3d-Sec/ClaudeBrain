@@ -9,6 +9,7 @@
 #   req  <eng> <slug> [--] <curl-args...>                   real `curl -iv` request/response card
 #   tmux <eng> <slug> <local-script.sh>                     run a script in a real tmux pane, grab the pane
 #   web  <eng> <slug> <url> [--no-bar] [width height]        render a LIVE page via chromium (address-bar frame)
+#   recon <eng> <slug> <tmux-tab> [session=<eng>]            card a scan tmux tab (nmap/ffuf/...) into recon/
 #   burp <eng> <slug> <host> <port> <https> <method> <path> [bodyfile] [tabname]
 #                                                           Burp Repeater request/response grab (via MCP)
 #
@@ -25,6 +26,7 @@ usage: capture.sh <mode> <eng> <slug> [args]
   req  <eng> <slug> [--] <curl-args...>
   tmux <eng> <slug> <local-script.sh>
   web  <eng> <slug> <url> [--no-bar] [width height]
+  recon <eng> <slug> <tmux-tab> [session=<eng>]
   burp <eng> <slug> <host> <port> <https> <method> <path> [bodyfile] [tabname]
 U
   exit 2
@@ -129,6 +131,32 @@ python3 /tmp/shot.py $(printf '%q' "$URL") $BAR --width $W --height $H -o /tmp/p
   _pull_and_report "/tmp/poc/$PNG" "$SLUG"
 }
 
+# recon: card a running/finished scan tmux TAB (nmap/ffuf/nuclei/rustscan) into recon/ (NOT poc/).
+# Run per-tool AS each scan finishes, before exploiting - EVERY tool gets a card, even an empty
+# result, so the operator can see what ran. <tab> = the sanitized name or @id vm-scan.sh printed;
+# a bare name is qualified with <session> (default <eng>). recon/ is auto-numbered separately from poc/.
+mode_recon() {
+  [ $# -ge 3 ] || { echo "usage: capture.sh recon <eng> <slug> <tmux-tab> [session=<eng>]" >&2; exit 2; }
+  ENG="$1"; local SLUG="$2" TAB="$3" SESS="${4:-$1}"
+  local RECON="$VAULT/targets/$ENG/recon"; mkdir -p "$RECON"
+  local last NN; last=$(ls "$RECON" 2>/dev/null | grep -oE '^[0-9]{2}' | sort -n | tail -1 || true)
+  NN=$(printf "%02d" $(( 10#${last:-00} + 1 ))); PNG="$NN-$SLUG.png"
+  local TGT="$TAB"; case "$TAB" in @*|*:*) ;; *) TGT="$SESS:$TAB";; esac
+  local RPNG="/tmp/recon-${SLUG//[^a-zA-Z0-9]/_}.png" SHOT_B64
+  SHOT_B64=$(base64 -w0 "$VAULT/scripts/shot.py")
+  bash "$VM_SH" "echo '$SHOT_B64' | base64 -d > /tmp/shot.py; rm -f '$RPNG'
+python3 /tmp/shot.py --tmux '$TGT' --history -o '$RPNG' >/dev/null 2>&1 || true" >&2
+  bash "$VM_SH" "base64 -w0 '$RPNG' 2>/dev/null" | base64 -d > "$RECON/$PNG"
+  if [ -s "$RECON/$PNG" ]; then
+    echo "saved targets/$ENG/recon/$PNG"
+    echo "md: ![$SLUG](recon/$PNG)"
+  else
+    rm -f "$RECON/$PNG"
+    echo "capture(recon): no PNG (tab '$TGT' wrong? use the @id or sanitized name vm-scan.sh printed)" >&2
+    exit 1
+  fi
+}
+
 # burp: drive Burp (via the MCP) to replay a request in Repeater, then screenshot the
 # request+response panes. Grabs as the SEAT user (Burp draws on the seat X session).
 mode_burp() {
@@ -218,6 +246,7 @@ case "$MODE" in
   req)  mode_req "$@" ;;
   tmux) mode_tmux "$@" ;;
   web)  mode_web "$@" ;;
+  recon) mode_recon "$@" ;;
   burp) mode_burp "$@" ;;
   -h|--help|help) usage ;;
   *)    echo "capture: unknown mode '$MODE'" >&2; usage ;;

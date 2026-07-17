@@ -255,7 +255,38 @@ def _resolve_eng_dir(arg):
     return _engagement.active_dir()
 
 
+def reproduction_command_count(text):
+    """Count actual command lines in the reproduction sections (Recon/Foothold/Privesc).
+    A command = a non-empty, non-comment line inside a ``` code fence within those sections.
+    The framework template's placeholders are only `# cmd` comment lines inside empty fences, so a
+    walkthrough whose narrative was never filled scores 0 -> it is an images-only gallery that
+    cannot reproduce the box. Used to warn at build time (the gallery refresh alone reads as 'done')."""
+    start = text.find("## 1. Recon")
+    end = text.find("## Flags")
+    span = text[start:end] if (start != -1 and end != -1 and end > start) else text
+    count, in_fence = 0, False
+    for line in span.splitlines():
+        s = line.strip()
+        if s.startswith("```"):
+            in_fence = not in_fence
+            continue
+        if in_fence and s and not s.startswith("#"):
+            count += 1
+    return count
+
+
+def _demo():
+    empty = "## 1. Recon\n```\n# cmd\n```\n- result:\n## Flags\n"
+    filled = "## 1. Recon\n```\nnmap -p- 10.0.0.1\n```\n- result: 22,80\n## Flags\n"
+    assert reproduction_command_count(empty) == 0, "empty template must score 0"
+    assert reproduction_command_count(filled) >= 1, "a real command must be counted"
+    print("build-walkthrough _demo: ok")
+
+
 def main():
+    if "--demo" in sys.argv[1:]:
+        _demo()
+        return 0
     force = "--force" in sys.argv[1:]
     positional = [a for a in sys.argv[1:] if a != "--force"]
     arg = positional[0] if positional else None
@@ -277,6 +308,12 @@ def main():
     name = os.path.basename(os.path.normpath(eng_dir))
     action = "wrote fresh skeleton" if (force or was_bare) else "refreshed Evidence gallery"
     print("build-walkthrough: %s for %s (%d evidence image(s))." % (action, name, n))
+    with open(wt_path, encoding="utf-8", errors="ignore") as fh:
+        cmds = reproduction_command_count(fh.read())
+    if cmds == 0:
+        print("build-walkthrough: WARNING - reproduction sections (Recon/Foothold/Privesc) have NO "
+              "commands; the walkthrough is images-only and cannot reproduce the box. Write the exact "
+              "steps (Skill(walkthrough)) before close-out.")
     return 0
 
 

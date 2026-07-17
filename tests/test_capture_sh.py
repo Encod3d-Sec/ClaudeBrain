@@ -22,6 +22,19 @@ def test_help_lists_web():
     assert "web  <eng> <slug> <url>" in r.stderr
 
 
+def test_recon_is_a_known_mode():
+    # too few args -> the recon usage line, proving mode_recon is dispatched (not "unknown mode")
+    r = _run("recon", "eng", "slug")  # 2 args reach mode_recon, which needs >=3
+    assert r.returncode == 2
+    assert "capture.sh recon <eng> <slug> <tmux-tab>" in r.stderr
+    assert "unknown mode" not in r.stderr
+
+
+def test_help_lists_recon():
+    r = _run("--help")
+    assert "recon <eng> <slug> <tmux-tab>" in r.stderr
+
+
 def test_unknown_mode_still_rejected():
     r = _run("bogus")
     assert r.returncode == 2

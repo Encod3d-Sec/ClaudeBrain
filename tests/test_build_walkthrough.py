@@ -314,3 +314,13 @@ def test_gallery_uses_improved_filename_label_when_no_manifest(tmp_path):
 
     assert "live tmux pane" in text
     assert "tmux thm UltraTech" not in text
+
+
+def test_reproduction_command_count_flags_empty_vs_filled():
+    """The empty framework template scores 0 (images-only walkthrough); a real command counts."""
+    mod = _load()
+    empty = "## 1. Recon\n```\n# cmd\n```\n- result:\n## 2. Foothold\n```\n# cmd / payload\n```\n## Flags\n"
+    filled = ("## 1. Recon\n```bash\nrustscan -a 10.0.0.1\nnmap -p- 10.0.0.1\n```\n- result: 22,80\n"
+              "## 2. Foothold\n```\ncurl 'http://t/?epoch=1;id'\n```\n## Flags\n")
+    assert mod.reproduction_command_count(empty) == 0
+    assert mod.reproduction_command_count(filled) == 3  # rustscan, nmap, curl (comments/results excluded)

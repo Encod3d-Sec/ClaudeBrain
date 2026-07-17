@@ -28,7 +28,9 @@ Only after the wiki has nothing do you write a custom PoC. Do not reinvent what 
 
 Use the standard toolkit. Do NOT hand-roll recon scripts.
 
-Tooling-first: use nmap/ffuf/nuclei/nxc - never hand-roll a /dev/tcp port loop or a curl fuzz loop (weaker, skips the fingerprint router). Capture the nmap surface + ffuf hits as evidence (Skill(screenshot) `--term`).
+Tooling-first: use rustscan/nmap/ffuf/nuclei/nxc - never hand-roll a /dev/tcp port loop or a curl fuzz loop (weaker, skips the fingerprint router).
+
+**Card EVERY scan tab AS it finishes (before exploiting), not at the end of the box:** `scripts/capture.sh recon <eng> <slug> <tab>` renders the tmux tab into `recon/`. Do this for rustscan, nmap, ffuf, AND nuclei - even an empty/unhelpful result gets a card, so the operator can see exactly what ran. `<tab>` = the `@id` or sanitized name `vm-scan.sh` printed. (`status.py` surfaces the recon-card count; 0 cards on a web box = you skipped this.)
 
 Run each scan in its own tmux tab on the VM (root, persistent, survives a dropped `vm.sh` call), one tab per target: `bash scripts/vm-scan.sh <eng> <target> '<scan>'` (multi-web target -> `<target>-web-<ip-or-domain>`, one tab each). Screenshot a live/finished tab with `Skill(screenshot)` `--tmux <eng>:<tab>` (use the `@NN` id or sanitized tab name `vm-scan.sh` prints, not a dotted target). The scan commands below are what you launch inside each tab.
 
@@ -36,9 +38,10 @@ Run each scan in its own tmux tab on the VM (root, persistent, survives a droppe
 
 ```bash
 T=<ip>
-# Full TCP, then scripts/version on found ports
-nmap -p- --min-rate 2000 -T4 -Pn $T -oN nmap-all.txt
-nmap -sCV -p<found> -Pn $T -oN nmap-svc.txt
+# rustscan FIRST (board step 1: fast full-port sweep), THEN nmap -sCV on the open ports it prints.
+rustscan -a $T --ulimit 5000 -g                        # seconds -> open-port CSV (e.g. [22,80])
+nmap -p<found> -sCV -Pn $T -oN nmap-svc.txt            # version/script scan on rustscan's hits
+nmap -p- --min-rate 2000 -T4 -Pn $T -oN nmap-all.txt   # full-TCP confirm (its own tmux tab)
 nc -nv $T <port>                 # manual banner / custom-proto services (chatbots, etc.)
 dig any @$T <domain>; dig axfr @$T <domain>   # DNS if 53 open / vhost hints
 # --- WEB SERVICE FOUND -> do ALL of this; do NOT skip web enum to jump to the "obvious" path (password-audit box lesson):
