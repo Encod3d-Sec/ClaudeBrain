@@ -726,16 +726,75 @@ def test_fingerprint_hits_is_routing_only():
 
 
 
-def test_scope_guard_flags_echo_banner(vault):
-    """scope-guard warns on `echo "=== ... ==="` banners (CLAUDE.md forbids them), engagement or not."""
+def test_scope_guard_enforces_echo_banner(vault):
+    """scope-guard now DENIES `echo "=== ... ==="` banners (enforce, not nudge); clean cmds pass."""
     env = _env(vault)
     banner = run_hook("scope-guard.py", {"tool_name": "Bash",
                       "tool_input": {"command": 'echo "=== recon ==="; ls -la'}}, env).stdout
-    assert "OUTPUT-HYGIENE" in banner
+    assert '"permissionDecision": "deny"' in banner and "output-banner" in banner
     clean = run_hook("scope-guard.py", {"tool_name": "Bash",
                      "tool_input": {"command": "ls -la; grep foo bar.txt"}}, env).stdout
-    assert "OUTPUT-HYGIENE" not in clean
-    # banner inside a vm.sh single-quoted wrapper is still caught (the text is in the command)
+    assert clean.strip() == ""
+    # banner inside a vm.sh single-quoted wrapper is still blocked (the text is in the command)
     wrapped = run_hook("scope-guard.py", {"tool_name": "Bash",
                        "tool_input": {"command": "bash /root/vm.sh 'echo \"### ports ###\"; nmap x'"}}, env).stdout
-    assert "OUTPUT-HYGIENE" in wrapped
+    assert '"deny"' in wrapped
+
+
+def test_scope_guard_escape_hatch_downgrades_to_advisory(vault):
+    """The skills/hooks/.enforce-off marker turns every deny back into an advisory warning,
+    so a false block can never trap the operator."""
+    marker = os.path.join(HOOKS, ".enforce-off")
+    env = _env(vault)
+    try:
+        open(marker, "w").close()
+        out = run_hook("scope-guard.py", {"tool_name": "Bash",
+                       "tool_input": {"command": 'echo "=== x ==="'}}, env).stdout
+        assert "permissionDecision" not in out
+        assert "additionalContext" in out and "advisory" in out
+    finally:
+        if os.path.exists(marker):
+            os.remove(marker)
+
+
+def test_web_evidence_gaps(tmp_path):
+    """Close-out web-evidence gate: a SOLVED web box needs recon cards + render/source; else gaps.
+    Non-web boxes are silent; fully-evidenced boxes return []."""
+    import importlib.util, sys
+    spec = importlib.util.spec_from_file_location("_eng_wg", os.path.join(HOOKS, "_engagement.py"))
+    e = importlib.util.module_from_spec(spec); spec.loader.exec_module(e)
+    d = tmp_path
+    (d / "poc").mkdir(); (d / "recon").mkdir()
+    (d / "state.md").write_text("## STATUS: SOLVED\n| h | http | 80 | x | root | THM{x} | y |\n", encoding="utf-8")
+    g = e.web_evidence_gaps(str(d))
+    assert any("recon cards" in x for x in g)
+    assert any("render" in x for x in g)
+    (d / "recon" / "01-nmap.png").write_bytes(b"x")
+    (d / "poc" / "01-home-source.html").write_text("<html>", encoding="utf-8")
+    assert e.web_evidence_gaps(str(d)) == []
+    # non-web box (only ssh/22) -> gate silent
+    (d / "state.md").write_text("## STATUS: SOLVED\n| h | ssh | 22 | x | root | THM{x} | y |\n", encoding="utf-8")
+    assert e.web_evidence_gaps(str(d)) == []
+
+
+def test_paths_write_gap(tmp_path):
+    """State-discipline reflex: loot captured but paths.md still empty -> gap = loot row count;
+    once a path row exists (or loot is still stub) -> 0. Header/separator rows never count."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("_eng_pg", os.path.join(HOOKS, "_engagement.py"))
+    e = importlib.util.module_from_spec(spec); spec.loader.exec_module(e)
+    d = tmp_path
+    loot_hdr = "| item | type | source | where | status |\n|------|------|--------|-------|--------|\n"
+    paths_hdr = "| path | stage | status | blocker | next-move |\n|------|-------|--------|---------|-----------|\n"
+    # both stubs (header+separator only) -> no findings -> no gap
+    (d / "loot.md").write_text(loot_hdr, encoding="utf-8")
+    (d / "paths.md").write_text(paths_hdr, encoding="utf-8")
+    assert e.paths_write_gap(str(d)) == 0
+    # loot has 2 findings, paths still stub -> gap = 2
+    (d / "loot.md").write_text(loot_hdr + "| admin cred | cred | web | login | works |\n| id_rsa | key | ftp | ssh | works |\n", encoding="utf-8")
+    assert e.paths_write_gap(str(d)) == 2
+    # write a path row -> gap clears
+    (d / "paths.md").write_text(paths_hdr + "| web->cred->ssh | user | done | - | - |\n", encoding="utf-8")
+    assert e.paths_write_gap(str(d)) == 0
+    # fail-open on missing dir
+    assert e.paths_write_gap(None) == 0

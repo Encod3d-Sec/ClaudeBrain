@@ -10,6 +10,7 @@
 #   tmux <eng> <slug> <local-script.sh>                     run a script in a real tmux pane, grab the pane
 #   web  <eng> <slug> <url> [--no-bar] [width height]        render a LIVE page via chromium (address-bar frame)
 #   recon <eng> <slug> <tmux-tab> [session=<eng>]            card a scan tmux tab (nmap/ffuf/...) into recon/
+#   log  <eng> <slug> <remote-logfile>                      save a long text log (linpeas/pspy) to poc/NN.md
 #   burp <eng> <slug> <host> <port> <https> <method> <path> [bodyfile] [tabname]
 #                                                           Burp Repeater request/response grab (via MCP)
 #
@@ -27,6 +28,7 @@ usage: capture.sh <mode> <eng> <slug> [args]
   tmux <eng> <slug> <local-script.sh>
   web  <eng> <slug> <url> [--no-bar] [width height]
   recon <eng> <slug> <tmux-tab> [session=<eng>]
+  log  <eng> <slug> <remote-logfile>
   burp <eng> <slug> <host> <port> <https> <method> <path> [bodyfile] [tabname]
 U
   exit 2
@@ -43,11 +45,14 @@ _poc_target() {   # $1=eng $2=slug
 # Pull a rendered PNG off the VM into poc/ (base64 through the pipe, not the caller's context)
 # and print the saved path + walkthrough ref. $ENG/$POC/$PNG are set by the caller.
 _pull_and_report() {   # $1=remote-png-path $2=caption
-  bash "$VM_SH" "base64 -w0 '$1' 2>/dev/null" | base64 -d > "$POC/$PNG"
+  # `|| true` so a failed pull (pipefail/set -e) does NOT abort before the empty-file cleanup below,
+  # which would leave a 0-byte PNG on disk (a broken image the operator then sees in poc/).
+  { bash "$VM_SH" "base64 -w0 '$1' 2>/dev/null" | base64 -d > "$POC/$PNG"; } 2>/dev/null || true
   if [ -s "$POC/$PNG" ]; then
     echo "saved targets/$ENG/poc/$PNG"
     echo "md: ![$2](poc/$PNG)"
   else
+    rm -f "$POC/$PNG"
     echo "capture($MODE): no PNG produced (VM unreachable? tee the step output first?)" >&2
     exit 1
   fi
@@ -129,6 +134,10 @@ mode_web() {
   bash "$VM_SH" "echo '$SHOT_B64' | base64 -d > /tmp/shot.py; mkdir -p /tmp/poc
 python3 /tmp/shot.py $(printf '%q' "$URL") $BAR --width $W --height $H -o /tmp/poc/$PNG" >&2
   _pull_and_report "/tmp/poc/$PNG" "$SLUG"
+  # also save the raw page source next to the render (the operator investigates from source).
+  local SRC="${PNG%.png}-source.html"
+  bash "$VM_SH" "curl -sk -L --max-time 12 $(printf '%q' "$URL") 2>/dev/null | head -c 300000" > "$POC/$SRC" 2>/dev/null || true
+  [ -s "$POC/$SRC" ] && echo "saved targets/$ENG/poc/$SRC (page source)"
 }
 
 # recon: card a running/finished scan tmux TAB (nmap/ffuf/nuclei/rustscan) into recon/ (NOT poc/).
@@ -146,7 +155,8 @@ mode_recon() {
   SHOT_B64=$(base64 -w0 "$VAULT/scripts/shot.py")
   bash "$VM_SH" "echo '$SHOT_B64' | base64 -d > /tmp/shot.py; rm -f '$RPNG'
 python3 /tmp/shot.py --tmux '$TGT' --history -o '$RPNG' >/dev/null 2>&1 || true" >&2
-  bash "$VM_SH" "base64 -w0 '$RPNG' 2>/dev/null" | base64 -d > "$RECON/$PNG"
+  # `|| true`: don't let a failed pull abort before the empty-file cleanup (avoids 0-byte broken PNGs).
+  { bash "$VM_SH" "base64 -w0 '$RPNG' 2>/dev/null" | base64 -d > "$RECON/$PNG"; } 2>/dev/null || true
   if [ -s "$RECON/$PNG" ]; then
     echo "saved targets/$ENG/recon/$PNG"
     echo "md: ![$SLUG](recon/$PNG)"
@@ -155,6 +165,25 @@ python3 /tmp/shot.py --tmux '$TGT' --history -o '$RPNG' >/dev/null 2>&1 || true"
     echo "capture(recon): no PNG (tab '$TGT' wrong? use the @id or sanitized name vm-scan.sh printed)" >&2
     exit 1
   fi
+}
+
+# log: save a long TEXT log (linpeas/pspy/full nmap) from the VM into poc/NN-<slug>.md as fenced
+# text, NOT a screenshot -- linpeas is hundreds of colored lines, unreadable and un-scrollable as an
+# image. ANSI stripped on pull; the full scan is kept so the operator can grep/read it later.
+mode_log() {
+  [ $# -ge 3 ] || { echo "usage: capture.sh log <eng> <slug> <remote-logfile>" >&2; exit 2; }
+  ENG="$1"; local SLUG="$2" RLOG="$3"
+  _poc_target "$ENG" "$SLUG"
+  local MD="$NN-$SLUG.md" BODY
+  BODY=$(bash "$VM_SH" "base64 -w0 '$RLOG' 2>/dev/null" | base64 -d 2>/dev/null | sed -r 's/\x1B\[[0-9;]*[mGKHhl]//g' || true)
+  if [ -z "$BODY" ]; then
+    echo "capture(log): '$RLOG' empty/unreachable on the VM (redirect the tool to a file first)" >&2
+    exit 1
+  fi
+  printf '# %s\n\nSource: `%s` (full text log captured on the VM, ANSI stripped).\n\n```text\n%s\n```\n' \
+    "$SLUG" "$RLOG" "$BODY" > "$POC/$MD"
+  echo "saved targets/$ENG/poc/$MD ($(wc -l < "$POC/$MD") lines)"
+  echo "md: [$SLUG](poc/$MD)"
 }
 
 # burp: drive Burp (via the MCP) to replay a request in Repeater, then screenshot the
@@ -247,6 +276,7 @@ case "$MODE" in
   tmux) mode_tmux "$@" ;;
   web)  mode_web "$@" ;;
   recon) mode_recon "$@" ;;
+  log)  mode_log "$@" ;;
   burp) mode_burp "$@" ;;
   -h|--help|help) usage ;;
   *)    echo "capture: unknown mode '$MODE'" >&2; usage ;;

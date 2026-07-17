@@ -1,13 +1,13 @@
 ---
-title: "Vuln Index - <ENGAGEMENT>"
+title: "Vuln Index - {{ENGAGEMENT}}"
 type: engagement-vuln-index
 tags: [engagement, findings, index]
-date_created: <DATE>
-date_updated: <DATE>
+date_created: "{{DATE}}"
+date_updated: "{{DATE}}"
 sources: []
 ---
 
-# Vuln Index - <ENGAGEMENT>
+# Vuln Index - {{ENGAGEMENT}}
 
 Finding index by severity. This is the dedup gate triage checks before scaffolding a new
 FIND: search here first so a vuln is not written up twice. One row per confirmed/in-progress

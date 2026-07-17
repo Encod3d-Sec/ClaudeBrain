@@ -1,12 +1,12 @@
 ---
-title: "Dead-ends: <PROJECT>"
+title: "Dead-ends: {{PROJECT}}"
 type: research-deadends
-date_created: <DATE>
-date_updated: <DATE>
+date_created: "{{DATE}}"
+date_updated: "{{DATE}}"
 sources: []
 ---
 
-# Dead-ends: <PROJECT>
+# Dead-ends: {{PROJECT}}
 
 Exhausted approaches and disproven hypotheses. **Read before every iteration; never re-run these without new input** (new primitive, new reachability, new tooling).
 

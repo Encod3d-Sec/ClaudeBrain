@@ -65,6 +65,17 @@ found, their root cause, and the harness change made or proposed. This doc is ab
 so it is generic and tracked - describe failures generically ("on a web box ffuf was skipped"),
 never with client host/IP/cred; refer to the engagement by its (codename) dir name only.
 
+### 0d. Fill the engagement's agent eval (per-engagement, gitignored)
+Populate `targets/$ENG/eval.md` (self-healed from `_eval.md`) with an HONEST self-assessment of how
+the AGENT performed on THIS box. It is estimates, not instrumentation - the value is the ratio + the
+named drift moments, which mirror the retro:
+- **Budget:** order-of-magnitude tokens, rough tool-call count, wall-clock if knowable (leave blank if not).
+- **Time allocation:** estimate the split productive / research / dead-ends / drift (~100%). Dead-ends
+  come straight from `Deadends.md`; drift = the avoidable rework named in 0a.
+- **Drift moments / what went right / score:** one line each; be honest, low scores are the point.
+Unlike the retro (generic, tracked), eval.md is per-engagement and may name specifics (it lives under
+the gitignored `targets/`).
+
 Only after Phase 0 is done, proceed to the knowledge harvest below.
 
 ## Steps (Phases 1-7: wiki knowledge harvest)

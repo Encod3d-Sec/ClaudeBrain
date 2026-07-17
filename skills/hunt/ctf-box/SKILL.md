@@ -44,6 +44,12 @@ nmap -p<found> -sCV -Pn $T -oN nmap-svc.txt            # version/script scan on 
 nmap -p- --min-rate 2000 -T4 -Pn $T -oN nmap-all.txt   # full-TCP confirm (its own tmux tab)
 nc -nv $T <port>                 # manual banner / custom-proto services (chatbots, etc.)
 dig any @$T <domain>; dig axfr @$T <domain>   # DNS if 53 open / vhost hints
+# SMB (445 open) -> netexec (nxc), NOT a one-shot smbclient: nxc fires the fingerprint router,
+# enumerates shares+users+policy in one carded pass, and works for standalone Samba AND AD. Run it
+# in its OWN tmux tab so it gets a recon card (smbclient leaves no shot):
+nxc smb $T -u '' -p '' --shares                 # anon/null share list + signing/OS banner
+nxc smb $T -u 'guest' -p '' --shares --rid-brute   # guest fallback + user enum via RID cycling
+smbclient -N //$T/<share> -c 'recurse;ls'       # then use smbclient ONLY to pull a specific file/share
 # --- WEB SERVICE FOUND -> do ALL of this; do NOT skip web enum to jump to the "obvious" path (password-audit box lesson):
 #  (a) CAPTURE IT AS-IS FIRST, before poking: render the page (`capture.sh web <eng> <slug> http://T:PORT/`
 #      -> a browser shot with the URL bar) AND save the raw HTML source to poc/ (the site as it was) --
@@ -61,7 +67,7 @@ dig any @$T <domain>; dig axfr @$T <domain>   # DNS if 53 open / vhost hints
 # Web (per http port) -- the scans you launch in those tmux tabs:
 # PRIMARY dir/file discovery = feroxbuster (recursive; run FIRST, with backup/log exts). base64-push harness-paths.txt to the VM first.
 feroxbuster -u http://$T -w /tmp/harness-paths.txt -x php,txt,log,sql,bak,zip,env,old,conf -d 2 --no-state -o ferox.txt   # OUR high-signal list, recursive
-feroxbuster -u http://$T -w /usr/share/seclists/Discovery/Web-Content/raft-medium-words.txt -x php,txt,log,bak -d 2 --no-state   # then a big list (fallback: /usr/share/wordlists/dirb/big.txt)
+feroxbuster -u http://$T -w /usr/share/seclists/Discovery/Web-Content/raft-large-words.txt -x php,txt,log,bak -d 2 --no-state   # then the BIG list (raft-large; fallback raft-medium-words or /usr/share/wordlists/dirb/big.txt)
 # ffuf for what feroxbuster does NOT do -- param mining + vhosts:
 ffuf -c -u "http://$T/?FUZZ=x" -w scripts/wordlists/harness-params.txt -fs <baseline>          # param mining (SSRF/LFI/cmdi names); -c = colored output (readable recon card)
 ffuf -c -u http://$T/ -H "Host: FUZZ.$T" -w <vhost-wordlist> -ac                                # vhosts
@@ -93,6 +99,21 @@ Fingerprint the exact app + version. **On any fingerprinted surface/service, `Sk
 
 ## Phase 4 Exploit: finish the foothold, then privesc
 
+**STOP-and-think the moment ANY shell lands (before reaching for a shortcut).** The recurring
+failure is following the FASTEST path instead of the INTENDED one, then going off the rails. Pause and:
+1. Read the box's THEME/name + any notes/creds/files you already have - CTF boxes telegraph the
+   intended vector (a module lesson, a service left on, a labelled secret). `qmd_query` the wiki for
+   that theme + the exact fingerprinted tech before acting.
+2. Enumerate the INTENDED escalation surface FIRST: `sudo -l`, writable configs/cron/timers/scripts
+   you own, group memberships, service creds - the deliberate path is almost always one of these and
+   `pspy`/`linpeas` surface it in seconds.
+3. **Kernel-LPE arsenal (dirtyfrag/copyfail/PwnKit/...) is a LABELLED FALLBACK, not the opening move.**
+   We DO carry instant-escalation payloads for old kernels ([[privesc-exploit-arsenal]], [[dirty-frag]]) -
+   note the `uname -r` band as a fallback, but VERIFY the intended path is genuinely absent AND verify
+   the CVE precondition (userns/module/patch-band) before firing. A shortcut that works is fine; taking
+   it BEFORE checking the taught vector is the drift. Once you have full root, look back at what was
+   INTENDED and record it (walkthrough + Deadends), so the fast win still teaches the lesson.
+
 Finish the foothold first (leftover Rule 2 techniques, if the shell landed mid-app):
 - **Consistent escalation primitive:** if a box exposes the SAME pivot at each stage (a Docker socket/TLS pivot per level, an SSRF each hop), verify/exhaust that intended vector end-to-end BEFORE an opportunistic shortcut (raw device mount, a memory CVE). A shortcut that relies on `--privileged`/a loose cap can mask that a hardened config would block it, and it is less reproducible/auditable. Getting the flag via a shortcut is fine; SKIPPING the taught vector without testing it is the miss.
 - Web SQLi: in-band (UNION/error) before blind; test EVERY quote context (`'` `"` numeric) and second-order (a stored value used unsafely on another page). If the app hashes the password inside the query, read plaintext from `information_schema.PROCESSLIST`. Load `Skill(hunt-sqli)` / see [[sql-injection]].
@@ -113,7 +134,11 @@ Then the automated sweep:
 # crashed. Use the default scan, or throttle: `nice -n19 ionice -c3 ./linpeas.sh`. If it does hang
 # the box, `pkill -9 -f linpeas` (kill it as the user that launched it) and load drains in seconds.
 ```
-Capture linpeas/pspy findings as terminal-card evidence (Skill(screenshot) `--term`) - the colored highlights survive.
+Capture linpeas/pspy TWO ways: a `--term` screenshot of the highlighted findings (Skill(screenshot),
+the colored hits survive) AND the FULL text log - redirect the tool to a file, then
+`scripts/capture.sh log <eng> <slug> /tmp/linpeas.txt` pulls the whole scan (ANSI stripped) into
+`poc/NN-<slug>.md`. The screenshot is unreadable past one screen; the `.md` keeps every line so you
+(and the operator) can grep it later. Do this for full nmap output too when it is long.
 
 Then walk the manual checklist (do not skip any; the box's intended path is usually ONE of these):
 
@@ -147,6 +172,23 @@ boxes. **Lab-confirmed:** copyfail CVE-2026-31431 roots a 5.4.0-173 box from a l
 binds, reachable; port the PoC's `os.splice` -> `ctypes` `syscall(275,...)` on Python 3.8; restore a
 poisoned file with root `echo 3 > /proc/sys/vm/drop_caches`). On a THM/HTB box you own, testing the
 arsenal end-to-end is fair game.
+
+## Lesson: LKM-rootkit privesc via sudo insmod - read the magic signal, don't trust the default (THM Athena)
+
+`sudo -l` showing `(root) NOPASSWD: /usr/sbin/insmod /path/rootkit.ko` is a ROOT primitive: the
+allowed module is a pre-built LKM rootkit (e.g. m0nad **Diamorphine**) - load it, then trigger its
+give-root magic signal. This is DISTINCT from CAP_SYS_MODULE (there you build your own module); here
+the module is fixed and you drive it by signal. Two gotchas that cost real time:
+- **The magic signal may be recompiled.** Diamorphine defaults are `kill -64 0` (root), `-63` (hide
+  proc), `-31` (hide module) - but the author can change them, and the default then silently does
+  nothing. Don't fire it from memory. The module is usually **not stripped**, so READ the real one:
+  `objdump -d rootkit.ko | sed -n '/<hacked_kill>:/,/<module_hide>:/p' | grep cmp` -> the `cmp $0xNN`
+  whose branch calls `give_root` is the signal (was `0x39` = 57 here, not 64). Reversing the artifact
+  beats guessing the same way `uname -r` + patch-level beats guessing a kernel CVE.
+- **A wrong (unhandled) signal kills your shell.** `kill -<sig> 0` targets the whole process group;
+  a rootkit only swallows the signals it HANDLES, so an unhandled number is delivered for real and
+  drops your session. The correct magic signal is handled (returns 0, no delivery) and is safe. See
+  [[linux-privesc]] / [[linux-rootkits]].
 
 ## Lesson: mutate leaked/labelled secrets; cookie-BFLA is not session admin (THM Support Panel)
 
@@ -231,6 +273,12 @@ container -> internal Flask app pickle-deser RCE -> `cap_sys_module` kmod escape
 ## Capture (engagement discipline)
 
 After each phase, write to `targets/<eng>/`: hosts/access -> `state.md`, creds -> `loot.md`, chain -> `paths.md`, vulns -> `Vuln-index.md`, dead-ends -> `Deadends.md`, narrative -> `log.md`. Flags go in the writeup, never in `session/*` or `wiki/`.
+
+**Log each step to `log.md` AS it lands (step 1 -> step 2 -> ...), not at close-out.** The operator follows the box LIVE from `log.md`, so append a line the moment a step works. `log.md` holds the REAL commands - including the messy automation (base64-wrapped scripts, pty `su` helpers, joint one-liners) - so it is reproducible and the operator sees exactly what ran. **`walkthrough.md` is the CLEAN human version:** concrete one-liners a person would type (real IP/host, NO `$VAR`s, NO base64/pty wrappers). If a step needed a script, show the simple human action in the walkthrough (e.g. `su cobra` then type the password) and keep the automation in `log.md` / `poc/scripts/`.
+
+**Read the UI/source hints LITERALLY before fuzzing.** An input `placeholder`, a button label, a referenced `.js`, or leaked source usually tells you the intended input format. (Dodge: the field placeholder said "sudo command parameter" - it wanted `sudo ufw allow <port>`, an allowlist, not injection. Hours were lost fuzzing it as command-injection.)
+
+**Beware locally-substituted payloads = FALSE-POSITIVE RCE (high-severity trap).** A payload containing `$(...)`, backticks, or `$VAR` sent through the VM bridge (or any local shell / a `for p in $(...)` loop) is substituted LOCALLY before it reaches the target - and the tooling VM runs as ROOT, so a reflected `uid=0(root)` may be YOUR OWN box, not the target. ALWAYS single-quote or base64 injection payloads; confirm the target actually executed it with a marker only the target can produce (its hostname, a file only it has). NEVER claim RCE from a reflected `id`/`uid` that matches your attacker host - re-send the exact payload single-quoted and re-check before believing it.
 
 **Preserve exploit scripts and read source.** When you write the exploit script Rule 0 has you fall back to (a payload HTML, an escape/forge script, a webshell) or read a target's source, copy it into `targets/<eng>/poc/scripts/` and card the source with its URL (e.g. `shot.py --term --url-bar`); the reviewer needs the code and the state together, not just a screenshot.
 

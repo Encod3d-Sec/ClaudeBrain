@@ -24,7 +24,7 @@ TODAY="$(date +%F)"
 
 mkdir -p "$DEST/poc"
 for f in target surface findings deadends loop; do
-  sed -e "s/<PROJECT>/$NAME/g" -e "s/<DATE>/$TODAY/g" "$TPL/$f.md" > "$DEST/$f.md"
+  sed -e "s/{{PROJECT}}/$NAME/g" -e "s/{{DATE}}/$TODAY/g" "$TPL/$f.md" > "$DEST/$f.md"
 done
 
 printf '%s\n' "$NAME" > "$VAULT/raw/research/active.md"   # set as the active research project

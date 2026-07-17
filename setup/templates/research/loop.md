@@ -1,12 +1,12 @@
 ---
-title: "Loop log: <PROJECT>"
+title: "Loop log: {{PROJECT}}"
 type: research-loop
-date_created: <DATE>
-date_updated: <DATE>
+date_created: "{{DATE}}"
+date_updated: "{{DATE}}"
 sources: []
 ---
 
-# Loop log: <PROJECT>
+# Loop log: {{PROJECT}}
 
 The research loop's state. **State-first: read this + `deadends.md` + `findings.md` before continuing.** Resume from the last iteration.
 
@@ -17,7 +17,7 @@ The research loop's state. **State-first: read this + `deadends.md` + `findings.
 
 ## Iterations
 <!-- append-only, most recent at bottom:
-### Iter N (<DATE>): <approach taken>
+### Iter N ({{DATE}}): <approach taken>
 - result: <crash/leak/anomaly | nothing>
 - -> next: <deepen finding | new hypothesis | dead-end>
 -->

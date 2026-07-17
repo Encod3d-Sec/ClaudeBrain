@@ -1,14 +1,14 @@
 ---
-title: "Attack Paths - <ENGAGEMENT>"
+title: "Attack Paths - {{ENGAGEMENT}}"
 type: engagement-paths
 engagement_type: ctf
 tags: [engagement, attack-paths, ctf]
-date_created: <DATE>
-date_updated: <DATE>
+date_created: "{{DATE}}"
+date_updated: "{{DATE}}"
 sources: []
 ---
 
-# Attack Paths - <ENGAGEMENT>
+# Attack Paths - {{ENGAGEMENT}}
 
 Chain toward user/root. Dead paths cross-ref Deadends.md.
 

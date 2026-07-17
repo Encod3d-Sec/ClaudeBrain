@@ -1,9 +1,9 @@
 ---
-title: "Scope - <ENGAGEMENT>"
+title: "Scope - {{ENGAGEMENT}}"
 type: engagement-scope
 tags: [engagement, scope, roe]
-date_created: <DATE>
-date_updated: <DATE>
+date_created: "{{DATE}}"
+date_updated: "{{DATE}}"
 # Rules-of-engagement flags (true = forbidden). Drive what next-move/hunt suggest.
 no_bruteforce: false
 no_dos: false
@@ -14,7 +14,7 @@ tunnel_safe: false
 sources: []
 ---
 
-# Scope - <ENGAGEMENT>
+# Scope - {{ENGAGEMENT}}
 
 Authoritative bounds for this engagement. **Read before any action.** next-move and hunt skills respect this; out-of-scope targets and forbidden techniques are not suggested. Client data, stays under `targets/`.
 

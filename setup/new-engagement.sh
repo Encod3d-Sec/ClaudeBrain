@@ -22,7 +22,7 @@ set -euo pipefail
 
 VAULT="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
 
-sub() { sed -e "s/<ENGAGEMENT>/$2/g" -e "s/<DATE>/$3/g" "$1" > "$4"; }
+sub() { sed -e "s/{{ENGAGEMENT}}/$2/g" -e "s/{{DATE}}/$3/g" "$1" > "$4"; }
 
 # --rename OLD NEW: move an engagement dir and re-run the sed substitution so no
 # managed file keeps the old name in its title:/engagement: frontmatter or its H1

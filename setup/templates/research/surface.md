@@ -1,12 +1,12 @@
 ---
-title: "Attack Surface: <PROJECT>"
+title: "Attack Surface: {{PROJECT}}"
 type: research-surface
-date_created: <DATE>
-date_updated: <DATE>
+date_created: "{{DATE}}"
+date_updated: "{{DATE}}"
 sources: []
 ---
 
-# Attack Surface: <PROJECT>
+# Attack Surface: {{PROJECT}}
 
 Where bugs live. Map this before hypothesizing. `qmd_query` the tech/language/framework first to pull the matching methodology.
 

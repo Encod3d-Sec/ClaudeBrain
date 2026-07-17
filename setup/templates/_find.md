@@ -5,7 +5,7 @@ severity: MEDIUM
 status: RESEARCH
 cvss: ""
 affected: ""
-date_created: <DATE>
+date_created: "{{DATE}}"
 sources: []
 ---
 

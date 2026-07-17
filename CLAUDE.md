@@ -111,19 +111,19 @@ Caveman plugin installed. SessionStart hook activates full mode automatically - 
 
 SessionStart also auto-loads `session/hot.md`. No manual reads needed.
 
-Engagement-state hooks (live via `~/.claude/vault-hooks` symlink -> `skills/hooks/`). All inject context (a suggestion/warning), never silently run tools; all fail open. Full mechanics in `docs/auto-triggers.md`; the behaviorally-relevant summary:
+Engagement-state hooks (live via `~/.claude/vault-hooks` symlink -> `skills/hooks/`). All fail open (any error -> allow, never trap). Policy: **deterministic guards ENFORCE (deny the tool call); semantic reflexes ADVISE (inject a suggestion).** Enforcement is reserved for no-judgement checks (scope/RoE/output-hygiene) where blocking the wrong action costs zero tokens; judgement calls (wiki-first, tools-not-manual, intended-path) stay advisory because a false block wastes more time than it saves. Escape hatch for a bad block: `touch skills/hooks/.enforce-off`. Full mechanics in `docs/auto-triggers.md`; the behaviorally-relevant summary:
 
 | Hook | Event | Effect |
 |------|-------|--------|
 | `engagement-init.py` | SessionStart | Self-heals the engagement file set; injects state summary + top next-moves + session cache + OOB HITs + drift/CVE warnings. |
 | `hunt-trigger.py` | UserPromptSubmit | Routes to hunt skills from `triggers.json` (surfaces the relevant Skill; the skill carries the mandate); leak-safe telemetry to `.trigger-fire.jsonl`. Skips injected/non-prompt content. |
 | `recon-capture.py` | PostToolUse/Bash | Routes detected tech -> the hunt Skill (`playbook.json`), auto-correlates OOB callbacks (waiting -> HIT), and fires a once-per-engagement GATE-1 wiki-first nudge when an exploit-shaped command runs while `killchain.md` Weaponize is undone. Framework-meta guard suppresses false fires. Advisory. |
-| `scope-guard.py` | PreToolUse/Bash | Warns on out-of-scope host/IP (CIDR-aware) or RoE-forbidden tooling. Advisory, never blocks. |
+| `scope-guard.py` | PreToolUse/Bash | ENFORCES (denies the command) on out-of-scope host/IP (CIDR-aware), RoE-forbidden tooling, or an `echo "=== ==="` output-banner. Fail-open; `.enforce-off` marker downgrades to advisory. |
 | `session-guard.py` | PreToolUse/Write | Warns when a write would put a client marker into a generic `session/*` file. Advisory, never blocks. |
 
 Register/repair the set per-device with `bash setup/install-hooks.sh`; `engagement-init` warns at SessionStart if a hook is unregistered (canonical set in `scripts/check-hooks.py`).
 
-Active engagement set by `targets/active.md`. Create one with `bash setup/new-engagement.sh <name> <pentest|bugbounty|ctf>`. Per-type schema from `setup/templates/<type>/`; `engagement_type` in state.md frontmatter drives analyzer + self-heal. Files: `targets/<eng>/{state,loot,paths,killchain,log,scope,walkthrough,Vuln-index,Deadends,oob}.md` + `ingest/` + `poc/` (curated exploit/PoC/flag shots) (all self-healed by `engagement-init`). `killchain.md` = the wiki-wired kill-chain board (phase checklist + `### 4a` coverage table + the three GATE lines). `walkthrough.md` = full copy-pasteable boot-to-root reproduction (distinct from the terse `log.md` audit); `log.md` doubles as the per-engagement continuity cache (its newest block is surfaced at SessionStart, so client narrative goes there, never in generic `session/hot.md`). Missing wiki pages surfaced by `scripts/wiki-gaps.py`.
+Active engagement set by `targets/active.md`. Create one with `bash setup/new-engagement.sh <name> <pentest|bugbounty|ctf>`. Per-type schema from `setup/templates/<type>/`; `engagement_type` in state.md frontmatter drives analyzer + self-heal. Files: `targets/<eng>/{state,loot,paths,killchain,log,scope,walkthrough,eval,Vuln-index,Deadends,oob}.md` + `ingest/` + `poc/` (curated exploit/PoC/flag shots) (all self-healed by `engagement-init`). `eval.md` = per-engagement AGENT self-assessment (tokens/time/drift estimates), filled at close-out by `Skill(learn)`. `killchain.md` = the wiki-wired kill-chain board (phase checklist + `### 4a` coverage table + the three GATE lines). `walkthrough.md` = full copy-pasteable boot-to-root reproduction (distinct from the terse `log.md` audit); `log.md` doubles as the per-engagement continuity cache (its newest block is surfaced at SessionStart, so client narrative goes there, never in generic `session/hot.md`). Missing wiki pages surfaced by `scripts/wiki-gaps.py`.
 
 Framework subsystems (each is a script + an on-demand skill; detail in `docs/auto-triggers.md`):
 
@@ -158,7 +158,7 @@ ClaudeBrain/
 ├── targets/                     <- engagements (PRIVATE; client data only here, git-ignored)
 │   ├── active.md                <- pointer: current engagement dir name
 │   ├── scrub-terms.txt          <- private leak-check extras (not shipped)
-│   └── <eng>/                   <- self-healed set (state,loot,paths,killchain,log,scope,walkthrough,oob,hot,Vuln-index,Deadends) + ingest/ + poc/ (curated PoC shots) + Vulns/ (pentest)
+│   └── <eng>/                   <- self-healed set (state,loot,paths,killchain,log,scope,walkthrough,eval,oob,hot,Vuln-index,Deadends) + ingest/ + poc/ (curated PoC shots) + Vulns/ (pentest)
 ├── wiki/
 │   ├── index.md                 <- catalog of all wiki pages
 │   ├── moc.md                   <- graph map-of-content (domain hubs; navigate here)

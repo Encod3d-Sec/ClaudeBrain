@@ -1,13 +1,13 @@
 ---
-title: "Findings - <ENGAGEMENT>"
+title: "Findings - {{ENGAGEMENT}}"
 type: engagement-vuln-index
 tags: [engagement, findings, ctf]
-date_created: <DATE>
-date_updated: <DATE>
+date_created: "{{DATE}}"
+date_updated: "{{DATE}}"
 sources: []
 ---
 
-# Findings - <ENGAGEMENT>
+# Findings - {{ENGAGEMENT}}
 
 Optional plain findings roll-up for this CTF room. There is no severity/CVSS
 bookkeeping here (CTF rooms do not use the FIND severity machinery). The live

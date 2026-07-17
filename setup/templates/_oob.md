@@ -1,12 +1,12 @@
 ---
-title: "OOB ledger: <ENGAGEMENT>"
+title: "OOB ledger: {{ENGAGEMENT}}"
 type: engagement-oob
-engagement: <ENGAGEMENT>
-date_created: <DATE>
-date_updated: <DATE>
+engagement: "{{ENGAGEMENT}}"
+date_created: "{{DATE}}"
+date_updated: "{{DATE}}"
 ---
 
-# OOB callback ledger: <ENGAGEMENT>
+# OOB callback ledger: {{ENGAGEMENT}}
 
 One row per planted out-of-band payload. Creating the row at PLANT time is the
 blind-bug confirmation gate: the recon-capture hook auto-flips `status` to `HIT`

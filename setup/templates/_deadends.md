@@ -1,13 +1,13 @@
 ---
-title: "Deadends - <ENGAGEMENT>"
+title: "Deadends - {{ENGAGEMENT}}"
 type: engagement-deadends
 tags: [engagement, deadends, anti-loop]
-date_created: <DATE>
-date_updated: <DATE>
+date_created: "{{DATE}}"
+date_updated: "{{DATE}}"
 sources: []
 ---
 
-# Deadends - <ENGAGEMENT>
+# Deadends - {{ENGAGEMENT}}
 
 Anti-loop record. Log a dead-end entry immediately when a path is exhausted or disproven,
 not at end of session, so the same path is never re-tested. Include enough context to avoid

@@ -1,12 +1,12 @@
 ---
-title: "Findings: <PROJECT>"
+title: "Findings: {{PROJECT}}"
 type: research-findings
-date_created: <DATE>
-date_updated: <DATE>
+date_created: "{{DATE}}"
+date_updated: "{{DATE}}"
 sources: []
 ---
 
-# Findings: <PROJECT>
+# Findings: {{PROJECT}}
 
 Candidate and confirmed vulnerabilities. A finding is not the end - deepen it (root cause -> reachability -> exploitability -> impact -> variants), then promote to a CVE-grade writeup when proven.
 

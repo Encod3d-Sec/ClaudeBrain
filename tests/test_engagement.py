@@ -116,6 +116,7 @@ def test_killchain_healed_for_every_type(vault, monkeypatch):
         assert "Kill-Chain Board" in text
         assert "engagement_type: %s" % etype in text
         assert "<ENGAGEMENT>" not in text and "<DATE>" not in text
+        assert "{{ENGAGEMENT}}" not in text and "{{DATE}}" not in text  # heal substituted the {{ }} tokens
         assert "GATE 1 (wiki)" in text
 
 
@@ -439,13 +440,21 @@ def test_learn_pending_false_none_dir_fails_open():
     assert _engagement.learn_pending(None) is False
 
 
-def test_poc_in_shared_core_for_every_type():
+def test_eval_in_shared_core_for_every_type():
     for etype in ("ctf", "bugbounty", "pentest"):
-        assert ("poc.md", "_poc.md") in _engagement._heal_shared_set(etype), etype
+        assert ("eval.md", "_eval.md") in _engagement._heal_shared_set(etype), etype
 
 
-def test_poc_template_exists_with_marker():
-    p = os.path.join(_engagement.TEMPLATES, "_poc.md")
+def test_poc_md_file_no_longer_healed():
+    # poc.md (the FILE) was vestigial: evidence lives in the poc/ DIR, nothing read the file.
+    for etype in ("ctf", "bugbounty", "pentest"):
+        names = [d for d, _ in _engagement._heal_shared_set(etype)]
+        assert "poc.md" not in names, etype
+    assert not os.path.isfile(os.path.join(_engagement.TEMPLATES, "_poc.md"))
+
+
+def test_eval_template_exists():
+    p = os.path.join(_engagement.TEMPLATES, "_eval.md")
     assert os.path.isfile(p)
     body = open(p, encoding="utf-8").read()
-    assert "POC-AUTO" in body and "<ENGAGEMENT>" in body
+    assert "{{ENGAGEMENT}}" in body and "Drift moments" in body

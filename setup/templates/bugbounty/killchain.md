@@ -1,13 +1,13 @@
 ---
-title: "Kill-Chain Board - <ENGAGEMENT>"
+title: "Kill-Chain Board - {{ENGAGEMENT}}"
 type: engagement-killchain
 engagement_type: bugbounty
 tags: [engagement, killchain, board]
-date_created: <DATE>
-date_updated: <DATE>
+date_created: "{{DATE}}"
+date_updated: "{{DATE}}"
 sources: []
 ---
-# Kill-Chain Board - <ENGAGEMENT>
+# Kill-Chain Board - {{ENGAGEMENT}}
 
 Status: `[ ]` todo | `[~]` doing | `[x]` done | `[-]` n/a | `[!]` deadend (-> Deadends.md)
 GATE 1 (wiki): no hand-rolled exploit until its Weaponize wiki item is `[x]`.

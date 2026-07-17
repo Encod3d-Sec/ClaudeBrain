@@ -36,7 +36,7 @@ ENTITY_KEY = {"pentest": ("host", "ip"), "ctf": ("target",), "bugbounty": ("asse
 SHARED_CORE = (("log.md", "_log.md"), ("scope.md", "_scope.md"),
                ("walkthrough.md", "_walkthrough.md"),
                ("Deadends.md", "_deadends.md"),
-               ("poc.md", "_poc.md"))
+               ("eval.md", "_eval.md"))
 SHARED_FULL = (("Vuln-index.md", "_vuln-index.md"),
                ("oob.md", "_oob.md"))
 # Standard dirs scaffolded for every type. poc/ = curated exploit/PoC/flag shots,
@@ -84,7 +84,7 @@ def ensure_optional_file(kind, d=None):
     name = os.path.basename(d)
     today = date.today().isoformat()
     text = open(tpl, encoding="utf-8", errors="ignore").read()
-    text = text.replace("<ENGAGEMENT>", name).replace("<DATE>", today)
+    text = text.replace("{{ENGAGEMENT}}", name).replace("{{DATE}}", today)
     with open(dest, "w", encoding="utf-8") as fh:
         fh.write(text)
     return fn
@@ -663,6 +663,72 @@ def learn_pending(d):
         return False
 
 
+_WEB_PORT_RE = re.compile(r"(?:\b|:)(80|443|8080|8443|8000)\b|https?://|\bhttps?\b", re.I)
+
+
+def web_evidence_gaps(d):
+    """For a SOLVED WEB engagement, the evidence the operator expects before close-out is
+    complete. Returns a list of missing categories (empty = complete, or not a web box).
+    A web box = state.md shows an http port (80/443/8080/...) or an http(s) service.
+    Checks, all reliably read from disk:
+      - recon cards: recon/*.png  (EVERY scan tab carded - the thing skipped under momentum)
+      - saved page source: poc/*source* or poc/*.html  (the raw site source, per operator ask)
+    `capture.sh web` now auto-saves source next to each render, so a missing source file also
+    means a site was never rendered. Fail-open: any error -> [] (never blocks a Stop)."""
+    if not d:
+        return []
+    try:
+        st = open(os.path.join(d, "state.md"), encoding="utf-8", errors="ignore").read()
+        if not _WEB_PORT_RE.search(st):
+            return []                                  # not a web box -> gate is silent
+        import glob
+        gaps = []
+        if not glob.glob(os.path.join(d, "recon", "*.png")):
+            gaps.append("recon cards (scripts/capture.sh recon <eng> <slug> <tab> for EACH scan tab)")
+        poc = os.path.join(d, "poc")
+        if not (glob.glob(os.path.join(poc, "*source*")) + glob.glob(os.path.join(poc, "*.html"))):
+            gaps.append("website render + source (scripts/capture.sh web <eng> <slug> <url>)")
+        return gaps
+    except Exception:
+        return []
+
+
+def _table_data_rows(text):
+    """Count real markdown-table DATA rows (skip header, `---` separators, and empty
+    placeholder rows). A data row = a `|`-line whose first cell has content and is not a
+    known column label. Lets a caller tell 'this table has real findings' from 'still stub'."""
+    rows = 0
+    for ln in text.splitlines():
+        s = ln.strip()
+        if not s.startswith("|"):
+            continue
+        first = s.strip("|").split("|", 1)[0].strip()
+        if not first or set(first) <= set("-: "):          # empty leading cell or a --- separator
+            continue
+        if first.lower() in ("item", "path", "target", "host", "asset", "flag", "scope"):
+            continue                                        # header row
+        rows += 1
+    return rows
+
+
+def paths_write_gap(d):
+    """Live state-discipline reflex: LOOT was captured (a cred/key/flag/technique row in
+    loot.md) but paths.md still has ZERO chain rows -- a finding landed and the attack chain
+    was never written down (the drift where paths.md is filled only at close-out). Returns the
+    loot data-row count when a gap exists, else 0. Fail-open (0 on any error)."""
+    if not d:
+        return 0
+    try:
+        loot = open(os.path.join(d, "loot.md"), encoding="utf-8", errors="ignore").read()
+        paths = open(os.path.join(d, "paths.md"), encoding="utf-8", errors="ignore").read()
+        loot_rows = _table_data_rows(loot)
+        if loot_rows >= 1 and _table_data_rows(paths) == 0:
+            return loot_rows
+        return 0
+    except Exception:
+        return 0
+
+
 def ensure_state_files():
     """Create any missing per-engagement files (from the type's template) and the
     standard dirs in the active engagement. The shared set is type-aware: a ctf
@@ -686,7 +752,7 @@ def ensure_state_files():
         if os.path.exists(dest) or not os.path.isfile(tpl):
             return None
         text = open(tpl, encoding="utf-8", errors="ignore").read()
-        text = text.replace("<ENGAGEMENT>", name).replace("<DATE>", today)
+        text = text.replace("{{ENGAGEMENT}}", name).replace("{{DATE}}", today)
         with open(dest, "w", encoding="utf-8") as fh:
             fh.write(text)
         return os.path.basename(dest)

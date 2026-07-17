@@ -1,16 +1,28 @@
 #!/usr/bin/env python3
-"""PreToolUse(Bash) hook: advisory scope + RoE guard.
+"""PreToolUse(Bash) hook: ENFORCING scope + RoE + output-hygiene guard.
 
-Before a shell command runs, warn (does NOT block) when it appears to:
-  - emit an `echo "=== ... ==="` output-banner (CLAUDE.md forbids it; fires
+Before a shell command runs, DENY it (permissionDecision: deny -> the tool call is
+blocked, the reason is shown) when it deterministically:
+  - emits an `echo "=== ... ==="` output-banner (CLAUDE.md forbids it; fires
     regardless of engagement), or
-  - target an out-of-scope host/IP (exact host/domain match or IP-in-CIDR), or
-  - use tooling forbidden by the engagement RoE flags
+  - targets an out-of-scope host/IP (exact host/domain match or IP-in-CIDR against
+    scope.md's out_of_scope list), or
+  - uses tooling forbidden by the engagement RoE flags
     (no_bruteforce / no_dos / passive_only in scope.md).
 
-Advisory only: injects additionalContext so the model reconsiders; never denies,
-to avoid false-positive lockouts. No active engagement -> only the output-banner
-check runs. Non-fatal: any error exits 0 silent.
+This is the harness's "enforce, don't nudge" boundary: these three are DETERMINISTIC
+(no judgement), so blocking them costs no tokens/time and prevents the wrong action
+outright. Semantic workflow steps (wiki-first, tools-not-manual, capture, intended-path)
+stay advisory elsewhere -- hard-blocking a judgement call would false-fire and make us
+MORE stuck, the opposite of the goal.
+
+SAFETY (this hook can block, so it must never trap the operator):
+  - Fail-OPEN: any exception -> exit 0, allow. A hook bug never blocks a command.
+  - Narrow matches only: out-of-scope needs an explicit out_of_scope entry (empty on a
+    typical single-target CTF -> never fires); RoE denies need the flag set.
+  - Escape hatch: create `skills/hooks/.enforce-off` (== the hooks dir) to instantly
+    downgrade every deny back to an advisory warning, for when a false-block gets in the way.
+No active engagement -> only the output-banner check runs. Any error exits 0 silent.
 """
 import ipaddress
 import json
@@ -59,6 +71,12 @@ def ip_out_of_scope(cmd, sc):
     return hits
 
 
+def _enforcing():
+    """Enforcement is ON unless an escape-hatch marker sits in the hooks dir. Creating
+    `skills/hooks/.enforce-off` (== HERE) downgrades every deny to an advisory warning."""
+    return not os.path.exists(os.path.join(HERE, ".enforce-off"))
+
+
 def main():
     raw = sys.stdin.read()
     try:
@@ -71,13 +89,13 @@ def main():
     if not cmd:
         return
 
-    msgs = []
+    deny = []   # deterministic, block-worthy reasons (one line each)
 
     # output-hygiene (engagement-independent): echo "=== ... ===" section-header banners.
     if ECHO_BANNER.search(cmd):
-        msgs.append("OUTPUT-HYGIENE - drop the `echo \"=== ... ===\"` section-header banner (CLAUDE.md "
-                    "forbids it: pure token noise; the harness already shows each command with its own "
-                    "output). Run the command directly.")
+        deny.append("output-banner: drop the `echo \"=== ... ===\"` section-header (CLAUDE.md forbids "
+                    "it: pure token noise; the harness already shows each command's own output). Run "
+                    "the command directly.")
 
     # scope / RoE (only when an engagement is active)
     try:
@@ -85,7 +103,6 @@ def main():
         d = _engagement.active_dir()
         if d:
             sc = _engagement.scope(d)
-            warns = []
             # out-of-scope targets: exact host/domain match + IP-in-CIDR
             flagged = set(ip_out_of_scope(cmd, sc))
             for host in HOST_RE.findall(cmd):
@@ -94,28 +111,34 @@ def main():
                 if _engagement.out_of_scope_match(host, sc):
                     flagged.add(host)
             if flagged:
-                warns.append("targets " + ", ".join(sorted(flagged)) + " which match an OUT-OF-SCOPE entry in scope.md")
+                deny.append("out-of-scope: command targets " + ", ".join(sorted(flagged))
+                            + " which match an OUT-OF-SCOPE entry in scope.md")
             # RoE tooling
             if sc.get("no_bruteforce") and BRUTEFORCE.search(cmd):
-                warns.append("uses brute-force tooling but RoE is no_bruteforce")
+                deny.append("RoE no_bruteforce: command uses brute-force tooling")
             if sc.get("no_dos") and DOS.search(cmd):
-                warns.append("looks like high-volume/DoS tooling but RoE is no_dos")
+                deny.append("RoE no_dos: command looks like high-volume/DoS tooling")
             if sc.get("passive_only") and ACTIVE.search(cmd):
-                warns.append("runs an active scanner but RoE is passive_only")
-            if warns:
-                msgs.append("SCOPE/RoE ADVISORY - this command " + "; and ".join(warns)
-                            + ". Re-check targets/<eng>/scope.md before running; proceed only if authorised.")
+                deny.append("RoE passive_only: command runs an active scanner")
     except Exception:
         pass
 
-    if not msgs:
+    if not deny:
         return
-    print(json.dumps({
-        "hookSpecificOutput": {
+    body = "\n- ".join(deny)
+    if _enforcing():
+        print(json.dumps({"hookSpecificOutput": {
             "hookEventName": "PreToolUse",
-            "additionalContext": "\n\n".join(msgs),
-        }
-    }))
+            "permissionDecision": "deny",
+            "permissionDecisionReason": ("BLOCKED by harness enforcement:\n- " + body
+                + "\n\nFix the command and re-run. (False block? create skills/hooks/.enforce-off "
+                  "to downgrade enforcement to advisory.)"),
+        }}))
+    else:
+        print(json.dumps({"hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "additionalContext": "SCOPE/RoE/HYGIENE (advisory; enforcement OFF via .enforce-off):\n- " + body,
+        }}))
 
 
 if __name__ == "__main__":

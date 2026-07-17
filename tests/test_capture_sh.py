@@ -35,6 +35,19 @@ def test_help_lists_recon():
     assert "recon <eng> <slug> <tmux-tab>" in r.stderr
 
 
+def test_log_is_a_known_mode():
+    # too few args -> the log usage line, proving mode_log is dispatched (not "unknown mode")
+    r = _run("log", "eng", "slug")  # 2 args reach mode_log, which needs >=3
+    assert r.returncode == 2
+    assert "capture.sh log <eng> <slug> <remote-logfile>" in r.stderr
+    assert "unknown mode" not in r.stderr
+
+
+def test_help_lists_log():
+    r = _run("--help")
+    assert "log  <eng> <slug> <remote-logfile>" in r.stderr
+
+
 def test_unknown_mode_still_rejected():
     r = _run("bogus")
     assert r.returncode == 2

@@ -1,14 +1,14 @@
 ---
-title: "Engagement State - <ENGAGEMENT>"
+title: "Engagement State - {{ENGAGEMENT}}"
 type: engagement-state
 engagement_type: ctf
 tags: [engagement, state, ctf]
-date_created: <DATE>
-date_updated: <DATE>
+date_created: "{{DATE}}"
+date_updated: "{{DATE}}"
 sources: []
 ---
 
-# State - <ENGAGEMENT>
+# State - {{ENGAGEMENT}}
 
 Target / service inventory. Drop raw scans (nmap, gobuster) in `ingest/`, then synthesize.
 

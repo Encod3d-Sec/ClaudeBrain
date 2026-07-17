@@ -1,14 +1,14 @@
 ---
-title: "Loot - <ENGAGEMENT>"
+title: "Loot - {{ENGAGEMENT}}"
 type: engagement-loot
 engagement_type: ctf
 tags: [engagement, loot, ctf]
-date_created: <DATE>
-date_updated: <DATE>
+date_created: "{{DATE}}"
+date_updated: "{{DATE}}"
 sources: []
 ---
 
-# Loot - <ENGAGEMENT>
+# Loot - {{ENGAGEMENT}}
 
 Creds / keys / flags found.
 

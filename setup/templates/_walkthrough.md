@@ -1,13 +1,13 @@
 ---
-title: "Walkthrough - <ENGAGEMENT>"
+title: "Walkthrough - {{ENGAGEMENT}}"
 type: engagement-walkthrough
 tags: [engagement, walkthrough, reproduction]
-date_created: <DATE>
-date_updated: <DATE>
+date_created: "{{DATE}}"
+date_updated: "{{DATE}}"
 sources: []
 ---
 
-# Walkthrough - <ENGAGEMENT>
+# Walkthrough - {{ENGAGEMENT}}
 
 Full **reproducible** escalation path: ordered, copy-pasteable steps from zero to the objective
 (root / domain admin / target flag). Unlike `log.md` (terse, append-only audit) this is the

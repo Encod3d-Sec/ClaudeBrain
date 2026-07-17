@@ -437,8 +437,8 @@ def capture(url=None, html=None, html_str=None, out=None, base=None,
             else:
                 target = "file://" + os.path.abspath(html)
         cmd = [chromium_bin(), "--headless", "--no-sandbox", "--disable-dev-shm-usage",
-               "--hide-scrollbars", "--disable-gpu", "--screenshot=" + out,
-               "--window-size=%d,%d" % (width, height)]
+               "--hide-scrollbars", "--disable-gpu", "--ignore-certificate-errors",
+               "--screenshot=" + out, "--window-size=%d,%d" % (width, height)]
         if wait:
             cmd.append("--virtual-time-budget=%d" % wait)
         cmd.append(target)

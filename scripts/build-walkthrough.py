@@ -4,7 +4,7 @@
 The canonical walkthrough structure is `setup/templates/_walkthrough.md` (the
 standard boot-to-root skeleton: Access/Recon/Foothold/Privesc/Flags/Evidence/
 One-shot/Rabbit-holes), which `engagement-init`'s self-heal already writes for a
-fresh engagement (substituting <ENGAGEMENT>/<DATE> before it ever reaches disk).
+fresh engagement (substituting {{ENGAGEMENT}}/{{DATE}} before it ever reaches disk).
 This tool does NOT impose a second, competing structure: it keeps the "## Evidence"
 gallery in sync with the PNG evidence cards already rendered to disk
 (targets/<eng>/{recon,poc/pages,poc/leads,poc,poc/scripts}/*.png), respecting
@@ -21,7 +21,7 @@ on the active-engagement pointer):
         "## One-shot reproduction (optional)", so the section slice is correct.
         Truly absent/empty/whitespace-only walkthrough.md (or force=True) ->
         scaffolds from the FRAMEWORK template (setup/templates/_walkthrough.md,
-        with <ENGAGEMENT>/<DATE> substituted the same way _emit() in
+        with {{ENGAGEMENT}}/{{DATE}} substituted the same way _emit() in
         skills/hooks/_engagement.py does), then runs the same Evidence refresh over
         it. If the template file cannot be read, falls back to the defensive
         built-in _skeleton().
@@ -130,8 +130,8 @@ def _gallery_lines(eng_dir):
 def _is_bare(text):
     """True only when walkthrough.md is truly absent/empty/whitespace-only. A
     self-healed-but-unfilled copy of the setup/templates/_walkthrough.md scaffold
-    is NOT bare: engagement-init's self-heal already substitutes <ENGAGEMENT>/
-    <DATE> before the file ever reaches disk, so those tokens never appear in a
+    is NOT bare: engagement-init's self-heal already substitutes {{ENGAGEMENT}}/
+    {{DATE}} before the file ever reaches disk, so those tokens never appear in a
     real engagement's file, and the self-healed template is refreshed in place
     (safe), never rewritten with a competing skeleton."""
     return not text.strip()
@@ -140,7 +140,7 @@ def _is_bare(text):
 def _framework_template_text(eng_dir):
     """Read the canonical setup/templates/_walkthrough.md (the framework's
     standard boot-to-root skeleton, maintained by engagement-init) and substitute
-    <ENGAGEMENT>/<DATE> exactly the way _emit() in skills/hooks/_engagement.py does
+    {{ENGAGEMENT}}/{{DATE}} exactly the way _emit() in skills/hooks/_engagement.py does
     when it first self-heals the file. Returns None if the template cannot be read
     (defensive: build() falls back to the built-in _skeleton() in that case)."""
     tpl_path = os.path.join(VAULT, "setup", "templates", "_walkthrough.md")
@@ -151,7 +151,7 @@ def _framework_template_text(eng_dir):
         return None
     name = os.path.basename(os.path.normpath(eng_dir))
     today = date.today().isoformat()
-    return text.replace("<ENGAGEMENT>", name).replace("<DATE>", today)
+    return text.replace("{{ENGAGEMENT}}", name).replace("{{DATE}}", today)
 
 
 def _skeleton(eng_dir):

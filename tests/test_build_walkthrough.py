@@ -231,7 +231,7 @@ def test_self_healed_template_is_refreshed_not_replaced(tmp_path):
     tpl_path = os.path.join(REPO, "setup", "templates", "_walkthrough.md")
     with open(tpl_path, encoding="utf-8") as fh:
         tpl_text = fh.read()
-    self_healed = tpl_text.replace("<ENGAGEMENT>", "acme").replace("<DATE>", "2020-01-01")
+    self_healed = tpl_text.replace("{{ENGAGEMENT}}", "acme").replace("{{DATE}}", "2020-01-01")
     _write_text(str(eng / "walkthrough.md"), self_healed)
 
     _write_bytes(str(eng / "recon" / "0001-nmap-x.png"))

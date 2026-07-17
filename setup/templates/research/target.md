@@ -1,13 +1,13 @@
 ---
-title: "Research: <PROJECT>"
+title: "Research: {{PROJECT}}"
 type: research-target
-date_created: <DATE>
-date_updated: <DATE>
+date_created: "{{DATE}}"
+date_updated: "{{DATE}}"
 status: active
 sources: []
 ---
 
-# Research: <PROJECT>
+# Research: {{PROJECT}}
 
 ## Target
 - **What:** <name + one-line description>
