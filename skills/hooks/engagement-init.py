@@ -1,19 +1,21 @@
 #!/usr/bin/env python3
-"""SessionStart hook: self-heal engagement state + inject summary + gap report.
+"""SessionStart hook: self-heal engagement state + inject summary + board + gap report.
 
-- Creates any missing state/loot/paths files in the active engagement from
-  templates (self-heal; never overwrites).
-- Injects the active-engagement summary.
-- Reports the count of missing wiki technique pages (scripts/wiki-gaps.py).
-- Keeps wiki/index.md fresh (scripts/gen_index.py, idempotent) and surfaces a
-  wiki integrity summary (scripts/lint-wiki.py) only when something is broken.
-- Surfaces the active research project's loop state + next moves
-  (scripts/research_status.py, from raw/research/active.md) when one is set.
+- Creates any missing state/loot/paths/killchain files in the active engagement
+  from templates (self-heal; never overwrites).
+- Injects the active-engagement summary, scope, OOB HITs, and the kill-chain board
+  status (current phase + open/deadend counts) so you re-orient to the board.
+- Collapses the per-item maintenance nags (wordlist / wiki-candidate / hook-drift /
+  skill-drift / wiki-freshness / md-tables) into one compact `harness:` line, silent at zero.
+- Keeps wiki/index.md fresh (scripts/gen_index.py, idempotent) only when the wiki
+  actually changed since last session.
+- Surfaces the active research project's loop state (scripts/research_status.py).
 
 Plain stdout is added to context, alongside the other SessionStart hooks
-(caveman, hot.md). Non-fatal: any error exits 0 silent.
+(hot.md). Non-fatal: any error exits 0 silent.
 """
 import os
+import re
 import subprocess
 import sys
 
@@ -34,25 +36,93 @@ def _run_script(name, *args, timeout=40):
         return None
 
 
-def wiki_gap_count():
-    r = _run_script("wiki-gaps.py")
-    if r is None:
-        return None
-    return len([x for x in r.stdout.splitlines() if x.strip()])
-
-
 def regen_index():
     """Keep wiki/index.md current (writes only when stale; no churn when fresh)."""
     _run_script("gen_index.py", timeout=30)
 
 
-def wiki_lint_summary():
-    """One-line wiki integrity summary, or None when clean."""
-    r = _run_script("lint-wiki.py", "-q")
-    if r is None:
+def board_status():
+    """One-line kill-chain board summary for the active engagement, or None.
+    Names the highest-numbered phase that still has an open ([ ] / [~]) item and
+    counts total open items + deadends ([!]). Best-effort; None when no board or
+    nothing is open/dead (so it stays silent on a fresh or finished board)."""
+    try:
+        import _engagement
+        d = _engagement.active_dir()
+        if not d:
+            return None
+        p = os.path.join(d, "killchain.md")
+        if not os.path.isfile(p):
+            return None
+        open_n = dead_n = 0
+        phase = cur = None
+        for line in open(p, encoding="utf-8", errors="ignore"):
+            s = line.rstrip()
+            hm = re.match(r"##\s+(\d+)\.\s+([^(]+)", s)
+            if hm:
+                phase = (int(hm.group(1)), hm.group(2).strip())
+                continue
+            if "[ ]" in s or "[~]" in s:
+                open_n += 1
+                if phase and (cur is None or phase[0] >= cur[0]):
+                    cur = phase
+            elif "[!]" in s:
+                dead_n += 1
+        if open_n == 0 and dead_n == 0:
+            return None
+        where = ("Phase %d %s" % cur) if cur else "complete"
+        return "Board: %s, %d open, %d deadends" % (where, open_n, dead_n)
+    except Exception:
         return None
-    line = r.stdout.strip()
-    return line or None
+
+
+def harness_maintenance():
+    """Compact list of pending harness-maintenance tags -- replaces the old stack of
+    per-item SessionStart nags (wordlist / wiki-candidate / hook-drift / skill-drift).
+    Each is best-effort + silent-at-zero; returns [] when nothing pends."""
+    tags = []
+    try:
+        wc = wordlist_candidates()
+        if wc and (wc[0] + wc[1]) > 0:
+            tags.append("wordlist %d+%d (wl-add.sh)" % wc)
+    except Exception:
+        pass
+    try:
+        wcc = wiki_candidate_count()
+        if wcc:
+            tags.append("wiki-candidates:%d (wiki-promote.py --list)" % wcc)
+    except Exception:
+        pass
+    try:
+        import importlib.util
+        import _engagement
+        _ch_path = os.path.join(_engagement.VAULT, "scripts", "check-hooks.py")
+        _spec = importlib.util.spec_from_file_location("check_hooks", _ch_path)
+        _ch = importlib.util.module_from_spec(_spec)
+        _spec.loader.exec_module(_ch)
+        miss = _ch.missing_hooks()
+        if miss:
+            tags.append("hook-drift: " + ",".join(miss) + " (install-hooks.sh)")
+        if _ch.missing_skills():
+            tags.append("skill-drift (install-skills.sh)")
+    except Exception:
+        pass
+    try:
+        import importlib.util
+        import _engagement
+        _lmt_path = os.path.join(_engagement.VAULT, "scripts", "lint-md-tables.py")
+        _spec = importlib.util.spec_from_file_location("lint_md_tables", _lmt_path)
+        _lmt = importlib.util.module_from_spec(_spec)
+        _spec.loader.exec_module(_lmt)
+        d = _engagement.active_dir()
+        if d:
+            broken = _lmt.lint_paths([d])
+            if broken:
+                tags.append("md-tables:%d broken (lint-md-tables.py %s)"
+                            % (len(broken), os.path.basename(d.rstrip("/"))))
+    except Exception:
+        pass
+    return tags
 
 
 def wordlist_candidates():
@@ -195,6 +265,29 @@ def main():
     except Exception:
         pass
 
+    # kill-chain board: current phase + open/deadend counts, so you re-orient to the
+    # board rather than re-running the last thing. Silent when no board / nothing open.
+    try:
+        bs = board_status()
+        if bs:
+            out.append(bs)
+    except Exception:
+        pass
+
+    # evidence captured (observability): a multi-finding box with few deliberate shots is a
+    # capture gap the operator should see at a glance. Silent at zero. Full view: scripts/status.py.
+    try:
+        import glob as _glob
+        _d = _engagement.active_dir()
+        if _d:
+            _poc = len(_glob.glob(os.path.join(_d, "poc", "**", "*.png"), recursive=True))
+            _rec = len(_glob.glob(os.path.join(_d, "recon", "*.png")))
+            if _poc or _rec:
+                out.append("evidence: %d poc shot(s), %d recon card(s) "
+                           "(scripts/status.py = full status)" % (_poc, _rec))
+    except Exception:
+        pass
+
     # ranked next-moves from the analyzer (top 3)
     try:
         sys.path.insert(0, os.path.join(_engagement.VAULT, "scripts"))
@@ -204,97 +297,32 @@ def main():
     except Exception:
         pass
 
-    # harness wordlist: nudge to fold non-obvious routes/params we discovered back in
+    # One compact harness-maintenance line replaces the old stack of per-item nags
+    # (wordlist / wiki-candidate / hook-drift / skill-drift). Silent at zero.
     try:
-        wc = wordlist_candidates()
-        if wc and (wc[0] + wc[1]) > 0:
-            out.append("  wordlist: %d path + %d param generic candidate(s) -> "
-                       "scripts/wordlist-suggest.py, then wl-add.sh" % wc)
-    except Exception:
-        pass
-
-    # wiki-candidate inbox: nudge review of generic knowledge staged mid-engagement.
-    # Silent at 0 (same pattern as the wordlist nag above).
-    try:
-        wcc = wiki_candidate_count()
-        if wcc:
-            out.append("  wiki-candidates: %d pending review -> "
-                       "scripts/wiki-promote.py --list" % wcc)
-    except Exception:
-        pass
-
-    # CVE drift: flag when the local nuclei-templates corpus has moved ahead of
-    # playbook.json. Gated on the corpus mtime stamp (NOT .wiki-stamp; the corpus
-    # is host-local and outside the vault), so this only fires when the corpus
-    # actually changed. Best-effort; the corpus may be absent on this device.
-    try:
-        import cve_feed
-        stamp = cve_feed.corpus_stamp()
-        if stamp:
-            spath = os.path.join(_engagement.VAULT, ".cve-stamp")
-            try:
-                last = open(spath, encoding="utf-8").read().strip()
-            except OSError:
-                last = ""
-            if stamp != last:
-                res = cve_feed.drift()
-                if res:
-                    total = sum(len(m) for _, _, m in res)
-                    out.append(f"CVE drift: {len(res)} fingerprint(s) lag {total} recent "
-                               "high/crit CVE(s) -> run `python3 scripts/cve_feed.py --write`, "
-                               "review docs/playbook-cve-queue.md, merge into playbook.json.")
-                try:
-                    open(spath, "w", encoding="utf-8").write(stamp)
-                except OSError:
-                    pass
-    except Exception:
-        pass
-
-    # Hook-registration drift: settings.json is machine-local and does not sync,
-    # so a vault hook can be silently unregistered on this device. Surface it.
-    # Self-contained + best-effort: any failure here must not abort SessionStart.
-    try:
-        import importlib.util
-        _ch_path = os.path.join(_engagement.VAULT, "scripts", "check-hooks.py")
-        _spec = importlib.util.spec_from_file_location("check_hooks", _ch_path)
-        _ch = importlib.util.module_from_spec(_spec)
-        _spec.loader.exec_module(_ch)
-        _missing = _ch.missing_hooks()
-        if _missing:
-            out.append(
-                "Hook drift: " + ", ".join(_missing) + " not registered on this "
-                "device -> run bash setup/install-hooks.sh")
-        _missing_sk = _ch.missing_skills()
-        if _missing_sk:
-            out.append(
-                "Skill drift: " + ", ".join(_missing_sk) + " not registered on "
-                "this device -> run bash setup/install-skills.sh")
+        maint = harness_maintenance()
+        if maint:
+            out.append("harness: " + "; ".join(maint))
     except Exception:
         pass
 
     # Wiki upkeep runs ONLY when wiki/triggers/playbook actually changed since the
-    # last session (a cheap stat-only fingerprint vs a stamp). This skips ~4 full
-    # wiki walks on every unchanged session - the main SessionStart speedup on the
-    # slow Windows mount. When it did change, also nudge a qmd search reindex.
+    # last session (a cheap stat-only fingerprint vs a stamp) - the main SessionStart
+    # speedup on the slow Windows mount. Refresh index.md silently, fold a freshness
+    # count into one note, and nudge a qmd reindex. The gaps/lint checks are on-demand
+    # scripts now (scripts/wiki-gaps.py, scripts/lint-wiki.py), not SessionStart nags.
     changed, _ = wiki_changed()
     if changed:
         regen_index()  # keep index.md fresh (idempotent)
-        gaps = wiki_gap_count()
-        if gaps:
-            out.append(f"Wiki gaps: {gaps} technique page(s) referenced but missing "
-                       "(run scripts/wiki-gaps.py -v).")
-        lint = wiki_lint_summary()
-        if lint:
-            out.append(lint)
+        note = "Wiki changed since last session -> run `qmd update` to refresh the search index."
         try:
             import freshness
             fr = freshness.stale()
             if fr:
-                out.append(f"Wiki freshness: {len(fr)} reuse page(s) past their refresh window "
-                           f"(oldest {fr[0][0]} {fr[0][2]}d) -> run scripts/freshness.py.")
+                note += "  [%d reuse page(s) stale -> scripts/freshness.py]" % len(fr)
         except Exception:
             pass
-        out.append("Wiki changed since last session -> run `qmd update` to refresh the search index.")
+        out.append(note)
         write_stamp(wiki_fingerprint())   # recompute AFTER regen_index bumped index.md, else next session re-fires
 
     if out:

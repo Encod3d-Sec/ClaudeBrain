@@ -35,20 +35,5 @@ fi
 
 VM_SH="${VM_SH:-/root/vm.sh}"
 bash "$VM_SH" "$REMOTE"
-
-# Area 2 (always-capture-evidence): record the launched tab so loop-driver's
-# drain_pending_tmux() can auto-grab the live pane into recon/ without an operator
-# following the tmux_capture_guidance() nudge by hand. Resolved via targets/active.md,
-# the same pointer the rest of the harness uses. CLAUDEBRAIN_VAULT overrides the vault
-# root (same env var the python hooks honor) so tests can point at a fixture vault
-# instead of the real, private targets/ tree. Fail-open: no active engagement -> just
-# skip (the manual nudge still fires from recon-capture.py).
-VAULT="${CLAUDEBRAIN_VAULT:-$(cd "$(dirname "$0")/.." && pwd)}"
-ACTIVE="$VAULT/targets/active.md"
-if [ -f "$ACTIVE" ]; then
-  ENG="$(grep -vE '^[[:space:]]*(#|<!--|-|\*)' "$ACTIVE" 2>/dev/null \
-         | grep -vE '^[[:space:]]*$' | head -1 | tr -d '[:space:]')"
-  if [ -n "$ENG" ] && [ -d "$VAULT/targets/$ENG" ]; then
-    printf '%s:%s\n' "$SESSION" "$NAME" >> "$VAULT/targets/$ENG/.pending-tmux"
-  fi
-fi
+# reminder at the point of action: card this tab into recon/ WHEN it finishes (every tool, even empty)
+echo "tip: card it when done -> scripts/capture.sh recon $SESSION <slug> $NAME" >&2

@@ -8,9 +8,9 @@ on demand via the `next-move` skill; the SessionStart hook surfaces the top few.
 
 Also emits low-ranked [gap] floor moves for untested vuln classes (the per-type
 checklist in coverage-classes.json minus classes auto-credited as tested from
-coverage.md + written findings + Deadends.md), so systematic breadth reaches the
-shortlist even when nothing was fingerprinted. Skill(coverage) has the full
-per-asset matrix; these are just the "don't forget class X" nudge.
+the killchain.md 4a table + written findings + Deadends.md), so systematic breadth
+reaches the shortlist even when nothing was fingerprinted. Skill(coverage) has the
+full per-asset matrix; these are just the "don't forget class X" nudge.
 
 CLI:  python3 scripts/next_move.py [-v]
 API:  next_move.suggest(limit=5) -> list[str]
@@ -169,8 +169,8 @@ def _ranked(limit=5):
         sugg.extend(sorted(acq, key=lambda x: -x[0])[:3])
 
     # 4b. coverage-gap floor: untested base vuln classes (per-type checklist in
-    #     coverage-classes.json, ordered high-to-low impact) minus whatever coverage.md
-    #     records as tested anywhere. Ranked BELOW every concrete move (scores 24-28,
+    #     coverage-classes.json, ordered high-to-low impact) minus whatever the killchain.md
+    #     4a table records as tested anywhere. Ranked BELOW every concrete move (scores 24-28,
     #     under the acquisition floor of 30), so a gap never displaces a real lead but
     #     systematic breadth still reaches the shortlist when no fingerprint matched.
     #     Skill(coverage) holds the per-asset matrix; this is only the "test class X"

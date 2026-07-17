@@ -3,7 +3,7 @@ title: "Password Attacks Cheatsheet"
 type: cheatsheet
 tags: [brute-force, cheatsheet, cracking, credentials, htb, kerberos, lsass, ntds, ntlm, sam, thm, windows]
 date_created: 2026-05-08
-date_updated: 2026-05-08
+date_updated: 2026-07-16
 sources: [cpts-password-attacks, thm-ad-lateral, thm-ad-persistence, git-htb-writeups]
 ---
 
@@ -397,6 +397,16 @@ cewl http://10.10.10.X -w wordlist.txt -d 3 -m 5
 # Crunch — pattern-based wordlist
 crunch 8 8 -t @@@@%%%% -o wordlist.txt   # 4 lowercase + 4 digits
 crunch 6 8 abcdef0123456789 -o wordlist.txt  # custom charset, 6-8 chars
+```
+
+### Custom wordlist generation
+
+```bash
+# [[cewl]]: site keywords, use when passwords likely come from company/site vocabulary
+cewl -d 2 -m 5 -w words.txt --lowercase http://target/
+
+# [[cupp]]: personal info, use when passwords likely come from the target's OWN OSINT'd details
+python3 cupp.py -i
 ```
 
 ---

@@ -102,7 +102,7 @@ One directory per engagement, `targets/<eng>/`, created by `bash setup/new-engag
 | `state.md` | Host/service/access table (per-type entity columns); the primary target map |
 | `loot.md` | Captured credentials + reuse map |
 | `paths.md` | Open/blocked attack paths and their next moves |
-| `coverage.md` | Per-asset vuln classes already tested |
+| `killchain.md` | Kill-chain board: phase checklist + `### 4a` per-asset tested-class table |
 | `Deadends.md` | Exhausted vectors + false positives, with reason; never re-run without new input |
 | `Vuln-index.md` | Finding index by severity + attack chains + severity count table |
 | `oob.md` | Out-of-band callback tracking (the blind-bug gate) |

@@ -9,7 +9,7 @@ no_bruteforce: false
 no_dos: false
 passive_only: false
 # tunnel_safe (true = scanners exhaust the pivot's conntrack and kill the tunnel):
-# AFFIRMS curl+nc as correct and suppresses the ffuf/httpx tooling nudges. Not forbidding.
+# AFFIRMS curl+nc as the intended tooling (surfaced as a SessionStart note). Not forbidding.
 tunnel_safe: false
 sources: []
 ---

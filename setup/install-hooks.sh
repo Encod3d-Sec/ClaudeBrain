@@ -68,17 +68,13 @@ if not has("PostToolUse", "recon-capture.py"):
     add("PostToolUse", {"matcher": "Bash", "hooks": [{"type": "command",
         "command": "python3 ~/.claude/vault-hooks/recon-capture.py", "timeout": 30}]})
     print("added PostToolUse recon-capture")
-# idempotent: ensure recon-capture timeout >= 30 (the live lead-card render -- a bounded
-# ~22s synchronous drain the moment a lead lands -- needs headroom over the old 10s default)
+# idempotent: ensure recon-capture timeout >= 30 (the fingerprint router + OOB correlation
+# work needs headroom over the old 10s default)
 for g in h.get("PostToolUse", []):
     for hk in g.get("hooks", []):
         if "recon-capture.py" in hk.get("command", "") and hk.get("timeout", 0) < 30:
             hk["timeout"] = 30
             print("bumped recon-capture timeout -> 30")
-if not has("PreToolUse", "no-echo-banner.py"):
-    add("PreToolUse", {"matcher": "Bash", "hooks": [{"type": "command",
-        "command": "python3 ~/.claude/vault-hooks/no-echo-banner.py", "timeout": 10}]})
-    print("added PreToolUse no-echo-banner")
 if not has("PreToolUse", "scope-guard.py"):
     add("PreToolUse", {"matcher": "Bash", "hooks": [{"type": "command",
         "command": "python3 ~/.claude/vault-hooks/scope-guard.py", "timeout": 10}]})
@@ -95,10 +91,10 @@ if not has("PreCompact", "pre-compact.sh"):
     add("PreCompact", {"hooks": [{"type": "command",
         "command": "bash ~/.claude/vault-hooks/pre-compact.sh"}]})
     print("added PreCompact pre-compact")
-if not has("Stop", "loop-driver.py"):
+if not has("Stop", "close-out.py"):
     add("Stop", {"hooks": [{"type": "command",
-        "command": "python3 ~/.claude/vault-hooks/loop-driver.py", "timeout": 10}]})
-    print("added Stop loop-driver")
+        "command": "python3 ~/.claude/vault-hooks/close-out.py", "timeout": 10}]})
+    print("added Stop close-out")
 
 json.dump(d, open(p, "w"), indent=1)
 json.load(open(p))  # validate

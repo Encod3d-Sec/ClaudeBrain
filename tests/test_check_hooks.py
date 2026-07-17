@@ -48,6 +48,16 @@ def test_complete_settings_no_drift(tmp_path):
     assert ch.missing_hooks(str(p)) == []
 
 
+def test_expected_hooks_trimmed():
+    ch = _load("scripts/check-hooks.py", "check_hooks_trimmed")
+    names = _all_basenames(ch)
+    assert "no-echo-banner.py" not in names        # deleted (cosmetic deny hook)
+    assert "loop-driver.py" not in names           # deleted (488-line render drain)
+    assert len(ch.EXPECTED_HOOKS) == 8
+    # the only Stop hook is the minimal close-out reflex, not the old render drain
+    assert [b for e, b in ch.EXPECTED_HOOKS if e == "Stop"] == ["close-out.py"]
+
+
 def test_unreadable_path_fails_open(tmp_path):
     ch = _load("scripts/check-hooks.py", "check_hooks_unreadable")
     missing_path = str(tmp_path / "does-not-exist.json")
@@ -109,14 +119,14 @@ def test_tool_lean_removed():
     assert not os.path.exists(os.path.join(root, "skills", "hooks", "tool-lean.py"))
 
 
-def test_wiki_log_removed_and_count_is_9():
+def test_wiki_log_removed_and_count_is_8():
     import importlib.util, os
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     spec = importlib.util.spec_from_file_location("ch", os.path.join(root, "scripts", "check-hooks.py"))
     ch = importlib.util.module_from_spec(spec); spec.loader.exec_module(ch)
     assert not any("wiki-log" in b for _e, b in ch.EXPECTED_HOOKS)
     assert not os.path.exists(os.path.join(root, "skills", "hooks", "wiki-log.py"))
-    assert len(ch.EXPECTED_HOOKS) == 9
+    assert len(ch.EXPECTED_HOOKS) == 8   # -no-echo-banner -loop-driver +close-out
 
 
 def test_docs_hook_count_matches_expected():
@@ -126,4 +136,4 @@ def test_docs_hook_count_matches_expected():
     ch = importlib.util.module_from_spec(spec); spec.loader.exec_module(ch)
     setup = open(os.path.join(root, "docs", "setup.md"), encoding="utf-8").read()
     m = re.search(r"(\d+)\s+hook commands", setup)
-    assert m and int(m.group(1)) == len(ch.EXPECTED_HOOKS) == 9
+    assert m and int(m.group(1)) == len(ch.EXPECTED_HOOKS) == 8

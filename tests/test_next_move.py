@@ -10,12 +10,12 @@ def _scope(**kw):
     return base
 
 
-def _patch(monkeypatch, etype, state, loot, paths, scope=None, coverage=None):
+def _patch(monkeypatch, etype, state, loot, paths, scope=None, killchain=None):
     monkeypatch.setattr(_engagement, "active_dir", lambda: "/fake")
     monkeypatch.setattr(_engagement, "engagement_type", lambda d=None: etype)
     monkeypatch.setattr(_engagement, "scope", lambda d=None: scope or _scope())
     tables = {"state.md": state, "loot.md": loot, "paths.md": paths,
-              "coverage.md": coverage or []}
+              "killchain.md": killchain or []}
     monkeypatch.setattr(_engagement, "_parse_table",
                         lambda p: tables.get(p.rsplit("/", 1)[-1], []))
 
@@ -173,7 +173,7 @@ def test_passive_only_suppresses_acquisition(monkeypatch):
 # --- coverage-gap floor moves -------------------------------------------------
 
 def test_coverage_gap_surfaces_untested(monkeypatch):
-    # in-scope asset, no coverage.md rows -> untested base classes enter the
+    # in-scope asset, no killchain.md 4a rows -> untested base classes enter the
     # shortlist as [gap] moves, highest-severity (list order) first.
     _patch(monkeypatch, "bugbounty", [{"asset": "api.x", "access": "recon"}], [], [])
     gaps = [s for s in next_move.suggest(limit=99) if s.startswith("[gap]")]
@@ -182,8 +182,10 @@ def test_coverage_gap_surfaces_untested(monkeypatch):
 
 
 def test_coverage_gap_excludes_tested(monkeypatch):
+    # killchain.md 4a rows credit a class as tested when its status cell is done.
     _patch(monkeypatch, "bugbounty", [{"asset": "api.x", "access": "recon"}], [], [],
-           coverage=[{"asset": "api.x", "tested": "rce, sqli"}])
+           killchain=[{"asset": "api.x", "vuln class": "rce", "status": "[x]"},
+                      {"asset": "api.x", "vuln class": "sqli", "status": "[x]"}])
     gaps = " ".join(s for s in next_move.suggest(limit=99) if s.startswith("[gap]"))
     assert "rce" not in gaps and "sqli" not in gaps   # tested -> not a gap
     assert "ssrf" in gaps                              # still untested

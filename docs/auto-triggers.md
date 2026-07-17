@@ -21,12 +21,12 @@ This page is a snapshot; regenerate the tables from those files if they change.
 | **SessionStart** | `session-start.sh`, `engagement-init.py` | Loads `session/hot.md`; injects the active-engagement summary + top next-moves + recent log + wiki-health line (only if broken) + active research status (`research_status.py`); regenerates `index.md` if stale; self-heals the engagement file set. |
 | **UserPromptSubmit** | `hunt-trigger.py` | Keyword-matches the prompt against `triggers.json` (code-stripped, intent-gated): a hard hit surfaces the relevant **Skill(x)** to load (routing; the skill carries the mandate), a surface hit a softer "consider Skill(x)". Leak-safe telemetry to `.trigger-fire.jsonl`. |
 | **PreToolUse (Bash)** | `scope-guard.py` | scope / RoE advisory (deterministic safety guard). |
-| **PreToolUse (Write)** | `session-guard.py` | Warns when a write would put a client marker into a generic `session/*` file. |
-| **PostToolUse (Bash)** | `recon-capture.py` | Fingerprint auto-route (to the hunt Skill) + lead/page auto-card + OOB correlation + SSRF-sink sweep. Capture + routing only. |
+| **PreToolUse (Write)** | `session-guard.py` | Warns when a write would put a client marker into a generic `session/*` file OR a git-tracked framework tree (`wiki/`, `scripts/`, `skills/`, `docs/`, `tests/`, `setup/`); `targets/` and `docs/superpowers/` are exempt. Catches the codename-in-a-tracked-file leak at write-time. |
+| **PostToolUse (Bash)** | `recon-capture.py` | Fingerprint auto-route (to the hunt Skill) + OOB callback correlation + a once-per-engagement GATE-1 wiki-first nudge (exploit-shaped command while `killchain.md` Weaponize is undone). A framework-meta guard suppresses false fires. Advisory. |
 | **PreCompact** | `pre-compact.sh` | Reminds to persist state (`gsd:pause-work`) before context compacts. |
-| **Stop** | `loop-driver.py` | Render-only evidence drain: renders staged PoC cards (recon / leads / pages + tmux) at turn-end. Never blocks the turn or forces continuation. |
+| **Stop** | `close-out.py` | Close-out reflex: when the engagement is SOLVED but its walkthrough is unassembled (or the learn harvest is due), nudges Skill(walkthrough) then Skill(learn). Advisory, self-clearing. |
 
-All 8 hooks inject context, capture evidence, route to a skill, or fire a deterministic safety guard; none prescribes methodology, blocks the model, or silently runs a tool, and all fail open. Canonical set: `scripts/check-hooks.py` `EXPECTED_HOOKS`.
+All 8 hooks inject context, route to a skill, or fire a deterministic safety guard; none prescribes methodology, blocks the model, or silently runs a tool, and all fail open. Canonical set: `scripts/check-hooks.py` `EXPECTED_HOOKS`.
 
 ---
 
@@ -79,9 +79,9 @@ Prompt contains the keyword (case-insensitive) -> that skill is suggested. Multi
 
 Fails open: a missing scope entry = no warning, never a block. No active engagement = silent.
 
-### After a recon command: fingerprint router + capture nudge (`recon-capture.py`, PostToolUse)
+### After a bash command: fingerprint router + OOB correlation + GATE-1 nudge (`recon-capture.py`, PostToolUse)
 
-**Fingerprint auto-route** - scans the command + its output for tech, injects targeted tests + the hunt skill to fire. Detected tech (from `playbook.json`):
+**Fingerprint auto-route** - scans the command + its output for tech and injects the hunt skill to fire. A framework-meta guard suppresses false fires when the command reads/edits the vault's own playbook/hook/wiring machinery (its output is full of playbook tokens). Detected tech (from `playbook.json`):
 
 ```
 graphql  spring  supabase  wordpress  laravel  next.js  firebase  magento
@@ -91,18 +91,13 @@ confluence  drupal  joomla  grafana  phpmyadmin  weblogic  iis  struts  jira
 llm  mcp  github actions  grpc  exchange  ivanti  moveit  sharepoint  activemq
 coldfusion  php-cgi  vcenter  screenconnect  papercut  ofbiz
 ```
-(80 fingerprints. Each emits up to 3 concrete tests + the hunt skill to load, e.g. `jenkins -> /script console, default creds -> load Skill(hunt-rce)`. The tech list above is an illustrative subset; regenerate from `playbook.json`.)
+(80 fingerprints. Each emits the hunt skill to load, e.g. `jenkins detected -> load Skill(hunt-rce)`. The tech list above is an illustrative subset; regenerate from `playbook.json`.)
 
-**SSRF-sink auto-router** - when a command reveals an SSRF sink (a fetch-param whose value is URL-ish/internal, a `gopher://`/`dict://` request, or a filter-block error like `URL blocked due to keyword` in the output) AND a real fetch tool is present, surfaces a **pre-templated internal-port sweep** (built from the detected host/path/param) + a pointer to the gopher raw-request builder in `wiki/payloads/ssrf.md`. RoE-gated: `passive_only` -> OOB-only, no sweep; `no_dos` -> throttle note. Deduped per sink (`.ssrf-seen` marker) so it nudges once. Unlike the fingerprint router, it runs **even inside heredoc/`-c` bodies** (SSRF testing is often wrapped in an SSH-to-VM driver), because the sink signature is specific enough not to false-fire on benign curls. Advisory only - never executes the sweep.
+**OOB callback correlation** - flips a waiting `oob.md` row to HIT when its planted token appears in the command + output blob (operator polling OAST/Collaborator), so a confirmed blind-bug callback is surfaced immediately instead of being missed.
 
-**Capture nudge** - reminds to extract results into `state.md` / `loot.md`.
+**GATE-1 wiki-first nudge** - the only enforcement the kill-chain board's GATE lines get. When an exploit-shaped command runs (`sqlmap`/`hydra`/`medusa`/`msfconsole`/`evil-winrm`/`nxc ... -x`/a reverse shell, incl. inside a vm.sh/ssh/wsl wrapper) while the active `killchain.md` `## 2. Weaponize` section has no `[~]`/`[x]` progress, it nudges once per engagement to query the wiki + pick the payload + mark the Weaponize item BEFORE hand-rolling. Fire-once (`.gate1-nudged` marker), framework-meta exempt, advisory + fail-open.
 
-**Research nudge** - when a CVE-research tool (`afl-fuzz`/`libfuzzer`/`semgrep`/`codeql`/`trivy`/`gdb`/`angr`/`ghidra`/`frida`) runs and a research project is active (`raw/research/active.md`), nudges capture into `findings.md`/`loop.md` and points at `research_status.py` for the next move.
-
-Tools that arm the post-run logic:
-- recon (-> state.md + fingerprinted): `nmap masscan nxc netexec crackmapexec ffuf httpx subfinder rustscan naabu dnsx katana gau amass gowitness arjun nuclei gobuster feroxbuster`
-- probes/testers (fingerprint only): `curl wget whatweb wpscan nikto nslookup dig sqlmap dalfox swaks`
-- creds/secrets (-> loot.md): `secretsdump getuserspns getnpusers gettgt certipy kerbrute hashcat john lsassy nanodump trufflehog gitleaks`
+Tools whose output is fingerprinted (matched at command position, including inside `vm.sh`/`ssh`/`wsl` bridge wrappers): `nmap masscan nxc netexec crackmapexec ffuf httpx subfinder rustscan naabu dnsx katana gau amass gowitness arjun nuclei gobuster feroxbuster curl wget whatweb wpscan nikto nslookup dig sqlmap dalfox swaks`. (Capturing results into `state.md`/`loot.md` is now state-first discipline, not a hook nudge.)
 
 ---
 
@@ -111,7 +106,7 @@ Tools that arm the post-run logic:
 | You do | Auto-fires |
 |---|---|
 | type "test login.x.com for sql injection" | hunt-sqli (wiki query + payloads) |
-| run `nmap -sV host` -> output shows Jenkins + GraphQL | router: jenkins tests + graphql tests + invoke hunt-rce/hunt-injection; capture nudge |
+| run `nmap -sV host` -> output shows Jenkins + GraphQL | router: jenkins + graphql detected -> load hunt-rce / hunt-injection |
 | run `hydra ...` with `no_bruteforce: true` in scope | scope-guard advisory warning (before run) |
 | run `nmap 10.0.3.9` where `10.0.3.0/24` is out of scope | scope-guard advisory warning |
 | type "solve this crackme" | ctf-category -> reverse-engineering page + radare2/pwntools |

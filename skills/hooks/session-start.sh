@@ -4,16 +4,6 @@
 # Honor explicit overrides first so it works on any user/path/spelling.
 VAULT="${QMD_VAULT:-${CLAUDEBRAIN_VAULT:-$(cd "$(dirname "$(readlink -f "$0")")/../.." && pwd)}}"
 
-# Clean stale context7 lock files
-LOCK_DIR="$HOME/.claude/plugins/cache/claude-plugins-official/context7/unknown/.in_use"
-if [ -d "$LOCK_DIR" ]; then
-  for f in "$LOCK_DIR"/*; do
-    [ -f "$f" ] || continue
-    pid=$(python3 -c "import json; print(json.load(open('$f')).get('pid',''))" 2>/dev/null)
-    [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null || rm -f "$f"
-  done
-fi
-
 # Auto-register vault skills so a freshly-authored skill is invocable without a
 # manual `setup/install-skills.sh` run. Idempotent (symlinks each skills/*/SKILL.md
 # into ~/.claude/skills/, skipping existing); the harness rescans on session start.

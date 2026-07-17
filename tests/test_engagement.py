@@ -56,6 +56,69 @@ def test_ensure_state_files_creates_missing(vault, monkeypatch):
     assert (eng / "ingest").is_dir()
 
 
+def test_state_files_includes_killchain():
+    assert "killchain.md" in _engagement.STATE_FILES
+
+
+def test_recon_dir_not_scaffolded():
+    assert "recon" not in _engagement.STATE_DIRS
+    assert "ingest" in _engagement.STATE_DIRS and "poc" in _engagement.STATE_DIRS
+
+
+def _load_engagement_init():
+    import importlib.util
+    p = os.path.join(os.path.dirname(_engagement.__file__), "engagement-init.py")
+    spec = importlib.util.spec_from_file_location("engagement_init", p)
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m
+
+
+def test_board_status_surfaces_phase_and_counts(vault, monkeypatch):
+    ei = _load_engagement_init()
+    eng = vault / "targets" / "acme"
+    (eng / "killchain.md").write_text(
+        "# Kill-Chain Board\n\n"
+        "## 1. Recon\n- [x] rustscan\n- [ ] nmap\n\n"
+        "## 4. Exploit\n### 4a. Foothold\n- [~] sqli\n- [!] xxe deadend\n",
+        encoding="utf-8")
+    monkeypatch.setattr(_engagement, "active_dir", lambda: str(eng))
+    s = ei.board_status()
+    assert s is not None
+    assert "Phase 4 Exploit" in s   # highest-numbered phase with an open item
+    assert "2 open" in s            # [ ] nmap + [~] sqli
+    assert "1 deadends" in s        # [!] xxe
+
+
+def test_board_status_none_without_board(vault, monkeypatch):
+    eng = vault / "targets" / "noboard"
+    os.makedirs(eng)
+    monkeypatch.setattr(_engagement, "active_dir", lambda: str(eng))
+    assert _load_engagement_init().board_status() is None
+
+
+def test_harness_maintenance_returns_list(vault, monkeypatch):
+    monkeypatch.setattr(_engagement, "active_dir", lambda: str(vault / "targets" / "acme"))
+    assert isinstance(_load_engagement_init().harness_maintenance(), list)
+
+
+def test_killchain_healed_for_every_type(vault, monkeypatch):
+    for etype in ("ctf", "pentest", "bugbounty"):
+        eng = vault / "targets" / ("kc_" + etype)
+        os.makedirs(eng)
+        (eng / "state.md").write_text(
+            "---\ntype: engagement-state\nengagement_type: %s\n---\n" % etype, encoding="utf-8")
+        monkeypatch.setattr(_engagement, "active_dir", lambda e=eng: str(e))
+        _engagement.ensure_state_files()
+        board = eng / "killchain.md"
+        assert board.exists()
+        text = board.read_text()
+        assert "Kill-Chain Board" in text
+        assert "engagement_type: %s" % etype in text
+        assert "<ENGAGEMENT>" not in text and "<DATE>" not in text
+        assert "GATE 1 (wiki)" in text
+
+
 def test_scope_parse(vault):
     (vault / "targets" / "acme" / "scope.md").write_text(
         "---\ntype: engagement-scope\nno_bruteforce: true\npassive_only: false\n---\n\n"

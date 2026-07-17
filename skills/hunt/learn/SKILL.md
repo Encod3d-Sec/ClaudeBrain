@@ -11,7 +11,7 @@ The close-out retrospective, in two phases:
   harness so the next box does not repeat it. This is the "improve the harness on it" half.
 - **Phases 1-7 (knowledge):** read the WHOLE finished engagement, diff it against the existing
   wiki, and promote only the DELTA as durable, generic knowledge. The safety net that catches
-  everything the live `recon-capture` staging nudge missed during the box.
+  everything not captured live during the box.
 
 The client-data boundary is enforced by code, not by this prose: engagement-derived
 content reaches `wiki/` ONLY through `wiki-stage.py` -> `wiki-promote.py`, which runs
@@ -19,8 +19,9 @@ content reaches `wiki/` ONLY through `wiki-stage.py` -> `wiki-promote.py`, which
 generic knowledge; it never edits the engagement's own files.
 
 ## When it fires
-- Auto: the loop-driver Stop-hook nudges `Skill(learn)` once the engagement is marked
-  `## STATUS: SOLVED` (OWNED/ROOTED/COMPLETE) AND its `walkthrough.md` is assembled.
+- At close-out: run `Skill(learn)` once the engagement is marked
+  `## STATUS: SOLVED` (OWNED/ROOTED/COMPLETE) AND its `walkthrough.md` is assembled
+  (the CLAUDE.md execution-loop close-out step).
   It self-clears the moment this skill writes `<eng>/.learn-done`.
 - On demand: "extract learnings", "what did we learn", "harvest lessons", "distill",
   "post-mortem into the wiki" - the same steps apply.
@@ -84,7 +85,7 @@ Read the full engagement and list every candidate GENERIC lesson:
 - `Deadends.md` - what failed. Negative knowledge is reusable: a bypass that does NOT
   work on tech X, a default cred changed in vendor version Y, a false-positive pattern.
 - `Vuln-index.md` / `Vulns/` - findings and their reusable exploitation technique.
-- `coverage.md`, `log.md` - anything else non-obvious that recurs.
+- `killchain.md`, `log.md` - anything else non-obvious that recurs.
 
 A candidate is worth harvesting only if it is REUSABLE on the next engagement. Skip
 one-off client trivia.
@@ -149,7 +150,7 @@ marker. Report what promoted, what was refused, and why.
 python3 scripts/lint-wiki.py -q        # must be clean (broken links, stale index)
 # only if a NEW page was created:
 python3 scripts/gen_index.py && python3 scripts/build_moc.py && qmd update
-touch targets/$ENG/.learn-done         # self-clears the loop-driver learn gate
+touch targets/$ENG/.learn-done         # marks this engagement's learn pass done
 ```
 Log one GENERIC line to `session/log.md` (e.g. "learn: promoted 3 -> jwt-attacks,
 default-credentials") and an audit line to `targets/$ENG/log.md`. Never put a client

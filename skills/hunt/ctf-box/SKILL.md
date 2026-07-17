@@ -8,21 +8,29 @@ description: Boot-to-root methodology for a full machine (THM/HTB/PG/CTF box, "g
 Own a whole machine: recon -> service triage -> foothold -> user.txt -> privesc -> root.txt.
 **Run everything from the engagement tooling host (e.g. Kali in tmux), capture into `targets/<eng>/`.**
 
-## Rule 0: Wiki-first, tools-before-scripts (MANDATORY)
+Track progress in `targets/<eng>/killchain.md` -- work the current phase's open items, mark `[x]` as each
+lands; honor GATE 1 (no hand-rolled exploit before its wiki item is `[x]`), GATE 2 (no exploit step `[x]`
+without a `poc/` image), GATE 3 (exhausted vector -> `[!]` + one `Deadends.md` line, never re-run it).
 
-Before writing ANY custom script or recalling an exploit from memory:
-1. `qmd_query "<tech/version> exploit"` and `qmd_query "<service> privilege escalation"` via wiki-search MCP. Read matches.
-2. Pull payloads from `wiki/payloads/` and chains from `wiki/cheatsheets/attack-chains.md` + `wiki/cheatsheets/cve-arsenal.md` — or `Skill(arsenal)` to resolve the exact file.
+## Standing mandate: Wiki-first, tools-before-scripts (GATE 1, all phases)
+
+This mandate stands over every phase below. Before writing ANY custom script or recalling an exploit from memory:
+1. `qmd_query "<tech/version> exploit"` and `qmd_query "<service> privilege escalation"` via wiki-search MCP. Read matches. If the MCP is down (it drops mid-session), run `bash scripts/wiki-query.sh "<tech> exploit"` (same qmd index; `-k` for an exact CVE) - do NOT skip wiki-first or fall back to grep.
+2. Pull payloads from `wiki/payloads/` and chains from `wiki/cheatsheets/attack-chains.md` + `wiki/cheatsheets/cve-arsenal.md`, or `Skill(arsenal)` to resolve the exact file.
 3. Privesc reference: `wiki/techniques/linux/linux-privesc.md` / `wiki/cheatsheets/linux-privesc.md` (or windows-privesc).
 Only after the wiki has nothing do you write a custom PoC. Do not reinvent what the wiki already documents.
 
-**Anti-pattern:** a raw one-shot `bash /root/vm.sh '<exploit>'` (or an inline `node -e`/`python3 -c` payload through it) for a listener, shell, or chained exploit is the smell this rule exists to catch -- it skips wiki-first and leaves no session to capture. Run persistent/interactive steps in their own named tmux tab instead: `scripts/vm-scan.sh <eng> <target> '<cmd>'`.
+**Tooling home:** check `/opt/arsenal` first for pspy/linpeas/shot/capture. pspy64/linpeas/winPEAS live in `/opt/arsenal`, seeded by `vm-provision.sh` from their GitHub releases; our own helpers (`shot.py`, `capture.sh`) are pushed on demand by `bash scripts/vm-sync.sh <name>` from the vault.
 
-## Rule 1: Recon = basic tools only (in this order)
+**Anti-pattern:** a raw one-shot `bash /root/vm.sh '<exploit>'` (or an inline `node -e`/`python3 -c` payload through it) for a listener, shell, or chained exploit is the smell this mandate exists to catch -- it skips wiki-first and leaves no session to capture. Run persistent/interactive steps in their own named tmux tab instead: `scripts/vm-scan.sh <eng> <target> '<cmd>'`.
+
+## Phase 1 Recon: basic tools only (in this order)
 
 Use the standard toolkit. Do NOT hand-roll recon scripts.
 
-Tooling-first: use nmap/ffuf/nuclei/nxc - never hand-roll a /dev/tcp port loop or a curl fuzz loop (weaker, skips the fingerprint router). Capture the nmap surface + ffuf hits as evidence (Skill(screenshot) `--term`).
+Tooling-first: use rustscan/nmap/ffuf/nuclei/nxc - never hand-roll a /dev/tcp port loop or a curl fuzz loop (weaker, skips the fingerprint router).
+
+**Card EVERY scan tab AS it finishes (before exploiting), not at the end of the box:** `scripts/capture.sh recon <eng> <slug> <tab>` renders the tmux tab into `recon/`. Do this for rustscan, nmap, ffuf, AND nuclei - even an empty/unhelpful result gets a card, so the operator can see exactly what ran. `<tab>` = the `@id` or sanitized name `vm-scan.sh` printed. (`status.py` surfaces the recon-card count; 0 cards on a web box = you skipped this.)
 
 Run each scan in its own tmux tab on the VM (root, persistent, survives a dropped `vm.sh` call), one tab per target: `bash scripts/vm-scan.sh <eng> <target> '<scan>'` (multi-web target -> `<target>-web-<ip-or-domain>`, one tab each). Screenshot a live/finished tab with `Skill(screenshot)` `--tmux <eng>:<tab>` (use the `@NN` id or sanitized tab name `vm-scan.sh` prints, not a dotted target). The scan commands below are what you launch inside each tab.
 
@@ -30,12 +38,21 @@ Run each scan in its own tmux tab on the VM (root, persistent, survives a droppe
 
 ```bash
 T=<ip>
-# Full TCP, then scripts/version on found ports
-nmap -p- --min-rate 2000 -T4 -Pn $T -oN nmap-all.txt
-nmap -sCV -p<found> -Pn $T -oN nmap-svc.txt
+# rustscan FIRST (board step 1: fast full-port sweep), THEN nmap -sCV on the open ports it prints.
+rustscan -a $T --ulimit 5000 -g                        # seconds -> open-port CSV (e.g. [22,80])
+nmap -p<found> -sCV -Pn $T -oN nmap-svc.txt            # version/script scan on rustscan's hits
+nmap -p- --min-rate 2000 -T4 -Pn $T -oN nmap-all.txt   # full-TCP confirm (its own tmux tab)
 nc -nv $T <port>                 # manual banner / custom-proto services (chatbots, etc.)
 dig any @$T <domain>; dig axfr @$T <domain>   # DNS if 53 open / vhost hints
-# Web (per http port):
+# --- WEB SERVICE FOUND -> do ALL of this; do NOT skip web enum to jump to the "obvious" path (password-audit box lesson):
+#  (a) CAPTURE IT AS-IS FIRST, before poking: render the page (`capture.sh web <eng> <slug> http://T:PORT/`
+#      -> a browser shot with the URL bar) AND save the raw HTML source to poc/ (the site as it was) --
+#      curl -s http://T:PORT/ > poc/<slug>-source.html. `web` renders; `ev`/`req` card a request/response.
+#  (b) LAUNCH THE SCANNERS IN PARALLEL -- each runs for MINUTES, so ONE tmux tab each, do not wait serially:
+#        scripts/vm-scan.sh <eng> <T>-ffuf 'ffuf ...'   ;   scripts/vm-scan.sh <eng> <T>-nuclei 'nuclei -u http://$T'
+#      whatweb + curl -I are quick (inline). Analyse the page/source WHILE ffuf+nuclei run in the background.
+#      NEVER conclude "no web vuln / no hidden route" until ffuf AND nuclei have actually run AND been read.
+# Web (per http port) -- the scans you launch in those tmux tabs:
 ffuf -u http://$T/FUZZ -w scripts/wordlists/harness-paths.txt -e .php,.py,.html,.txt -mc 200,301,302,401,403 -ac   # OUR high-signal list FIRST (non-obvious routes the big lists bury: /internal,/health,/customapi...)
 ffuf -u http://$T/FUZZ -w /usr/share/seclists/Discovery/Web-Content/ractf-medium.txt -ac      # then the big list
 ffuf -u "http://$T/?FUZZ=x" -w scripts/wordlists/harness-params.txt -fs <baseline>            # param mining (SSRF/LFI/cmdi names)
@@ -54,16 +71,26 @@ the `seclists` package has only `/usr/share/wordlists/dirb/*`); push the harness
 
 Fingerprint the exact app + version. **On any fingerprinted surface/service, `Skill(arsenal)` FIRST**: it maps the surface to the automated tools we already document in `wiki/tools/` (web -> httpx/ffuf/feroxbuster/nuclei/dalfox/wpscan; SMB/AD -> netexec/bloodhound; login -> hydra/hashcat; ...) so you use OUR tool for the service instead of hand-rolling, THEN the technique/payload (`wiki/payloads` + the matching hunt skill). Then hand web vulns to the matching hunt skill (sqli/ssrf/upload/...) via triggers. Screenshot each finding AS it lands (`Skill(screenshot)`), not at the end. **OT/ICS ports (502 Modbus / 102 S7 / 44818 EtherNet/IP / 1880 Node-RED / an HMI web app) -> `Skill(hunt-ics)`** (drive the plant to a danger state; the flag is often a visual overlay in the HMI/CCTV media).
 
-## Rule 2: Foothold
+## Phase 2 Weaponize: pick the exploit
 
-- Map version -> `searchsploit <app> <ver>` and the wiki, then exploit. Prefer the documented PoC over a fresh one.
-- **Consistent escalation primitive:** if a box exposes the SAME pivot at each stage (a Docker socket/TLS pivot per level, an SSRF each hop), verify/exhaust that intended vector end-to-end BEFORE an opportunistic shortcut (raw device mount, a memory CVE). A shortcut that relies on `--privileged`/a loose cap can mask that a hardened config would block it, and it is less reproducible/auditable. Getting the flag via a shortcut is fine; SKIPPING the taught vector without testing it is the miss.
+- Map version -> `searchsploit <app> <ver>` and the wiki CVE lookup ([[cve-arsenal]]); prefer the documented PoC over a fresh one.
+- Pick the payload set from `wiki/payloads/` for the fingerprinted class (GATE 1: the wiki item is `[x]` before you hand-roll a PoC).
+- Stage the chosen exploit/PoC into `targets/<eng>/poc/scripts/` before firing, so the code and the run are captured together.
+
+## Phase 3 Deliver: land a shell
+
+- Deliver the staged payload/exploit against the target; prefer the documented PoC over a fresh one.
 - Get a stable shell early: upgrade to PTY (`python3 -c 'import pty;pty.spawn("/bin/bash")'`), or better, drop your SSH key into a writable user's `~/.ssh/authorized_keys` for a resilient session.
-- Capture creds to `targets/<eng>/loot.md` immediately; try reuse (su / ssh / other services) before hunting new ones. DB/web creds are very often **reused for SSH**.
+- **Cred-reuse FIRST.** Capture creds to `targets/<eng>/loot.md` immediately; try reuse (su / ssh / other services) BEFORE hunting new ones. DB/web creds are very often **reused for SSH**.
+
+## Phase 4 Exploit: finish the foothold, then privesc
+
+Finish the foothold first (leftover Rule 2 techniques, if the shell landed mid-app):
+- **Consistent escalation primitive:** if a box exposes the SAME pivot at each stage (a Docker socket/TLS pivot per level, an SSRF each hop), verify/exhaust that intended vector end-to-end BEFORE an opportunistic shortcut (raw device mount, a memory CVE). A shortcut that relies on `--privileged`/a loose cap can mask that a hardened config would block it, and it is less reproducible/auditable. Getting the flag via a shortcut is fine; SKIPPING the taught vector without testing it is the miss.
 - Web SQLi: in-band (UNION/error) before blind; test EVERY quote context (`'` `"` numeric) and second-order (a stored value used unsafely on another page). If the app hashes the password inside the query, read plaintext from `information_schema.PROCESSLIST`. Load `Skill(hunt-sqli)` / see [[sql-injection]].
 - Recovered unsalted MD5/SHA1: **online lookup first** (CrackStation/hashes.com) before hashcat/john. A hash that resists everything on a hard box may be a deliberate decoy; pivot, don't grind.
 
-## Rule 3: Privesc = pspy ALWAYS + linpeas/winpeas, then manual
+Then privesc = pspy ALWAYS + linpeas/winpeas, then manual.
 
 **Always run pspy first** to catch root-run background jobs/cron/timers that static checks miss:
 ```bash
@@ -197,42 +224,32 @@ container -> internal Flask app pickle-deser RCE -> `cap_sys_module` kmod escape
 
 After each phase, write to `targets/<eng>/`: hosts/access -> `state.md`, creds -> `loot.md`, chain -> `paths.md`, vulns -> `Vuln-index.md`, dead-ends -> `Deadends.md`, narrative -> `log.md`. Flags go in the writeup, never in `session/*` or `wiki/`.
 
-**Preserve exploit scripts and read source.** When you write the exploit script Rule 0 has you fall back to (a payload HTML, an escape/forge script, a webshell) or read a target's source, copy it into `targets/<eng>/poc/scripts/` and card the source with its URL (e.g. `shot.py --term --url-bar`); the reviewer needs the code and the state together, the thm_tricipher standard.
+**Preserve exploit scripts and read source.** When you write the exploit script Rule 0 has you fall back to (a payload HTML, an escape/forge script, a webshell) or read a target's source, copy it into `targets/<eng>/poc/scripts/` and card the source with its URL (e.g. `shot.py --term --url-bar`); the reviewer needs the code and the state together, not just a screenshot.
 
 **Screenshot EVERY successful step as you go (not at the end).** The walkthrough must be report-ready
 from the `.md` alone. The moment a step LANDS - valid cred / Pwn3d, a BloodHound edge, a GUI foothold
-(RDP desktop, unlocked KeePass, admin panel), a bad permission found, the DA hash, the flag - `Skill(screenshot)`
-it and drop the `![]()` ref inline at that step + in the `## Evidence` gallery. **One-call live path:**
-tee the step's output on the VM, then `scripts/evshot.sh <eng> <slug> "<request-url>" "<cmd-label>"` -
-it cards the output showing BOTH the command and the request URL and pulls the PNG into `poc/` in a
-single call, so live capture has no friction (`cmd`+`url` are required, so no card is anonymous).
-**For a lead from a web request** (a curl returning creds / a flag / leaked source), the real curl
-**request+response** is the artifact - `recon-capture.py` auto-stages a lead card to `poc/leads/` the
-moment a curl/wget response shows a lead signal (drained at Stop, no action needed), and
-`scripts/reqshot.sh <eng> <slug> -- <curl-args>` captures a full-fidelity `curl -iv` request/response
-card on demand (crypto-forged? give the exploit a `--curl` mode that emits the concrete curl). **A
-plain in-scope page GET is auto-captured too:** the same hook stages a COMBINED card, the chromium
-browser render of the page on top of the curl request/response card beneath, to
-`targets/<eng>/poc/pages/` (drained at the same Stop, no action needed). `Skill(screenshot)` is now
-for what that auto path does NOT cover: authed/exploited states (dashboard, vuln firing, the flag) and
-the narrative pocshot/`--tmux` session cards. Under
-the hood: CLI/tool output -> `shot.py --term` (colored terminal card) or `--tmux` (live tab);
-GUI/desktop -> `--window`/`--screen` (or `import -window root` off a headless xfreerdp). Backfilling at the end loses transient state
-(sessions, dialogs, one-shot output) - capture at the moment of success. **NEVER hand-write a tool's
-output into a `--term` card - that is fabricated evidence.** Capture the REAL stream: if a command is
-launched with output redirected (`> log`), the tmux pane stays EMPTY, so `tee` the output into the pane
-OR `shot.py --term <the-real-logfile>`. GUI foothold that can't reproduce (RDP session, unlocked KeePass)
-- screenshot it live; a box that expires cannot be recaptured. Bulk scan output (nmap/ffuf/nuclei/nxc/
-linpeas/pspy) auto-collects as cards in `targets/<eng>/recon/` (the Stop-hook drain, no action needed);
-your deliberate step shots land in `poc/` - curate both into the `## Evidence` gallery, or run
-`python3 scripts/build-walkthrough.py <eng>` to auto-populate that gallery from every rendered card on
-disk (it refreshes the Evidence table in place and never touches your narrative).
-
-**`poc.md` builds up automatically (no action needed).** As each card renders, the Stop-hook drain
-appends it to `targets/<eng>/poc.md` (self-healed from `_poc.md`): image on top, the `sh` command, and
-the full response. EVERY scan/page/lead is included -- dead-ends too -- so you get a copy-paste PoC and
-can review the whole run manually. It only auto-builds a templated `poc.md` (the `POC-AUTO` marker); a
-hand-curated `poc.md` (marker removed) is left untouched.
+(RDP desktop, unlocked KeePass, admin panel), a bad permission found, the DA hash, the flag - capture it
+LIVE and drop the `![]()` ref inline at that step + in the `## Evidence` gallery. There is NO auto-capture
+net anymore: evidence is captured LIVE via `scripts/capture.sh` (ev/req/tmux/burp) straight into `poc/`
+the MOMENT a step lands, never at the end. **One-call live path (`capture.sh ev`):** tee the step's output
+on the VM, then `scripts/capture.sh ev <eng> <slug> "<request-url>" "<cmd-label>"` - it cards the output
+showing BOTH the command and the request URL and pulls the PNG into `poc/` in a single call, so live
+capture has no friction (`cmd`+`url` are required, so no card is anonymous). **For a lead from a web
+request** (a curl returning creds / a flag / leaked source), the real curl **request+response** is the
+artifact - `scripts/capture.sh req <eng> <slug> -- <curl-args>` captures a full-fidelity `curl -iv`
+request/response card (crypto-forged? give the exploit a `--curl` mode that emits the concrete curl). For
+evidence that should look like a real tmux session run `scripts/capture.sh tmux <eng> <slug> <script.sh>`;
+a Burp Repeater req/resp PoC is `scripts/capture.sh burp ...`. `Skill(screenshot)` covers authed/exploited
+states (dashboard, vuln firing, the flag) and the narrative `--tmux` session cards. Under the hood:
+CLI/tool output -> `shot.py --term` (colored terminal card) or `--tmux` (live tab); GUI/desktop ->
+`--window`/`--screen` (or `import -window root` off a headless xfreerdp). Backfilling at the end loses
+transient state (sessions, dialogs, one-shot output) - capture at the moment of success. **NEVER hand-write
+a tool's output into a `--term` card - that is fabricated evidence.** Capture the REAL stream: if a command
+is launched with output redirected (`> log`), the tmux pane stays EMPTY, so `tee` the output into the pane
+OR `shot.py --term <the-real-logfile>`. GUI foothold that can't reproduce (RDP session, unlocked KeePass) -
+screenshot it live; a box that expires cannot be recaptured. Curate your `poc/` step shots into the
+`## Evidence` gallery, or run `python3 scripts/build-walkthrough.py <eng>` to auto-populate that gallery
+from every rendered card in `poc/` (it refreshes the Evidence table in place and never touches your narrative).
 
 **Grow the harness wordlist.** If a non-obvious route/file/param cracked the box (one the standard
 lists missed, e.g. `/internal`), feed the GENERIC token back so the next box is faster:

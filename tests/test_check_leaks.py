@@ -96,3 +96,23 @@ def test_check_leaks_bare_file_flag_fails(tmp_path):
     r = _run("bash scripts/check-leaks.sh --file", v)
     assert r.returncode != 0, r.stdout + r.stderr
     assert "clean" not in r.stdout
+
+
+def test_check_leaks_skips_platform_archive_names(tmp_path):
+    """A bare public-platform archive dir (targets/THM/) must NOT become a marker
+    -- 'THM' matches `thm` tags/lessons/sources across the wiki (false positives).
+    A full per-box codename dir under targets/ MUST still be a marker."""
+    v = tmp_path / "v"
+    (v / "scripts").mkdir(parents=True)
+    (v / "skills" / "hooks").mkdir(parents=True)
+    shutil.copy(os.path.join(REPO, "scripts", "check-leaks.sh"), v / "scripts" / "check-leaks.sh")
+    shutil.copy(os.path.join(REPO, "skills", "hooks", "_engagement.py"),
+                v / "skills" / "hooks" / "_engagement.py")
+    (v / "targets" / "THM").mkdir(parents=True)          # platform archive dir -> skipped
+    (v / "targets" / "thm_realbox").mkdir(parents=True)  # box codename -> a real marker
+    body = v / "body.md"
+    body.write_text("we used THM techniques on thm_realbox\n", encoding="utf-8")
+    r = _run("bash scripts/check-leaks.sh --file " + str(body), v)
+    assert r.returncode == 1, r.stdout + r.stderr        # the codename still leaks
+    assert "thm_realbox" in r.stdout
+    assert "marker 'THM'" not in r.stdout                # bare platform name NOT flagged

@@ -35,11 +35,7 @@ def test_absent_walkthrough_writes_skeleton_with_evidence_gallery(tmp_path):
     bw = _load()
     eng = tmp_path / "acme"
     _write_bytes(str(eng / "recon" / "0001-nmap-x.png"))
-    _write_text(str(eng / "recon" / ".pending" / "manifest.md"),
-                "| ![](recon/0001-nmap-x.png) | nmap scan |\n")
     _write_bytes(str(eng / "poc" / "pages" / "0001-page-y.png"))
-    _write_text(str(eng / "poc" / "pages" / ".pending" / "manifest.md"),
-                "| ![](poc/pages/0001-page-y.png) | app index page |\n")
 
     text = bw.build(str(eng))
 
@@ -53,8 +49,9 @@ def test_absent_walkthrough_writes_skeleton_with_evidence_gallery(tmp_path):
         assert heading in text, heading
     assert "<ENGAGEMENT>" not in text
     assert "<DATE>" not in text
-    assert "| ![](recon/0001-nmap-x.png) | nmap scan |" in text
-    assert "| ![](poc/pages/0001-page-y.png) | app index page |" in text
+    # captions now derive from the filename (the drain manifest was removed)
+    assert "| ![](recon/0001-nmap-x.png) | nmap x |" in text
+    assert "browser render + request/response (page capture)" in text  # 0001-page- card shape
     # actually written to disk, and matches the returned string
     written = (eng / "walkthrough.md").read_text(encoding="utf-8")
     assert written == text
@@ -238,13 +235,11 @@ def test_self_healed_template_is_refreshed_not_replaced(tmp_path):
     _write_text(str(eng / "walkthrough.md"), self_healed)
 
     _write_bytes(str(eng / "recon" / "0001-nmap-x.png"))
-    _write_text(str(eng / "recon" / ".pending" / "manifest.md"),
-                "| ![](recon/0001-nmap-x.png) | nmap scan |\n")
 
     text = bw.build(str(eng))
 
-    # (a) Evidence gallery now lists the image rows
-    assert "| ![](recon/0001-nmap-x.png) | nmap scan |" in text
+    # (a) Evidence gallery now lists the image rows (caption from filename)
+    assert "| ![](recon/0001-nmap-x.png) | nmap x |" in text
     # (b) template's structural headings and intro narrative are preserved
     assert "## 0. Access / connectivity" in text
     assert "## Flags" in text
@@ -272,51 +267,6 @@ def test_truly_absent_file_scaffolds_framework_template(tmp_path):
     assert "## Rabbit holes (skip on redo)" in text
     assert "recon/0001-nmap-x.png" in text
     assert "poc/0001-shell.png" in text
-
-
-# --- _clean_caption -----------------------------------------------------
-
-def test_clean_caption_strips_trailing_quote_and_bare_shell_var():
-    bw = _load()
-    result = bw._clean_caption('curl http://$T:8081/ping"')
-    assert '"' not in result
-    assert "$T" not in result
-    assert "curl http://:8081/ping" in result
-
-
-def test_clean_caption_passes_through_clean_text_unchanged():
-    bw = _load()
-    assert bw._clean_caption("nmap scan") == "nmap scan"
-    assert bw._clean_caption("app index page") == "app index page"
-
-
-def test_clean_caption_collapses_internal_whitespace():
-    bw = _load()
-    result = bw._clean_caption("  curl   http://target:8081/ping   ")
-    assert result == "curl http://target:8081/ping"
-
-
-def test_clean_caption_strips_leading_prompt_marker():
-    bw = _load()
-    result = bw._clean_caption("$ curl http://target:8081/ping")
-    assert result == "curl http://target:8081/ping"
-
-
-def test_clean_caption_drops_braced_shell_var_and_collapses_double_space():
-    bw = _load()
-    result = bw._clean_caption("run ${FOO} now")
-    assert "${FOO}" not in result
-    assert "  " not in result
-    assert result == "run now"
-
-
-def test_clean_caption_never_raises_on_empty_or_garbage():
-    bw = _load()
-    assert bw._clean_caption("") == ""
-    assert bw._clean_caption(None) is None
-    for garbage in ('"""', "$", "$$$", "   ", "'''"):
-        result = bw._clean_caption(garbage)
-        assert isinstance(result, str)
 
 
 # --- _caption_from_filename card shapes ----------------------------------
@@ -355,22 +305,6 @@ def test_caption_from_filename_generic_fallback_unchanged():
 
 # --- gallery integration --------------------------------------------------
 
-def test_gallery_cleans_manifest_caption_with_shell_noise(tmp_path):
-    bw = _load()
-    eng = tmp_path / "acme"
-    _write_bytes(str(eng / "poc" / "leads" / "0001-lead-a.png"))
-    _write_text(str(eng / "poc" / "leads" / ".pending" / "manifest.md"),
-                '| ![](poc/leads/0001-lead-a.png) | curl http://$T:8081/ping" |\n')
-
-    text = bw.build(str(eng))
-
-    assert "$T" not in text
-    assert "curl http://:8081/ping" in text
-    row_line = [l for l in text.splitlines() if "poc/leads/0001-lead-a.png" in l][0]
-    assert row_line.rstrip().endswith("|")
-    assert '"' not in row_line.split("|")[2]
-
-
 def test_gallery_uses_improved_filename_label_when_no_manifest(tmp_path):
     bw = _load()
     eng = tmp_path / "acme"
@@ -382,14 +316,11 @@ def test_gallery_uses_improved_filename_label_when_no_manifest(tmp_path):
     assert "tmux thm UltraTech" not in text
 
 
-def test_gallery_caption_cleanup_is_idempotent(tmp_path):
-    bw = _load()
-    eng = tmp_path / "acme"
-    _write_bytes(str(eng / "poc" / "leads" / "0001-lead-a.png"))
-    _write_text(str(eng / "poc" / "leads" / ".pending" / "manifest.md"),
-                '| ![](poc/leads/0001-lead-a.png) | curl http://$T:8081/ping" |\n')
-
-    text = bw.build(str(eng))
-    text_again = bw.build(str(eng))
-
-    assert text == text_again
+def test_reproduction_command_count_flags_empty_vs_filled():
+    """The empty framework template scores 0 (images-only walkthrough); a real command counts."""
+    mod = _load()
+    empty = "## 1. Recon\n```\n# cmd\n```\n- result:\n## 2. Foothold\n```\n# cmd / payload\n```\n## Flags\n"
+    filled = ("## 1. Recon\n```bash\nrustscan -a 10.0.0.1\nnmap -p- 10.0.0.1\n```\n- result: 22,80\n"
+              "## 2. Foothold\n```\ncurl 'http://t/?epoch=1;id'\n```\n## Flags\n")
+    assert mod.reproduction_command_count(empty) == 0
+    assert mod.reproduction_command_count(filled) == 3  # rustscan, nmap, curl (comments/results excluded)

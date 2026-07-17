@@ -86,6 +86,8 @@ For each discovered live host, add a row to the target's Attack-surface.md:
 
 Add newly discovered hosts to `scope/` IP/domain lists.
 
+Record recon progress in `targets/<eng>/killchain.md` Phase 1 items.
+
 If nuclei finds CRITICAL or HIGH severity issues: create a FIND-XXX entry immediately.
 
 **Distill to wiki (when confirmed):** if a novel subdomain takeover or recon-bypass technique is found, stage a GENERIC wiki candidate now (no client host): `python3 scripts/wiki-stage.py --kind technique --slug <slug> --target-page techniques/osint/web-attack-surface.md`. Promote later via `scripts/wiki-promote.py`.

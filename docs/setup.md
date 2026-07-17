@@ -17,7 +17,7 @@ VAULT="<vault-root>"   # e.g. /mnt/c/Users/<you>/Documents/ObsidianVaults/Claude
 ln -sf "$VAULT/skills/hooks" ~/.claude/vault-hooks
 ```
 
-Then register the vault hook set in `~/.claude/settings.json` (`bash setup/install-hooks.sh` does this for you; the canonical set spans 6 events -- see below). On a new machine, re-running `bash setup/bootstrap.sh` handles both steps automatically.
+Then register the vault hook set in `~/.claude/settings.json` (`bash setup/install-hooks.sh` does this for you; the canonical set spans 5 events -- see below). On a new machine, re-running `bash setup/bootstrap.sh` handles both steps automatically.
 
 ## Engagement-state automation (both machines)
 
@@ -35,14 +35,14 @@ bash setup/install-hooks.sh    # symlinks ~/.claude/vault-hooks + registers the 
 # 3. restart Claude Code
 ```
 
-`install-hooks.sh` is self-locating (works on any user/path/spelling) and idempotent. It registers the canonical set (mirrored in `scripts/check-hooks.py` `EXPECTED_HOOKS`; `engagement-init` warns at SessionStart if any is unregistered) -- 9 hook commands across 6 events:
-- **SessionStart** -- `session-start.sh` (session bootstrap / context7-lock cleanup), `engagement-init.py` (self-heals the `state/loot/paths/...` set, injects the state summary + top next-moves + drift/CVE warnings).
+`install-hooks.sh` is self-locating (works on any user/path/spelling) and idempotent. It registers the canonical set (mirrored in `scripts/check-hooks.py` `EXPECTED_HOOKS`; `engagement-init` warns at SessionStart if any is unregistered) -- 8 hook commands across 6 events:
+- **SessionStart** -- `session-start.sh` (skill auto-register + hot.md cache), `engagement-init.py` (self-heals the `state/loot/paths/killchain/...` set, injects the state summary + kill-chain board status + top next-moves + one compact `harness:` maintenance line).
 - **UserPromptSubmit** -- `hunt-trigger.py` (fires hunt skills from `skills/hunt/triggers.json`).
 - **PreToolUse (Bash)** -- `scope-guard.py` (scope / RoE / dead-end guard).
-- **PreToolUse (Write)** -- `session-guard.py` (client-marker leak guard).
-- **PostToolUse (Bash)** -- `recon-capture.py` (fingerprint router + capture nudge + OOB correlation + pending-test marker).
+- **PreToolUse (Write)** -- `session-guard.py` (client-marker leak guard: session/* AND git-tracked framework trees; targets/ + docs/superpowers/ exempt).
+- **PostToolUse (Bash)** -- `recon-capture.py` (fingerprint router + OOB callback correlation + a once-per-engagement GATE-1 wiki-first nudge; a framework-meta guard suppresses false fires; advisory).
 - **PreCompact** -- `pre-compact.sh` (persist state before compaction).
-- **Stop** -- `loop-driver.py` (render-only evidence drain: renders staged PoC cards at turn-end; never blocks or forces continuation).
+- **Stop** -- `close-out.py` (close-out reflex: when the engagement is SOLVED but its walkthrough is unassembled / the learn harvest is due, nudges Skill(walkthrough) then Skill(learn); advisory, self-clearing).
 
 **Hooks self-locate the vault** via `realpath(__file__)` through the `~/.claude/vault-hooks` symlink -- no hardcoded paths, so the same code runs unmodified on every device.
 

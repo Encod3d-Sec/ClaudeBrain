@@ -2,7 +2,7 @@
 """build-walkthrough.py - populate an engagement walkthrough.md's Evidence gallery.
 
 The canonical walkthrough structure is `setup/templates/_walkthrough.md` (the
-thm_tricipher-structure skeleton: Access/Recon/Foothold/Privesc/Flags/Evidence/
+standard boot-to-root skeleton: Access/Recon/Foothold/Privesc/Flags/Evidence/
 One-shot/Rabbit-holes), which `engagement-init`'s self-heal already writes for a
 fresh engagement (substituting <ENGAGEMENT>/<DATE> before it ever reaches disk).
 This tool does NOT impose a second, competing structure: it keeps the "## Evidence"
@@ -38,7 +38,7 @@ import sys
 from datetime import date
 
 # self-locate vault, reuse the hooks' active-engagement resolver (same pattern as
-# scripts/coverage.py and scripts/next_move.py)
+# scripts/next_move.py)
 VAULT = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 sys.path.insert(0, os.path.join(VAULT, "skills", "hooks"))
 import _engagement  # noqa: E402
@@ -61,9 +61,8 @@ SECTIONS = (
     "## Rabbit holes (skip on redo)",
 )
 
-NO_EVIDENCE = "_No rendered evidence found yet - run the engagement so the drain renders cards._"
+NO_EVIDENCE = "_No rendered evidence found yet - capture evidence live into poc/ via `capture.sh` (ev/req/tmux/burp)._"
 
-_MANIFEST_ROW = re.compile(r"^\|\s*!\[\]\(([^)]+)\)\s*\|\s*(.*?)\s*\|\s*$")
 _LEADING_SEQ = re.compile(r"^\d+-")
 _DASH_RUN = re.compile(r"[-_]+")
 
@@ -74,36 +73,8 @@ _PAGE_CARD = re.compile(r"^\d+-page-")
 _SOURCE_CARD = re.compile(r"^\d+-source-")
 _LEAD_CARD = re.compile(r"^\d+-lead-")
 
-# _clean_caption helpers
-_WHITESPACE_RUN = re.compile(r"\s+")
-_LEADING_PROMPT = re.compile(r"^\$\s+")
-_SHELL_VAR = re.compile(r"\$\w+|\$\{[^}]+\}")
-
-
-def _clean_caption(text):
-    """Clean a caption sourced from the drain manifest (or, defensively, a
-    filename-derived one): collapse internal whitespace, strip a single
-    unbalanced trailing quote left by a truncated manifest command, strip a
-    leading '$ ' prompt marker, and drop bare unexpanded shell-var tokens
-    ($VAR / ${VAR}) without trying to expand them - never raises; an empty
-    (or otherwise unusable) result falls back to the original text."""
-    if not text:
-        return text
-    original = text
-    try:
-        cleaned = _WHITESPACE_RUN.sub(" ", text).strip()
-        if cleaned and cleaned[-1] in ("\"", "'") and cleaned.count(cleaned[-1]) % 2 == 1:
-            cleaned = cleaned[:-1].rstrip()
-        cleaned = _LEADING_PROMPT.sub("", cleaned)
-        cleaned = _SHELL_VAR.sub("", cleaned)
-        cleaned = _WHITESPACE_RUN.sub(" ", cleaned).strip()
-    except Exception:
-        return original
-    return cleaned or original
-
-
 def _caption_from_filename(png_basename):
-    """Caption derived from a PNG basename when it has no manifest entry.
+    """Caption derived from a PNG basename.
     Recognizes the known evidence-card shapes and yields a clearer label;
     anything else falls back to stripping a leading NNNN- sequence and the
     extension, turning -/_ into spaces (pure function of the basename)."""
@@ -125,42 +96,19 @@ def _caption_from_filename(png_basename):
     return stem or png_basename
 
 
-def _load_manifest(area_dir):
-    """Map PNG basename -> caption, parsed from <area_dir>/.pending/manifest.md
-    rows shaped '| ![](<area>/<png>) | <caption> |'. Missing/unreadable file, or a
-    line that does not match the row shape, is simply skipped (fail gracefully)."""
-    captions = {}
-    path = os.path.join(area_dir, ".pending", "manifest.md")
-    if not os.path.isfile(path):
-        return captions
-    try:
-        with open(path, encoding="utf-8", errors="ignore") as fh:
-            for line in fh:
-                m = _MANIFEST_ROW.match(line.strip())
-                if not m:
-                    continue
-                relpath, caption = m.group(1), m.group(2)
-                captions[os.path.basename(relpath)] = caption
-    except OSError:
-        pass
-    return captions
-
-
 def scan_evidence(eng_dir):
     """Scan the fixed evidence areas (in deterministic AREAS order) for *.png, each
-    area sorted by filename. Returns a list of (relpath-from-eng_dir, caption).
-    A missing area directory is simply an empty scan, not an error."""
+    area sorted by filename. Returns a list of (relpath-from-eng_dir, caption), the
+    caption derived from the PNG filename. A missing area directory is simply an empty
+    scan, not an error."""
     rows = []
     for area in AREAS:
         area_dir = os.path.join(eng_dir, *area.split("/"))
         if not os.path.isdir(area_dir):
             continue
-        captions = _load_manifest(area_dir)
         for png in sorted(glob.glob(os.path.join(area_dir, "*.png"))):
             base = os.path.basename(png)
-            manifest_caption = captions.get(base)
-            caption = _clean_caption(manifest_caption) if manifest_caption else _caption_from_filename(base)
-            rows.append((area + "/" + base, caption))
+            rows.append((area + "/" + base, _caption_from_filename(base)))
     return rows
 
 
@@ -191,7 +139,7 @@ def _is_bare(text):
 
 def _framework_template_text(eng_dir):
     """Read the canonical setup/templates/_walkthrough.md (the framework's
-    thm_tricipher-structure skeleton, maintained by engagement-init) and substitute
+    standard boot-to-root skeleton, maintained by engagement-init) and substitute
     <ENGAGEMENT>/<DATE> exactly the way _emit() in skills/hooks/_engagement.py does
     when it first self-heals the file. Returns None if the template cannot be read
     (defensive: build() falls back to the built-in _skeleton() in that case)."""
@@ -307,7 +255,38 @@ def _resolve_eng_dir(arg):
     return _engagement.active_dir()
 
 
+def reproduction_command_count(text):
+    """Count actual command lines in the reproduction sections (Recon/Foothold/Privesc).
+    A command = a non-empty, non-comment line inside a ``` code fence within those sections.
+    The framework template's placeholders are only `# cmd` comment lines inside empty fences, so a
+    walkthrough whose narrative was never filled scores 0 -> it is an images-only gallery that
+    cannot reproduce the box. Used to warn at build time (the gallery refresh alone reads as 'done')."""
+    start = text.find("## 1. Recon")
+    end = text.find("## Flags")
+    span = text[start:end] if (start != -1 and end != -1 and end > start) else text
+    count, in_fence = 0, False
+    for line in span.splitlines():
+        s = line.strip()
+        if s.startswith("```"):
+            in_fence = not in_fence
+            continue
+        if in_fence and s and not s.startswith("#"):
+            count += 1
+    return count
+
+
+def _demo():
+    empty = "## 1. Recon\n```\n# cmd\n```\n- result:\n## Flags\n"
+    filled = "## 1. Recon\n```\nnmap -p- 10.0.0.1\n```\n- result: 22,80\n## Flags\n"
+    assert reproduction_command_count(empty) == 0, "empty template must score 0"
+    assert reproduction_command_count(filled) >= 1, "a real command must be counted"
+    print("build-walkthrough _demo: ok")
+
+
 def main():
+    if "--demo" in sys.argv[1:]:
+        _demo()
+        return 0
     force = "--force" in sys.argv[1:]
     positional = [a for a in sys.argv[1:] if a != "--force"]
     arg = positional[0] if positional else None
@@ -329,6 +308,12 @@ def main():
     name = os.path.basename(os.path.normpath(eng_dir))
     action = "wrote fresh skeleton" if (force or was_bare) else "refreshed Evidence gallery"
     print("build-walkthrough: %s for %s (%d evidence image(s))." % (action, name, n))
+    with open(wt_path, encoding="utf-8", errors="ignore") as fh:
+        cmds = reproduction_command_count(fh.read())
+    if cmds == 0:
+        print("build-walkthrough: WARNING - reproduction sections (Recon/Foothold/Privesc) have NO "
+              "commands; the walkthrough is images-only and cannot reproduce the box. Write the exact "
+              "steps (Skill(walkthrough)) before close-out.")
     return 0
 
 

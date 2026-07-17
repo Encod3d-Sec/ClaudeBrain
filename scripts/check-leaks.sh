@@ -38,12 +38,21 @@ if [ "${1:-}" = "--file" ]; then
 fi
 
 # 1. client names = engagement directory names under targets/
+# Skip bare public CTF-platform names used as archive-folder names (targets/THM/,
+# targets/HTB/, ...). Like tool names, these are NOT client data: a 3-letter term
+# like a 3-letter platform tag matches that tag, its box-lesson mentions, and its
+# source slugs all over the wiki, so it only produces false positives and makes the
+# gate useless. Full per-box codenames (e.g. a "<platform>_<boxname>" dir) are NOT
+# skipped - those ARE the client/engagement markers to catch.
+PLATFORM_DENY=" thm htb pg tryhackme hackthebox provinggrounds proving-grounds vulnhub ctf pwk oscp htb-academy "
 TERMS=()
 if [ -d targets ]; then
   for d in targets/*/; do
     [ -d "$d" ] || continue
     name="$(basename "$d")"
     case "$name" in _templates|.*) continue;; esac
+    lc="$(echo "$name" | tr '[:upper:]' '[:lower:]')"
+    case "$PLATFORM_DENY" in *" $lc "*) continue;; esac
     TERMS+=("$name")
   done
 fi

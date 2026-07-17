@@ -1,4 +1,4 @@
-"""Tests for wiki-gaps, build_moc, coverage, find-lint, gen_index, lint-wiki."""
+"""Tests for wiki-gaps, build_moc, find-lint, gen_index, lint-wiki."""
 import importlib.util
 import json
 import os
@@ -11,6 +11,29 @@ def _load(path, name):
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
+
+
+def test_capture_sh_exists_and_executable():
+    p = os.path.join(REPO, "scripts", "capture.sh")
+    assert os.path.exists(p) and os.access(p, os.X_OK)
+
+
+def test_capture_sh_usage_lists_all_modes():
+    import subprocess
+    r = subprocess.run(["bash", os.path.join(REPO, "scripts", "capture.sh")],
+                       capture_output=True, text=True)
+    combined = r.stdout + r.stderr
+    for mode in ("ev", "req", "tmux", "burp"):
+        assert mode in combined
+    assert r.returncode != 0   # no mode -> usage + nonzero
+
+
+def test_capture_sh_rejects_unknown_mode():
+    import subprocess
+    r = subprocess.run(["bash", os.path.join(REPO, "scripts", "capture.sh"), "bogus", "e", "s"],
+                       capture_output=True, text=True)
+    assert r.returncode != 0
+    assert "unknown mode" in (r.stdout + r.stderr)
 
 
 def test_wiki_gaps_normalize_filters_junk():
@@ -36,35 +59,20 @@ def test_wiki_gaps_detects_missing(tmp_path, monkeypatch):
     assert "sql-injection" in have and "missing-page" not in have
 
 
-def test_coverage_gaps(monkeypatch):
-    import _engagement
-    cov = _load("scripts/coverage.py", "coverage_mod")
-    monkeypatch.setattr(_engagement, "active_dir", lambda: "/fake")
-    monkeypatch.setattr(_engagement, "engagement_type", lambda d=None: "bugbounty")
-    monkeypatch.setattr(_engagement, "scope", lambda d=None: {"out_of_scope": []})
-    tables = {
-        "state.md": [{"asset": "api.x", "tech": "GraphQL", "access": "tested"}],
-        "coverage.md": [{"asset": "api.x", "tested": "xss, idor"}],
-    }
-    monkeypatch.setattr(_engagement, "_parse_table", lambda p: tables[p.rsplit("/", 1)[-1]])
-    etype, rows = cov.gaps()
-    ent, g, tested, app = rows[0]
-    assert ent == "api.x"
-    assert "ssrf" in g and "xss" not in g       # xss already tested
-    assert "graphql" in app                       # fingerprint-implied class added
-
-
 def _bb_classes():
     return json.load(open(os.path.join(REPO, "scripts", "coverage-classes.json")))["bugbounty"]
 
 
 def test_tested_classes_autocredit(tmp_path):
     """coverage self-maintains from the files the discipline already writes:
-    explicit coverage.md + written findings + Deadends.md."""
+    the killchain.md 4a table + written findings + Deadends.md."""
     import _engagement
     d = tmp_path / "eng"
     (d / "Vulns").mkdir(parents=True)
-    (d / "coverage.md").write_text("| asset | tested |\n|---|---|\n| api.x | csrf |\n")
+    (d / "killchain.md").write_text(
+        "| asset | vuln class | wiki | payload/tool | status | poc |\n"
+        "|---|---|---|---|---|---|\n"
+        "| api.x | csrf | [[csrf]] | - | [x] | poc/1.png |\n")
     (d / "state.md").write_text("| asset | access |\n|---|---|\n| api.x | tested |\n")
     (d / "Vulns" / "FIND-001-HIGH-sqli-login.md").write_text(
         '---\ntitle: "SQL Injection in login form"\ntype: finding\naffected: api.x\n---\n# x\n')
@@ -73,7 +81,7 @@ def test_tested_classes_autocredit(tmp_path):
         "- SSRF on api.x via ?url=: all schemes blocked, 40 payloads 0 callbacks\n")
     per_asset, glob = _engagement.tested_classes(str(d), "bugbounty", _bb_classes())
     got = per_asset.get("api.x", set())
-    assert "csrf" in got     # explicit coverage.md
+    assert "csrf" in got     # explicit killchain.md 4a row (status [x])
     assert "sqli" in got     # finding title/slug -> tested-and-found
     assert "ssrf" in got     # dead-end attributed to api.x -> tested-and-cleared
     assert "xss" not in got  # never touched -> still a gap
@@ -369,7 +377,12 @@ def test_tested_classes_list_affected_and_dash(tmp_path):
     (d / "Vulns").mkdir(parents=True)
     (d / "Vulns" / "FIND-001-HIGH-xss.md").write_text(   # block-list affected
         '---\ntitle: "Stored XSS"\ntype: finding\naffected:\n  - host-a\n  - host-b\n---\n')
-    (d / "coverage.md").write_text("| asset | tested |\n|---|---|\n| host-a | - |\n")  # dash placeholder
+    # killchain.md 4a row with a dash in the 'vuln class' cell (done status): the dash
+    # placeholder must NOT be credited as a tested class (the re.fullmatch('-+') guard).
+    (d / "killchain.md").write_text(
+        "| asset | vuln class | wiki | payload/tool | status | poc |\n"
+        "|---|---|---|---|---|---|\n"
+        "| host-a | - | - | - | [x] | - |\n")
     per_asset, glob = _engagement.tested_classes(str(d), "bugbounty", _bb_classes())
     assert "xss" in per_asset.get("host-a", set())      # credited to each list item...
     assert "xss" in per_asset.get("host-b", set())
