@@ -13,7 +13,7 @@ Top-level hub. Each domain has its own MOC linking every page.
 
 - [[active-directory-moc|Active Directory]] (103)
 - [[blockchain-moc|Blockchain]] (2)
-- [[cloud-moc|Cloud]] (51)
+- [[cloud-moc|Cloud]] (52)
 - [[cracking-moc|Cracking]] (6)
 - [[exploit-dev-moc|Exploit Dev]] (19)
 - [[forensics-moc|Forensics]] (2)
@@ -28,7 +28,7 @@ Top-level hub. Each domain has its own MOC linking every page.
 
 ## Reference
 
-- [[wiki/index|Full page catalog]] - flat index of every page
+- [[index|Full page catalog]] - flat index of every page
 - [[default-credentials|Default credentials]] - product defaults, reuse across engagements
 - [[api-request-findings|API request findings]] - reusable request patterns
 - Tools: see `wiki/tools/`
@@ -69,7 +69,7 @@ Top-level hub. Each domain has its own MOC linking every page.
 - [[session]]
 - [[smuggling]]
 - [[sqli]]
-- [[wiki/payloads/ssrf]]
+- [[ssrf]]
 - [[ssti]]
 - [[web-cache]]
 - [[webauthn-passkey]]

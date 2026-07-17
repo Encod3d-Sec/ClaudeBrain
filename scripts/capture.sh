@@ -134,9 +134,12 @@ mode_web() {
   bash "$VM_SH" "echo '$SHOT_B64' | base64 -d > /tmp/shot.py; mkdir -p /tmp/poc
 python3 /tmp/shot.py $(printf '%q' "$URL") $BAR --width $W --height $H -o /tmp/poc/$PNG" >&2
   _pull_and_report "/tmp/poc/$PNG" "$SLUG"
-  # also save the raw page source next to the render (the operator investigates from source).
-  local SRC="${PNG%.png}-source.html"
-  bash "$VM_SH" "curl -sk -L --max-time 12 $(printf '%q' "$URL") 2>/dev/null | head -c 300000" > "$POC/$SRC" 2>/dev/null || true
+  # also save the raw page source next to the render, as .md in an ```html fence so Obsidian
+  # actually renders it in the GUI (a bare .html attachment does not preview).
+  local SRC="${PNG%.png}-source.md"
+  { printf '# source: %s\n\n```html\n' "$URL"
+    bash "$VM_SH" "curl -sk -L --max-time 12 $(printf '%q' "$URL") 2>/dev/null | head -c 300000"
+    printf '\n```\n'; } > "$POC/$SRC" 2>/dev/null || true
   [ -s "$POC/$SRC" ] && echo "saved targets/$ENG/poc/$SRC (page source)"
 }
 

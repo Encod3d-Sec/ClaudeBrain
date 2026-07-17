@@ -28,6 +28,18 @@ def main():
         return
     if not d:
         return
+    # Always-on live capture: fire autocard.sh DETACHED (never blocks the turn, no LLM tokens) to
+    # render any scan tmux tab that FINISHED since last turn into recon/. This is the fix for
+    # "recon only ever got the rustscan card" - cards now accumulate live, not at close-out.
+    try:
+        import subprocess
+        sc = os.path.join(_engagement.VAULT, "scripts", "autocard.sh")
+        if os.path.isfile(sc):
+            subprocess.Popen(["bash", sc, os.path.basename(d)],
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                             stdin=subprocess.DEVNULL, start_new_session=True)
+    except Exception:
+        pass
     if not _engagement.is_solved(d):
         # During the box: state-discipline reflex. Loot captured but paths.md has no chain
         # rows -> nudge to write the attack path now, not at close-out. Deduped on the loot

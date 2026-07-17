@@ -274,13 +274,22 @@ container -> internal Flask app pickle-deser RCE -> `cap_sys_module` kmod escape
 
 After each phase, write to `targets/<eng>/`: hosts/access -> `state.md`, creds -> `loot.md`, chain -> `paths.md`, vulns -> `Vuln-index.md`, dead-ends -> `Deadends.md`, narrative -> `log.md`. Flags go in the writeup, never in `session/*` or `wiki/`.
 
+**Live-capture machinery (so evidence is NOT all backfilled at close-out - the recurring miss):**
+- **Auto-card of scan tabs is AUTOMATIC.** The Stop hook fires `scripts/autocard.sh` detached every
+  turn; it renders any FINISHED scan tmux tab into `recon/` (idempotent via `.carded-tabs`). So recon
+  cards accumulate as tabs finish - you do NOT hand-card each scan. Just launch scans in tmux tabs
+  (`vm-scan.sh`) and keep working; the cards appear.
+- **You still hand-card the deliberate EXPLOIT-state shots** as they land - the flag in place, the RCE
+  firing, a shell, an authed panel - since only judgement knows which moment matters, and persist
+  findings to `state.md`/`loot.md`/`paths.md` the moment they land (do not defer to close-out).
+
 **Log each step to `log.md` AS it lands (step 1 -> step 2 -> ...), not at close-out.** The operator follows the box LIVE from `log.md`, so append a line the moment a step works. `log.md` holds the REAL commands - including the messy automation (base64-wrapped scripts, pty `su` helpers, joint one-liners) - so it is reproducible and the operator sees exactly what ran. **`walkthrough.md` is the CLEAN human version:** concrete one-liners a person would type (real IP/host, NO `$VAR`s, NO base64/pty wrappers). If a step needed a script, show the simple human action in the walkthrough (e.g. `su cobra` then type the password) and keep the automation in `log.md` / `poc/scripts/`.
 
 **Read the UI/source hints LITERALLY before fuzzing.** An input `placeholder`, a button label, a referenced `.js`, or leaked source usually tells you the intended input format. (Dodge: the field placeholder said "sudo command parameter" - it wanted `sudo ufw allow <port>`, an allowlist, not injection. Hours were lost fuzzing it as command-injection.)
 
 **Beware locally-substituted payloads = FALSE-POSITIVE RCE (high-severity trap).** A payload containing `$(...)`, backticks, or `$VAR` sent through the VM bridge (or any local shell / a `for p in $(...)` loop) is substituted LOCALLY before it reaches the target - and the tooling VM runs as ROOT, so a reflected `uid=0(root)` may be YOUR OWN box, not the target. ALWAYS single-quote or base64 injection payloads; confirm the target actually executed it with a marker only the target can produce (its hostname, a file only it has). NEVER claim RCE from a reflected `id`/`uid` that matches your attacker host - re-send the exact payload single-quoted and re-check before believing it.
 
-**Preserve exploit scripts and read source.** When you write the exploit script Rule 0 has you fall back to (a payload HTML, an escape/forge script, a webshell) or read a target's source, copy it into `targets/<eng>/poc/scripts/` and card the source with its URL (e.g. `shot.py --term --url-bar`); the reviewer needs the code and the state together, not just a screenshot.
+**Preserve exploit scripts and read source.** When you write the exploit script Rule 0 has you fall back to (a payload HTML, an escape/forge script, a webshell) or read a target's source, copy it into `targets/<eng>/poc/scripts/` and card the source with its URL (e.g. `shot.py --term --url-bar`); the reviewer needs the code and the state together, not just a screenshot. **Save it as `<name>.md` with the code in a ```` ```sh ````/```` ```js ````/```` ```py ```` fence, NOT a bare `.sh`/`.js`/`.py`** - Obsidian only previews `.md`/images in the GUI, so a raw-extension script is invisible to the operator. (`capture.sh log` already writes `.md`; saved page source is `-source.md` with an ```` ```html ```` fence for the same reason.)
 
 **Screenshot EVERY successful step as you go (not at the end).** The walkthrough must be report-ready
 from the `.md` alone. The moment a step LANDS - valid cred / Pwn3d, a BloodHound edge, a GUI foothold
