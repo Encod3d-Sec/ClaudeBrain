@@ -10,6 +10,7 @@ description: SSRF hunting - OOB-mandatory methodology. Cloud metadata, blind SSR
 qmd_query "SSRF server-side request forgery" via wiki-search MCP -> read matching technique page if found.
 ```
 Apply known payloads, bypass variants, and cloud metadata endpoints already documented.
+Bypass variants: [[dns-rebinding]] (hostname re-resolution TOCTOU past an allowlist check), [[open-redirect]] (chain a trusted redirect to reach an internal target).
 
 
 **Self-heal:** If the wiki query returns nothing, create a stub `wiki/techniques/<area>/<slug>.md` (frontmatter + a `## Observed during <engagement>` section built from your findings) before proceeding, so the gap fills instead of silently recurring.

@@ -10,6 +10,7 @@ description: API attack hunting (REST / GraphQL / gRPC) - BOLA/IDOR, BFLA, mass 
 qmd_query "api security BOLA mass assignment" via wiki-search MCP -> read matching page.
 ```
 Core pages: [[api-security]], [[api-testing]]. Overlaps [[access-control]] (BOLA -> hunt-idor), [[jwt-attacks]], [[graphql]] payloads. Payload arsenal: `wiki/payloads/api.md`.
+Protocol/query-language variants: [[grpc-web-attacks]] (gRPC-Web/protobuf transcoder abuse), [[rsql-injection]] / [[rsql]] payload (RSQL/FIQL filter-query injection, e.g. Spring Data REST), [[rate-limit-bypass]] (header/race/distributed-source throttling bypass), [[redos]] payload (catastrophic-backtracking regex DoS in an input validator).
 
 **Self-heal:** wiki query empty -> create stub `wiki/techniques/web/api-security.md` before proceeding.
 

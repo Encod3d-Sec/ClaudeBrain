@@ -9,7 +9,7 @@ description: SQLi and NoSQLi hunting - error-based, boolean-blind, time-based, U
 ```
 qmd_query "SQL injection SQLi" via wiki-search MCP -> read matching technique page if found.
 ```
-Apply known payload variants, NoSQL patterns, and ORM-specific bypasses already documented.
+Apply known payload variants, NoSQL patterns, and ORM-specific bypasses already documented. See [[orm-injection]] for ORM-layer query-builder injection (Django/Rails/Sequelize-style unsafe filter/order-by construction) distinct from raw SQL string concatenation.
 
 
 **Self-heal:** If the wiki query returns nothing, create a stub `wiki/techniques/<area>/<slug>.md` (frontmatter + a `## Observed during <engagement>` section built from your findings) before proceeding, so the gap fills instead of silently recurring.

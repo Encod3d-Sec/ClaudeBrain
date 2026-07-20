@@ -32,7 +32,7 @@ Tooling-first: use rustscan/nmap/feroxbuster/ffuf/nuclei/nxc - never hand-roll a
 
 **Card EVERY scan tab AS it finishes (before exploiting), not at the end of the box:** `scripts/capture.sh recon <eng> <slug> <tab>` renders the tmux tab into `recon/`. Do this for rustscan, nmap, feroxbuster, ffuf, nuclei, AND whatweb (run whatweb in its OWN tab so it can be carded) - even an empty/unhelpful result gets a card, so the operator can see exactly what ran. `<tab>` = the `@id` or sanitized name `vm-scan.sh` printed. (`status.py` surfaces the recon-card count; 0 cards on a web box = you skipped this.)
 
-Run each scan in its own tmux tab on the VM (root, persistent, survives a dropped `vm.sh` call), one tab per target: `bash scripts/vm-scan.sh <eng> <target> '<scan>'` (multi-web target -> `<target>-web-<ip-or-domain>`, one tab each). Screenshot a live/finished tab with `Skill(screenshot)` `--tmux <eng>:<tab>` (use the `@NN` id or sanitized tab name `vm-scan.sh` prints, not a dotted target). The scan commands below are what you launch inside each tab.
+Run each scan in its own tmux tab on the VM (root, persistent, survives a dropped `vm.sh` call). **ONE tmux session per engagement (the `<eng>` name); one WINDOW per parallel scan.** Parallel scans on the SAME host collide if they share a window name (the target), so give each its own window with `--win <tool>`: `bash scripts/vm-scan.sh <eng> <target> '<scan>'` for the first, then `bash scripts/vm-scan.sh --win nuclei <eng> <target> 'nuclei ...'`, `--win ferox`, `--win whatweb`, ... **NEVER bump the session name (`<eng>-nuclei`, `<eng>-ferox`) to dodge a collision** - that scatters tabs across many sessions and breaks single-session recon (recurring drift). (multi-web target -> `--win <ip-or-domain>` per host.) Screenshot a live/finished tab with `Skill(screenshot)` `--tmux <eng>:<tab>` (use the `@NN` id or sanitized tab name `vm-scan.sh` prints, not a dotted target). The scan commands below are what you launch inside each tab.
 
 **vm.sh drops long FOREGROUND commands (exit 255, no output).** A single `bash /root/vm.sh '<cmd>'` that runs more than ~2 min (scan / crack / spray / brute loop) gets its SSH cut mid-run. Run ANY long task DETACHED and poll a file: a tmux tab (`vm-scan.sh`), or `nohup <cmd> >/tmp/out 2>&1 & ` then poll `for i in $(seq 1 60); do grep -q DONE /tmp/out && break; sleep 3; done`. Never block one vm.sh call on a slow task. Stdin is NOT forwarded through vm.sh either - push files by base64-into-the-command (`echo <b64> | base64 -d > ~/file`), and write+run in ONE call to avoid a race.
 
@@ -54,6 +54,21 @@ smbclient -N //$T/<share> -c 'recurse;ls'       # then use smbclient ONLY to pul
 #  (a) CAPTURE IT AS-IS FIRST, before poking: render the page (`capture.sh web <eng> <slug> http://T:PORT/`
 #      -> a browser shot with the URL bar) AND save the raw HTML source to poc/ (the site as it was) --
 #      curl -s http://T:PORT/ > poc/<slug>-source.html. `web` renders; `ev`/`req` card a request/response.
+#      Do this for EVERY distinct web surface you open AS you first explore it, not at close-out:
+#      login pages, dashboards, AND the OSINT/social/support apps (a fake-social feed, a profile
+#      page, an admin panel). A box with web ports and 0 page renders / no OSINT-app render = you
+#      skipped this (recurring miss). For an authed/JS-gated view, render with the session
+#      (shot.py --html on the curl'd authed response, or force the gated element visible).
+#  (a2) READ FULL, don't just grep. When you fetch a file/response (source, a config, an HLS/media
+#      manifest, a JSON body, a JS bundle) READ IT END-TO-END before moving on -- the one line that
+#      is the vuln (a hidden `/v1/ingest/*` endpoint in an `#EXT-X-SESSION-DATA` manifest header, a
+#      commented creds line, an alternate route) is exactly what a narrow `grep <keyword>` skips.
+#      grep to LOCATE in a huge file, then read the surrounding block; never let grep BE the read.
+#  (a3) EXPLOIT REQUESTS -> BURP, not just curl. curl is fine for quick loops, but push every
+#      LOAD-BEARING request (SSRF, LFI, SQLi/injection, an auth/BFLA bypass, a deser payload, the
+#      flag-returning request) into Burp Repeater via `Skill(hunt-burp)` so the operator can replay
+#      it, and card it with `scripts/capture.sh burp` / `Skill(screenshot-burp)`. On a breakthrough,
+#      the exploit request belongs in Repeater with a Burp screenshot, not only a terminal curl.
 #  (c) SOURCE-READ PRIMITIVE first (LFI / file-disclosure / .git / exposed backup): the MOMENT you can
 #      read files, READ ALL THE APP SOURCE (every .php feroxbuster finds), fully, BEFORE attacking a
 #      login or brute-forcing a DB/panel. The real vuln - a SQLi param, a hardcoded cred, a logic flaw,
@@ -72,7 +87,7 @@ smbclient -N //$T/<share> -c 'recurse;ls'       # then use smbclient ONLY to pul
 #      the recon artifact the empty ferox/nuclei card cannot be.
 #  (b) LAUNCH THE SCANNERS IN PARALLEL the MOMENT nmap shows a web port -- ONE tmux tab each, do not wait serially:
 #        feroxbuster (PRIMARY dir/file discovery), nuclei (CVE/misconfig), whatweb (fingerprint, its OWN tab):
-#        scripts/vm-scan.sh <eng> <T>-ferox 'feroxbuster ...' ; <T>-nuclei 'nuclei -u http://$T' ; <T>-whatweb 'whatweb -a3 http://$T'
+#        scripts/vm-scan.sh --win ferox <eng> $T 'feroxbuster ...' ; --win nuclei <eng> $T 'nuclei -u http://$T' ; --win whatweb <eng> $T 'whatweb -a3 http://$T'  (ONE session, a window each)
 #      Analyse the page/source WHILE they run, then CARD each tab (feroxbuster + whatweb + nuclei) when it finishes.
 #      NEVER conclude "no web vuln / no hidden route" until feroxbuster AND nuclei have actually run AND been read.
 # Web (per http port) -- the scans you launch in those tmux tabs:
@@ -307,6 +322,13 @@ After each phase, write to `targets/<eng>/`: hosts/access -> `state.md`, creds -
 
 **Preserve exploit scripts and read source.** When you write the exploit script Rule 0 has you fall back to (a payload HTML, an escape/forge script, a webshell) or read a target's source, copy it into `targets/<eng>/poc/scripts/` and card the source with its URL (e.g. `shot.py --term --url-bar`); the reviewer needs the code and the state together, not just a screenshot. **Save it as `<name>.md` with the code in a ```` ```sh ````/```` ```js ````/```` ```py ```` fence, NOT a bare `.sh`/`.js`/`.py`** - Obsidian only previews `.md`/images in the GUI, so a raw-extension script is invisible to the operator. (`capture.sh log` already writes `.md`; saved page source is `-source.md` with an ```` ```html ```` fence for the same reason. For a targeted EXCERPT of source that revealed something, `capture.sh snippet <eng> <slug> <url-or-file> '<grep-pattern>' '<reveals>'` writes a fenced `poc/NN-<slug>-snippet.md` to paste into walkthrough Recon.)
 
+**Target VIDEO/media -> mp4 into `poc/`, and hand it to the operator EARLY.** If a target yields a
+clip (CCTV/camera feed, HLS stream, screen recording), pull the segments and remux to mp4 straight
+into `targets/<eng>/poc/` (`ffmpeg -i <in> -c copy poc/<slug>.mp4`), then tell the operator where it
+is - a visual puzzle (a shoulder-surf, a code on screen) is far cheaper read by the human than
+brute-analyzed frame-by-frame. Frame extraction/OCR is the FALLBACK, not the opening move. (HopSec
+Asylum lesson: ~40% of a ~1.8M-token run went to montaging keypad frames the operator read in seconds.)
+
 **Screenshot EVERY successful step as you go (not at the end).** The walkthrough must be report-ready
 from the `.md` alone. The moment a step LANDS - valid cred / Pwn3d, a BloodHound edge, a GUI foothold
 (RDP desktop, unlocked KeePass, admin panel), a bad permission found, the DA hash, the flag - capture it
@@ -336,6 +358,33 @@ from every rendered card in `poc/` (it refreshes the Evidence table in place and
 lists missed, e.g. `/internal`), feed the GENERIC token back so the next box is faster:
 `python3 scripts/wordlist-suggest.py` (leak-safe, read-only) then `scripts/wl-add.sh paths <token>`
 / `wl-add.sh params <name>`. Add only generic methodology names - never client-specific branding.
+
+## Lesson: multi-service web escape chain - media-origin BFLA, allowlist-SSRF-to-console, SUID->docker (THM HopSec Asylum)
+
+A themed multi-flag web box (flags submitted to one "escape" endpoint), owned via a chain of
+app-logic bugs, not a memory CVE. Load `Skill(hunt-idor)`/`Skill(hunt-ssrf)`/`Skill(hunt-api)`.
+- **Client-side-only auth = BAC.** A "flag" endpoint gated only by a client-side `session_check`
+  (the JS hides the button) returns the flag when hit directly. Always call the CGI/API endpoint
+  raw, never trust the UI gate.
+- **OSINT combinator password.** A fake-social app leaked an old password (`Word####$` shape) in a
+  post comment + the owner's dog name + birth year. New password = a combinator of those in the
+  same shape (`Dogname<year>!`). Build the small custom list from the OSINT, don't grind rockyou.
+- **Media-origin path BFLA.** The video API gated an admin camera, but the HLS **origin** (nginx)
+  served the same `/hls/<cam>/playlist.m3u8` with NO auth. When an API restricts a stream, test the
+  segment/origin server directly - it often skips the API's authz. (The admin feed was a CCTV
+  shoulder-surf of a keypad: `ffmpeg -vf fps=10` frames; a Goertzel detector on the ~4kHz keypad
+  beep gives the digit COUNT; read the finger position per press.)
+- **Allowlist-SSRF that mints a console token.** A manifest leaked a hidden `/v1/ingest/diagnostics`
+  endpoint (read the FULL manifest - it was in an `#EXT-X-SESSION-DATA` header). It validated the
+  `rtsp_url` host against an allowlist (`vendor-cam.test`), and the allowlisted host was a MAGIC
+  trigger that minted a token for a `socat`-backed shell on another port. Reverse the URL filter
+  (host/scheme allowlist vs userinfo/alt-loopback), and treat any "diagnostics/ingest/probe"
+  endpoint that takes a URL as an SSRF/trigger surface. See [[ssrf]].
+- **SUID-that-only-setuid + `sg`/`newgrp` to grab the group.** Privesc from a low svc account: a
+  custom SUID binary (`diag_shell`) did `setuid(other_user); execl("/bin/bash")` -> you become that
+  UID but KEEP your old groups. If that user is in `docker` (check `/etc/group`), run
+  `sg docker -c '<cmd>'` (or `newgrp docker`) to pick up the group -> docker socket -> root file
+  access (`docker run -v /:/host ...` / `docker exec` the target container). See [[linux-privesc]].
 
 ## Context tools
 

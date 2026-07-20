@@ -10,6 +10,7 @@ description: XSS hunting - reflected, stored, DOM-based. Marker discipline to av
 qmd_query "XSS cross-site scripting" via wiki-search MCP -> read matching technique page if found.
 ```
 Apply known sanitizer bypasses and CSP bypass techniques already documented. Payload arsenals: `wiki/payloads/{xss,prototype-pollution}.md`.
+Related client-side vectors: [[dangling-markup]] (scriptless HTML-injection exfil when script tags are blocked), [[xssi]] (JSONP/script-inclusion info leak), [[browser-extension-attacks]] (content-script/message-passing injection in an installed extension).
 
 
 **Self-heal:** If the wiki query returns nothing, create a stub `wiki/techniques/<area>/<slug>.md` (frontmatter + a `## Observed during <engagement>` section built from your findings) before proceeding, so the gap fills instead of silently recurring.

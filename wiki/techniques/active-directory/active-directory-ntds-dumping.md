@@ -243,3 +243,37 @@ Apply vendor baselines for logging, least privilege, patch cadence, and segmenta
 ## Sources
 
 - Swisskyrepo [InternalAllTheThings](https://github.com/swisskyrepo/InternalAllTheThings) (ingest slug `InternalAllTheThings`).
+
+## A blocked DRSR replication dump does not mean file-level backup rights are useless
+
+`impacket-secretsdump -use-vss` and `netexec smb --ntds` both drive the **DRSR replication
+protocol** (the same RPC interface DCSync uses) to pull the full NTDS.dit remotely. On a
+hardened/modern DC this can fail even for an account that genuinely holds `SeBackupPrivilege` /
+`SeRestorePrivilege` (Backup Operators or equivalent):
+
+```
+[-] RemoteOperations failed: DCERPC Runtime Error: code: 0x5 - rpc_s_access_denied
+[-] DRSR SessionError: code: 0x20f7 - ERROR_DS_DRA_BAD_DN - The distinguished name specified for
+    this replication operation is invalid.
+```
+
+This is expected and NOT proof the backup privilege is unusable - DRSR replication rights
+(`DS-Replication-Get-Changes[-All]`) are a **separate authorization boundary** from local
+`FILE_FLAG_BACKUP_SEMANTICS` file access. A local admin/backup-operator account can legitimately
+lack replication rights while still being able to read ANY file on that host via backup semantics.
+Do not escalate effort trying to force a full remote NTDS dump (`diskshadow` VSS snapshots,
+retrying `-use-vss` with different flags) once DRSR is confirmed denied - pivot instead to a
+direct, file-level backup-mode copy of the SPECIFIC file/target you actually need:
+
+```cmd
+robocopy <source-dir> <dest-dir> <file> /B /R:0     :: /B = backup mode, bypasses NTFS ACL read-deny
+reg save HKLM\SYSTEM C:\temp\SYSTEM.SAV              :: same privilege, for registry hives
+Get-Content <path>                                    :: still fails without /B - ACL denial is real
+```
+
+`robocopy /B` is not NTDS-specific: it bypasses the ACL check for **any** file the backup-privileged
+account can otherwise see but not read/open normally (an admin's Desktop flag, a protected config,
+a locked log file). If the goal is only "read this one denied file" rather than a full domain
+credential dump, this is the lazier and more reliable path once DRSR access is ruled out.
+
+<!-- promoted-slug: ntds-drsr-hardened-separately-from-sebackup -->

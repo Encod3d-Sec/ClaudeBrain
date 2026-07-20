@@ -13,7 +13,8 @@ Given a challenge file or description, identify the category, then read the matc
 |---|---|---|---|
 | ELF/PE binary + "get a shell" / nc to a port | **pwn** | [[binary-exploitation]] | `checksec`; find offset (`cyclic`); [[pwntools]] template; leak libc |
 | Binary + "find the flag" / crackme / no network | **rev** | [[reverse-engineering]] | `file`,`strings`,`checksec`; [[radare2]]/Ghidra; `ltrace`; angr |
-| `n,e,c` / .pem / cipher / "encrypt" / base-looking blob | **crypto** | [[cryptography-attacks]] | identify primitive; `RsaCtfTool`; padding/XOR/hash-ext; CyberChef |
+| `n,e,c` / .pem / cipher / "encrypt" / base-looking blob | **crypto** | [[cryptography-attacks]], [[crypto-ctf-workflow]] | identify primitive; `RsaCtfTool`; padding/XOR/hash-ext; CyberChef |
+| .sol file / ABI+bytecode / contract address / web3 RPC endpoint | **blockchain** | [[smart-contract-web3-attacks]], [[defi-amm-exploitation]] | [[slither]] static analysis; Foundry/Hardhat local fork to reproduce; flash-loan/AMM economic-exploit sims for DeFi |
 | .pcap / .raw memory / disk image / .E01 | **forensics** | [[digital-forensics]] | `file`,`binwalk`; [[volatility]] (mem); [[tshark]]/Wireshark (pcap) |
 | Innocuous image/audio / "look closer" | **stego** | [[steganography]] | `exiftool`,`binwalk`,`strings`; `zsteg`/`steghide`/`stegseek`; spectrogram |
 | URL / web app | **web** | existing hunt skills | auto-triggers (sqli/xss/ssrf/idor/injection...) via triggers.json |

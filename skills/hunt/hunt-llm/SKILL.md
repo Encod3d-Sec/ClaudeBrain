@@ -9,7 +9,7 @@ description: LLM / AI application attack hunting - prompt injection (direct + in
 ```
 qmd_query "llm prompt injection excessive agency" via wiki-search MCP -> read matching page.
 ```
-Core page: [[llm-attacks]]. Payloads: [[llm-prompt-injection]]. Output sinks overlap [[xss]], [[sql-injection]], [[os-command-injection]].
+Core page: [[llm-attacks]]. Payloads: [[llm-prompt-injection]]. Output sinks overlap [[xss]], [[sql-injection]], [[os-command-injection]]. Classical ML models (not just LLMs) fall under [[adversarial-ml]] (evasion, poisoning, model inversion, model theft).
 
 **Self-heal:** wiki query empty -> create stub `wiki/techniques/web/llm-attacks.md` before proceeding.
 

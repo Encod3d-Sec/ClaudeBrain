@@ -30,3 +30,5 @@ owasp-top-10  # OWASP Top 10 framework-level index/methodology map over the web 
 web-moc  # Web domain Map-of-Content, auto-generated navigational hub (meta)
 bug-bounty-reporting  # reporting-phase reference (report structure), not an engagement attack technique
 essential-skills  # foundational skills primer; not surfaced by a specific recon/prompt context
+macos-moc  # map-of-content navigational hub for the macos domain (also a direct hunt-macos anchor + playbook ref)
+blockchain-moc  # map-of-content navigational hub for the blockchain domain

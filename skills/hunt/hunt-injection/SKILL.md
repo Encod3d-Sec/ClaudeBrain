@@ -9,7 +9,8 @@ description: GraphQL IDOR/auth-bypass, XXE file-read/SSRF (SVG/DOCX/SAML), SSTI 
 ```
 qmd_query "GraphQL XXE SSTI injection" via wiki-search MCP -> read matching technique page if found.
 ```
-Apply known introspection bypass and XXE OOB techniques already documented. Payload arsenals: `wiki/payloads/{graphql,xxe,ssti,ldap,xpath,crlf}.md`.
+Apply known introspection bypass and XXE OOB techniques already documented. Payload arsenals: `wiki/payloads/{graphql,xxe,ssti,ldap,xpath,crlf}.md`, [[xslt]] payloads.
+Other XML-family surfaces: [[soap-attacks]] (SOAP/JAX-WS auth-bypass and threadlocal issues), [[xslt-injection]] (server-side XSLT transform -> SSRF/LFI/RCE via `document()`/extension functions).
 
 
 **Self-heal:** If the wiki query returns nothing, create a stub `wiki/techniques/<area>/<slug>.md` (frontmatter + a `## Observed during <engagement>` section built from your findings) before proceeding, so the gap fills instead of silently recurring.

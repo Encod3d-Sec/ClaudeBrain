@@ -9,7 +9,7 @@ description: IDOR / BOLA hunting - two-account methodology, sequential ID enumer
 ```
 qmd_query "IDOR insecure direct object reference access control" via wiki-search MCP -> read matching technique page if found.
 ```
-Apply known patterns and GraphQL IDOR techniques already documented. Payload arsenal: `wiki/payloads/idor.md`.
+Apply known patterns and GraphQL IDOR techniques already documented. Payload arsenal: `wiki/payloads/idor.md`. See [[uuid-insecurities]] for the v1-UUID timestamp/MAC sandwich attack when an object ID is a UUID rather than a sequential integer.
 
 
 **Self-heal:** If the wiki query returns nothing, create a stub `wiki/techniques/<area>/<slug>.md` (frontmatter + a `## Observed during <engagement>` section built from your findings) before proceeding, so the gap fills instead of silently recurring.

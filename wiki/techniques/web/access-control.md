@@ -600,3 +600,26 @@ ruby -e 'require "hashids"; puts Hashids.new("ClassName",30).encode(380)' # forg
   id and read every record. See [[access-control]].
 
 <!-- promoted-slug: acts-as-hashids-idor -->
+
+## Media/stream origin BFLA - the API gates the stream, the origin serves it unauth
+
+An API can enforce authorization on the *request-a-stream* call while the actual media (HLS/DASH
+segments, thumbnails) is served by a separate **origin/CDN** that enforces nothing. If a role-gated
+"admin camera" (or premium/paid video) is fetched through a ticketed API but the underlying
+`.m3u8`/segment lives on a plain static origin, request it there directly and skip the API's authz:
+
+```bash
+# API path (authorized): needs a role-gated ticket
+POST /v1/streams/request {"camera_id":"cam-admin","tier":"admin"}  -> ticket -> /v1/streams/<t>/manifest.m3u8
+# Origin path (often UNauthenticated): guess the stream key from the API's manifest/segment URLs
+curl -s http://<origin-host>:<port>/hls/cam-admin/playlist.m3u8   # 200, no token -> BFLA
+curl -s http://<origin-host>/hls/cam-admin/playlist000.ts -o s0.ts
+```
+
+Test methodology: capture the manifest an *authorized* stream returns, note the origin host/port and
+the path scheme (`/hls/<id>/...`, `/vod/<id>/...`), then re-request the **restricted** id's manifest
+and segments straight from the origin with no token. Same idea for any resource where a gateway/API
+authorizes but a static/object store (S3-style bucket, image CDN, download host) serves the bytes.
+Reassemble segments with `ffmpeg -i all.ts ...` to review the content. Related: [[idor]], [[ssrf]].
+
+<!-- promoted-slug: media-origin-bfla -->

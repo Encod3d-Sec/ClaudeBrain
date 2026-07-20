@@ -5,7 +5,10 @@
     "\\bxss\\b|cross-site scripting": "hunt-xss",
     "\\bsqli\\b|sql injection": "hunt-sqli",
     "idor|\\bbola\\b|broken object level": "hunt-idor",
-    "broken access control|authorization bypass|authz bypass|broken function level|\\bbfla\\b": ["hunt-idor", "hunt-api"],
+    "broken access control|authorization bypass|authz bypass|broken function level|\\bbfla\\b": [
+      "hunt-idor",
+      "hunt-api"
+    ],
     "\\brce\\b|command injection|remote code execution": "hunt-rce",
     "auth bypass|account takeover|\\bato\\b": "hunt-auth",
     "oauth|saml|\\bsso\\b|federation|\\bokta\\b|identity provider": "hunt-federation",
@@ -44,7 +47,8 @@
     "cors misconfig|cors misconfiguration|cross-origin resource sharing|acao wildcard|access-control-allow-origin": "hunt-api",
     "modbus|\\bscada\\b|\\bplc\\b[ -]?(programming|attack|register|coil|logic|ladder|exploit|controller|firmware|hack|pentest)|s7comm|siemens s7|ethernet/ip|\\benip\\b|\\bdnp3\\b|openplc|bacnet|opc-?ua|niagara fox|profinet|holding register|over-?pressure|safety interlock|iso-?tsap|\\bhmi\\b|industrial control|\\bot\\b (security|protocol|network|pentest)": "hunt-ics",
     "grab a (shot|screenshot)|take a (screen-?shot|screenshot)|screen-?shot (of|the)\\b|capture (the )?(poc|evidence|page|dashboard|screen)|poc (screenshot|image|capture)|evidence (shot|screenshot|capture)|visual (poc|evidence)": "screenshot",
-    "write (the )?walkthrough|assemble (the )?walkthrough|close out (the )?(box|engagement|machine|target)": "walkthrough"
+    "write (the )?walkthrough|assemble (the )?walkthrough|close out (the )?(box|engagement|machine|target)": "walkthrough",
+    "tcc bypass|gatekeeper bypass|\\bsip bypass\\b|macos privesc|mac os x privesc|xpc (abuse|injection)|dylib injection|keychain dump|macos persistence|launchd (agent|daemon) persist|codesign bypass|dirty nib|amfi bypass|mach-o injection": "hunt-macos"
   },
   "_surface_comment": "Heuristic attack-surface terms. Lower confidence than 'triggers' -> softer 'consider' suggestion, escapable when not about testing. Keep anchored (e.g. 'api endpoint', not bare 'endpoint') to avoid over-firing. Add/trim from trigger-stats.py data.",
   "surface_triggers": {
@@ -55,7 +59,9 @@
     "api endpoint|api route|rest endpoint|json endpoint|graphql endpoint|swagger ui|openapi spec": "hunt-api",
     "(profile|account|user|order|invoice|document) (id|page|settings)|view (other|another|someone else'?s) (user|account|order)|object reference|numeric id in (the )?url|change the id": "hunt-idor",
     "search (box|field|bar|function|feature)|comment (box|field|form|section)|message (field|box)|contact form|feedback form|review (form|field)|name field|bio field|rich text": "hunt-xss",
-    "redirect (param|url|parameter)|return ?url|callback url|\\bnext=|\\burl=|fetch (a )?url|webhook (url|endpoint)|image proxy|pdf (export|generator)": ["hunt-ssrf"],
+    "redirect (param|url|parameter)|return ?url|callback url|\\bnext=|\\burl=|fetch (a )?url|webhook (url|endpoint)|image proxy|pdf (export|generator)": [
+      "hunt-ssrf"
+    ],
     "checkout (flow|process|page|step|form)|shopping cart|payment (flow|form|page)|coupon|discount code|promo code|quantity field|order (total|amount)|refund|account balance|wallet|gift card": "hunt-bizlogic",
     "\\bcoil\\b|process variable|ladder (logic|program)|pump (control|station|simulator)|cooling system|pressure (setpoint|gauge)|plant (control|simulator|monitor)|control (coil|register)|analog (input|output) register": "hunt-ics",
     "administrator flag|\\bwinrm\\b|\\bkerberos\\b|\\bkdc\\b|smb signing|null session|\\bsam(r| database)|\\bldap\\b (bind|anonymous)|[a-z0-9-]+\\.local\\b|domain (user|account|machine account)|\\bgpo\\b|\\bsysvol\\b|\\bnetlogon\\b": "hunt-ad",

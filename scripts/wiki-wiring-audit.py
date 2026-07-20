@@ -44,20 +44,29 @@ def slug(path: str) -> str:
     return os.path.splitext(os.path.basename(path))[0]
 
 
-def audited_pages() -> dict[str, str]:
-    """slug -> path for every technique/payload page."""
-    out = {}
+def audited_pages() -> dict[str, list[str]]:
+    """slug -> ALL paths sharing that slug, for every technique/payload page.
+
+    Two files across different subtrees can share a basename (e.g. payloads/xss.md and
+    techniques/web/xss.md - 20 such collisions exist in this wiki). A plain dict keyed by
+    slug with direct assignment silently DROPS one of them from the audit entirely (never
+    counted, never checked); list-valued entries keep every file visible.
+    """
+    out: dict[str, list[str]] = {}
     for sub in AUDITED_SUBDIRS:
         for f in glob.glob(os.path.join(WIKI, sub, "**", "*.md"), recursive=True):
-            out[slug(f)] = f
+            out.setdefault(slug(f), []).append(f)
     return out
 
 
-def all_page_paths() -> dict[str, str]:
-    """slug -> path for EVERY wiki page (hubs/moc may live outside audited subtrees)."""
-    out = {}
+def all_page_paths() -> dict[str, list[str]]:
+    """slug -> ALL paths sharing that slug, for EVERY wiki page (hubs/moc may live outside
+    audited subtrees). Used to expand one-hop links from an anchor: if two files share the
+    anchor's slug, both sets of outbound links must be unioned, or the one whose links
+    happen not to be picked first silently loses its one-hop propagation."""
+    out: dict[str, list[str]] = {}
     for f in glob.glob(os.path.join(WIKI, "**", "*.md"), recursive=True):
-        out.setdefault(slug(f), f)
+        out.setdefault(slug(f), []).append(f)
     return out
 
 
@@ -122,13 +131,17 @@ def compute():
     anchors = playbook_refs() | skill_body_links()
 
     # Tier (c): one hop -- pages linked FROM an anchor page (the hub lists its children).
+    # An anchor slug may match >1 file (duplicate basename across subtrees); union links
+    # from ALL of them, not just whichever glob() happened to return first.
     one_hop = set()
     for a in anchors:
-        p = everypath.get(a)
-        if p:
+        for p in everypath.get(a, []):
             one_hop |= links_in(p)
 
     wired = anchors | one_hop
+    # Orphan status is per-SLUG (that's the unit a [[wikilink]]/playbook ref names) -- if a
+    # slug resolves to >1 file, either file being wired counts as the slug being wired, since
+    # a link to the bare slug can't distinguish which twin was intended.
     orphans = sorted(s for s in pages if s not in wired and s not in exempt)
     return pages, wired, exempt, orphans, anchors
 
@@ -169,15 +182,18 @@ def main():
     tools, tool_orphans, _ = compute_tools()
     cheats, cheat_orphans, _ = compute_cheats()
 
+    # duplicate-slug diagnostic: surfaced so a future collision doesn't silently hide a page again
+    dupes = {s: paths for s, paths in pages.items() if len(paths) > 1}
+
     by_dom: dict[str, list[str]] = {}
     for s in orphans:
-        dom = domain_of(pages[s])
+        dom = domain_of(pages[s][0])
         if args.domain and args.domain not in dom:
             continue
         by_dom.setdefault(dom, []).append(s)
 
-    total = len(pages)
-    wired_n = sum(1 for s in pages if s in wired or s in exempt)
+    total = sum(len(v) for v in pages.values())  # count FILES, not unique slugs
+    wired_n = sum(len(v) for s, v in pages.items() if s in wired or s in exempt)
     cov = 100.0 * wired_n / total if total else 100.0
 
     tcov = 100.0 * (len(tools) - len(tool_orphans)) / len(tools) if tools else 100.0
@@ -185,9 +201,10 @@ def main():
     if args.json:
         print(json.dumps({
             "total": total, "wired_or_exempt": wired_n, "coverage_pct": round(cov, 1),
-            "orphans": [{"slug": s, "domain": domain_of(pages[s]), "path": os.path.relpath(pages[s], ROOT)}
-                        for s in orphans if (not args.domain) or args.domain in domain_of(pages[s])],
+            "orphans": [{"slug": s, "domain": domain_of(pages[s][0]), "path": os.path.relpath(pages[s][0], ROOT)}
+                        for s in orphans if (not args.domain) or args.domain in domain_of(pages[s][0])],
             "anchors": sorted(a for a in anchors),
+            "duplicate_slugs": {s: [os.path.relpath(p, ROOT) for p in paths] for s, paths in dupes.items()},
             "tools_total": len(tools), "tools_coverage_pct": round(tcov, 1), "tool_orphans": tool_orphans,
             "cheats_total": len(cheats), "cheat_orphans": cheat_orphans,
         }, indent=2))
@@ -202,6 +219,8 @@ def main():
         print("  unwired tools:", ", ".join(tool_orphans))
     if cheat_orphans:
         print("  unwired cheatsheets:", ", ".join(cheat_orphans))
+    if dupes:
+        print(f"  duplicate slugs ({len(dupes)}, both files audited independently):", ", ".join(sorted(dupes)))
     print("-" * 70)
     for dom in sorted(by_dom):
         print(f"\n### {dom}  ({len(by_dom[dom])} orphaned)")

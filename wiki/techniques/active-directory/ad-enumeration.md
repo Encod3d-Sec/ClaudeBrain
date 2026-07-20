@@ -387,3 +387,32 @@ For ticket-level detail after BH flags **delegation** or **DCSync**, use [[kerbe
 - [[password-ad-user-comment]]
 - [[powershell]]
 - [[trust-relationship]]
+
+## Username enumeration via an exposed backup/legacy web directory
+
+When anonymous SMB (null-session shares, RID-brute) and anonymous LDAP bind are both denied on the
+DC, and the org's public web presence has no real staff data (a stock template with placeholder
+names/emails is a common decoy), check for a non-standard content-discovery hit rather than
+stopping at "no enumeration possible". A recursive content scan (feroxbuster with backup/office
+extensions: `bak,zip,old,ods,xlsx,csv,docx,conf`) sometimes turns up a forgotten `/backup/` (or
+similarly named) directory with IIS/Apache directory listing enabled, containing an org file that
+maps `Full Name -> username` (an HR export, an `.ods`/`.xlsx` employee list, an old org chart).
+
+```bash
+feroxbuster -u http://<target> -w raft-medium-directories.txt -x bak,zip,old,ods,xlsx,csv,docx,conf -d 2
+# hit: 301 http://<target>/backup/  ->  directory listing exposes employees.ods (or similar)
+curl -s http://<target>/backup/<file>.ods -o employees.ods
+unzip -p employees.ods content.xml | sed -e 's/<[^>]*>/ /g'   # ODS is a zip; content.xml has the text
+```
+
+This is a **pre-auth username source independent of AD enumeration entirely** - it does not require
+any working AD auth, anonymous bind, or RID cycling. Once usernames are recovered, validate with
+`kerbrute userenum` (kerberos pre-auth responses distinguish valid from invalid principals without
+any credential), which also surfaces additional accounts the leaked file didn't include. Every
+validated username becomes an AS-REP-roast + spray candidate.
+
+Do not stop at scraping the public site's own rendered content for names when it is plainly generic
+placeholder/template content (unmodified stock names, `contact@example.com`) - that is a decoy dead
+end. The signal is in what content-discovery surfaces that the rendered site never links to.
+
+<!-- promoted-slug: ad-username-enum-exposed-backup-file -->

@@ -1602,3 +1602,13 @@ Contrast with [[linux-rootkits]] (the same modules used post-root for persistenc
 rootkit is repurposed as the privesc primitive itself.
 
 <!-- promoted-slug: sudo-insmod-lkm-rootkit -->
+
+## Related: app-specific Linux privesc
+
+Beyond the OS-level primitives above, a specific installed application can carry its own root-run
+privesc path:
+
+- [[logstash-privesc]] — Logstash pipeline/config abuse for root (runs as root by default on many installs).
+- [[splunk-lpe-persistence]] — Splunk forwarder/app-deployment local privesc and persistence.
+- [[node-cef-debugger-abuse]] — Node.js `--inspect` and CEF/Chromium (Electron) debugger-port abuse for RCE/privesc.
+- [[freeipa-pentesting]] — FreeIPA (Kerberos+LDAP identity management, the AD-equivalent on Linux) enumeration and lateral movement/privesc.
