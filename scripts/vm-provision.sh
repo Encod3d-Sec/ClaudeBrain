@@ -61,6 +61,9 @@ fi
 [ -f /opt/arsenal/pspy64 ] || { curl -sSfL https://github.com/DominicBreuker/pspy/releases/latest/download/pspy64 -o /opt/arsenal/pspy64 && chmod +x /opt/arsenal/pspy64 && echo "  arsenal pspy64" || echo "  MISS pspy64"; }
 [ -f /opt/arsenal/linpeas.sh ] || { curl -sSfL https://github.com/peass-ng/PEASS-ng/releases/latest/download/linpeas.sh -o /opt/arsenal/linpeas.sh && chmod +x /opt/arsenal/linpeas.sh && echo "  arsenal linpeas.sh" || echo "  MISS linpeas.sh"; }
 [ -f /opt/arsenal/winPEASx64.exe ] || { curl -sSfL https://github.com/peass-ng/PEASS-ng/releases/latest/download/winPEASx64.exe -o /opt/arsenal/winPEASx64.exe && echo "  arsenal winPEASx64.exe" || echo "  MISS winPEASx64.exe"; }
+# Java deserialization: a JDK so gadgets can be BUILT (javac), + a best-effort ysoserial jar.
+command -v javac >/dev/null 2>&1 || { \$SUDO DEBIAN_FRONTEND=noninteractive apt-get install -y -qq default-jdk-headless >/dev/null 2>&1 && echo "  jdk (javac)" || echo "  MISS jdk (need javac to build deser gadgets)"; }
+[ -s /opt/arsenal/ysoserial.jar ] || { curl -sSfL -o /opt/arsenal/ysoserial.jar https://jitpack.io/com/github/frohoff/ysoserial/master/ysoserial-master.jar 2>/dev/null; [ "\$(stat -c%s /opt/arsenal/ysoserial.jar 2>/dev/null || echo 0)" -gt 100000 ] && echo "  arsenal ysoserial.jar" || { rm -f /opt/arsenal/ysoserial.jar; echo "  MISS ysoserial.jar (jitpack flaky; build a gadget by hand -> wiki payloads/deserialization 'Build the gadget yourself')"; }; }
 REMOTE_EOF
 )
 
