@@ -42,6 +42,15 @@ URL patterns:
 
 High-value tech: Kubernetes (internal API), GCP/AWS/Azure (metadata), headless browsers (PDF/screenshot), link-preview features, file-import pipelines.
 
+**Check SCHEME control EARLY (before grinding host/port bypasses).** If the sink concatenates your input
+as a raw URL PREFIX with no hardcoded scheme (e.g. pycurl `setopt(URL, server + '/path')`, `requests.get(host+path)`;
+tell: the default value has no `http://`, like `server=host:8087`), you control the scheme, not just the
+host -> try `file:///etc/passwd` and `file:///<app-source>` for a straight **LFI**, and `gopher://` for
+internal TCP. The moment `file://` reads a file, READ THE APP SOURCE FIRST - it reveals the real ports/
+auth/next-steps faster than any probing, and on Flask `debug=True` a file-read computes the console PIN ->
+RCE ([[werkzeug-debug-console-rce]]). Also: pointing the sink at your own listener leaks its outbound
+request headers (API keys/tokens). See [[wiki/payloads/ssrf]] "Scheme-controllable SSRF -> file:// LFI".
+
 ## Once outbound is confirmed: ENUMERATE INTERNAL FIRST (do not skip)
 An internal-only service is the usual SSRF objective and it is **invisible to your external nmap**,
 so the SSRF is your only scanner. Before grinding cloud metadata or filter bypasses, sweep

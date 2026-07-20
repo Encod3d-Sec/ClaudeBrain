@@ -160,3 +160,26 @@ recollapse, SSRF-PayloadMaker, PortSwigger url-validation-bypass cheat sheet.
 <!-- auto-wired: context-reachable sub-technique pages -->
 - [[open-redirect]]
 - [[dns-rebinding]]
+
+### Scheme-controllable SSRF -> file:// LFI (when the param is a raw URL prefix)
+
+If the app builds the outbound URL by **concatenating your input as the prefix with no hardcoded
+scheme** - e.g. pycurl/libcurl `crl.setopt(URL, server + '/path/' + id)` or `requests.get(host + path)`
+where you control `server`/`host` - then you control the SCHEME, not just the host. Test this EARLY
+(before grinding host/port bypasses): supply a full URL with a different scheme.
+
+```
+# app: curl(server + '/public-docs/' + id + '.pdf')  ; server is attacker-controlled
+?server=file:///etc/passwd%23      -> file:///etc/passwd#/public-docs/..  (the '#' truncates the suffix) = LFI
+?server=file:///usr/src/app/app.py%23   -> read the app source (then it usually collapses the whole box)
+?server=gopher://127.0.0.1:6379/_<payload>%23   -> gopher to internal services
+```
+
+libcurl (pycurl) honours `file://`, `gopher://`, `dict://`, `ftp://`, `scp://`, ... whenever the scheme
+is not fixed by the app. Tells you're in this case: the default value has no `http://` (e.g.
+`server=host.example:8087`) and libcurl "guesses" http. The moment `file://` reads a file, **read the
+app source first** - it reveals the real ports, auth logic, and next steps faster than any probing. A
+blind SSRF sink also leaks outbound request headers (API keys/tokens) if you point `server` at your own
+listener. See [[werkzeug-debug-console-rce]] (turn the file-read into RCE on Flask debug apps).
+
+<!-- promoted-slug: ssrf-scheme-control-lfi -->
