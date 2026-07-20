@@ -28,16 +28,23 @@ def main():
         return
     if not d:
         return
-    # Always-on live capture: fire autocard.sh DETACHED (never blocks the turn, no LLM tokens) to
-    # render any scan tmux tab that FINISHED since last turn into recon/. This is the fix for
-    # "recon only ever got the rustscan card" - cards now accumulate live, not at close-out.
+    # Always-on live capture: card any scan tmux tab that FINISHED since last turn into recon/.
+    # Run it SYNCHRONOUSLY but BOUNDED (autocard caps itself to AUTOCARD_MAX tabs/run + per-SSH
+    # timeout, so a run finishes in a few seconds, inside the hook's 10s budget). A detached spawn
+    # was unreliable over the WSL/remote-VM SSH bridge - the grandchild often never ran, so cards
+    # only showed up in one late batch at close-out instead of trickling in live. In-hook + capped
+    # trades a couple of seconds at turn-end for deterministic live cards. Hard-bounded by timeout
+    # so a dead VM can never hang the hook.
     try:
         import subprocess
         sc = os.path.join(_engagement.VAULT, "scripts", "autocard.sh")
         if os.path.isfile(sc):
-            subprocess.Popen(["bash", sc, os.path.basename(d)],
-                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                             stdin=subprocess.DEVNULL, start_new_session=True)
+            env = dict(os.environ, AUTOCARD_MAX=os.environ.get("AUTOCARD_MAX", "2"))
+            # total budget 8s (> autocard's 5s per-SSH cap, < the harness 10s hook timeout);
+            # the fast nudge logic below needs only sub-second, so it is never starved.
+            subprocess.run(["bash", sc, os.path.basename(d)],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                           stdin=subprocess.DEVNULL, env=env, timeout=8)
     except Exception:
         pass
     if not _engagement.is_solved(d):

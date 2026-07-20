@@ -301,15 +301,17 @@ container -> internal Flask app pickle-deser RCE -> `cap_sys_module` kmod escape
 After each phase, write to `targets/<eng>/`: hosts/access -> `state.md`, creds -> `loot.md`, chain -> `paths.md`, vulns -> `Vuln-index.md`, dead-ends -> `Deadends.md`, narrative -> `log.md`. Flags go in the writeup, never in `session/*` or `wiki/`.
 
 **Live-capture machinery (so evidence is NOT all backfilled at close-out - the recurring miss):**
-- **Auto-card of scan tabs is a BEST-EFFORT backstop, NOT a guarantee.** The Stop hook fires
-  `scripts/autocard.sh` DETACHED each turn to render any FINISHED scan tmux tab into `recon/`
-  (idempotent via `.carded-tabs`). But the detached spawn is UNRELIABLE over the remote-VM SSH
-  bridge (WSL/headless: the grandchild has been observed to never run - no `.carded-tabs`, no cards -
-  leaving `recon/` empty and the miss discovered only at close-out). So do NOT rely on it: **card as
-  you go remains PRIMARY** (Phase 1: `capture.sh recon <eng> <slug> <tab>` per tab as it finishes),
-  and **before you leave recon for exploitation, VERIFY** `ls targets/<eng>/recon/` is non-empty
-  (or `status.py`'s recon-card count > 0). 0 cards on a web box while scan tabs have finished = the
-  backstop silently failed; hand-card them now. Treat any card autocard happens to produce as a bonus.
+- **Auto-card of scan tabs is a backstop, still NOT a substitute for judgement.** The Stop hook runs
+  `scripts/autocard.sh` SYNCHRONOUSLY-but-BOUNDED each turn (caps to `AUTOCARD_MAX=2` tabs/run +
+  per-SSH `timeout`, so it finishes in a few seconds inside the hook window) to render any FINISHED
+  scan tmux tab into `recon/` (idempotent via `.carded-tabs`; cards named `auto-<tab>`). This replaced
+  the old DETACHED spawn, which was unreliable over the WSL/remote-VM SSH bridge - the grandchild
+  often never ran, so cards only appeared in one late batch at close-out. In-hook + capped makes them
+  trickle in live and deterministically. It is still only a backstop for SCAN tabs: **hand-card as you
+  go remains PRIMARY** for the deliberate exploit shots (Phase 1: `capture.sh recon <eng> <slug> <tab>`
+  per tab as it finishes), and **before leaving recon, VERIFY** `ls targets/<eng>/recon/` is non-empty
+  (or `status.py`'s recon-card count > 0). 0 cards while scan tabs have finished = something's wrong
+  (VM down / `timeout` missing); hand-card them now.
 - **You still hand-card the deliberate EXPLOIT-state shots** as they land - the flag in place, the RCE
   firing, a shell, an authed panel - since only judgement knows which moment matters, and persist
   findings to `state.md`/`loot.md`/`paths.md` the moment they land (do not defer to close-out).

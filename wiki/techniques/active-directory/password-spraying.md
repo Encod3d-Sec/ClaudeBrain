@@ -141,3 +141,24 @@ Apply vendor baselines for logging, least privilege, patch cadence, and segmenta
 ## Sources
 
 - Swisskyrepo [InternalAllTheThings](https://github.com/swisskyrepo/InternalAllTheThings) (ingest slug `InternalAllTheThings`).
+
+## SMB spray false positives when the Guest account is enabled
+
+When a target has the Guest account enabled (netexec shows `Null Auth: True`), a netexec/CME **SMB**
+spray reports success for credentials that are not actually valid: a non-existent username falls back
+to a Guest logon, so the line shows `[+] domain\<user>:<pass> (Guest)`. A real account with a wrong
+password instead returns `STATUS_LOGON_FAILURE`. So the `(Guest)` tag = false positive, not a hit.
+
+- Always filter it out: `nxc smb <dc> -u users.txt -p '<pass>' --continue-on-success | grep '\[+\]' | grep -v '(Guest)'`.
+- Watch for junk usernames in your list (RID-brute parsing artifacts like `A`, `AD`, `G`, `<digits>SA`);
+  they are non-existent so they light up as `(Guest)` for every password and pollute the output. Clean
+  the list to real accounts first (e.g. `grep -E '^[A-Z]+_[A-Z]'` for a `FIRST_LAST` scheme).
+- A real hit is a `[+]` line with **no** `(Guest)` suffix (or `(Pwn3d!)` if local admin).
+- To sidestep guest fallback entirely, spray over **Kerberos pre-auth** (kerbrute / `nxc ... -k`) instead
+  of SMB: the KDC validates the actual password and there is no guest fallback.
+
+Tooling gotcha for the same enabled-Guest setup: authenticating impacket as the empty-password guest
+over a TTY-less bridge makes it prompt via `getpass` and die with `EOFError`. Pass the empty-password
+NT hash instead: `-hashes :31d6cfe0d16ae931b73c59d7e0c089c0`.
+
+<!-- promoted-slug: smb-spray-guest-fallback-fp -->

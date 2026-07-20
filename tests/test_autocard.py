@@ -44,3 +44,64 @@ def test_existing_eng_no_tabs_exits_clean(tmp_path):
         if made:
             import shutil
             shutil.rmtree(d, ignore_errors=True)
+
+
+def _mock_env(tmp_path, tabs):
+    """VM_SH mock: list-windows -> the given tabs; capture-pane -> a finished shell prompt.
+    CAPTURE_SH mock: always succeeds (record each card call to a file)."""
+    vm = tmp_path / "vm.sh"
+    vm.write_text(
+        "#!/usr/bin/env bash\n"
+        'case "$1" in\n'
+        f'  *list-windows*) printf "%s\\n" {" ".join(tabs)} ;;\n'
+        '  *capture-pane*) printf "\\u2514\\u2500# " ;;\n'   # kali prompt = "finished"
+        'esac\n')
+    vm.chmod(0o755)
+    cap = tmp_path / "capture.sh"
+    calls = tmp_path / "calls.log"
+    cap.write_text("#!/usr/bin/env bash\n"
+                   f'printf "%s\\n" "$4" >> "{calls}"\n'   # $4 = the tab
+                   "exit 0\n")
+    cap.chmod(0o755)
+    return dict(os.environ, VM_SH=str(vm), CAPTURE_SH=str(cap)), calls
+
+
+def _tmp_eng(tmp_path, name="boxcap"):
+    d = os.path.join(REPO, "targets", name)
+    os.makedirs(d, exist_ok=True)
+    return name, d
+
+
+def test_caps_tabs_per_run(tmp_path):
+    # 4 finished tabs, AUTOCARD_MAX=2 -> only 2 carded this run; the rest wait for next run.
+    name, d = _tmp_eng(tmp_path)
+    open(os.path.join(d, ".carded-tabs"), "w").close()
+    try:
+        env, calls = _mock_env(tmp_path, ["nmap", "nxc", "asrep", "crack"])
+        env["AUTOCARD_MAX"] = "2"
+        r = _run(name, env=env)
+        assert r.returncode == 0
+        carded = open(os.path.join(d, ".carded-tabs")).read().split()
+        assert len(carded) == 2, f"expected 2 cards/run, got {carded}"
+        # a second run cards the next 2 (idempotent: no tab carded twice)
+        _run(name, env=env)
+        carded2 = open(os.path.join(d, ".carded-tabs")).read().split()
+        assert len(carded2) == 4 and len(set(carded2)) == 4, carded2
+    finally:
+        import shutil
+        shutil.rmtree(d, ignore_errors=True)
+
+
+def test_already_carded_tab_skipped(tmp_path):
+    # a tab already in .carded-tabs is never re-carded
+    name, d = _tmp_eng(tmp_path, "boxcap2")
+    with open(os.path.join(d, ".carded-tabs"), "w") as f:
+        f.write("nmap\n")
+    try:
+        env, calls = _mock_env(tmp_path, ["nmap"])
+        env["AUTOCARD_MAX"] = "5"
+        _run(name, env=env)
+        assert not calls.exists(), "already-carded tab must not trigger a capture call"
+    finally:
+        import shutil
+        shutil.rmtree(d, ignore_errors=True)
