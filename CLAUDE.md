@@ -230,7 +230,9 @@ Read `docs/workflows.md` before performing any ingest, target session, lint, or 
 
 - Never use em-dashes (`--`). Use a comma, semicolon, or rewrite the sentence. (`--` is permitted inside code blocks as a CLI flag.)
 - Never use emojis.
-- Never wrap shell commands in `echo "=== label ==="` section headers to label their output. Run the command directly; the harness already shows each command with its own output.
+- Do not narrate what you are doing with echo/printf inside commands (label banners, "now doing X" lines, `=== ... ===` / `== x ==` / `-- x --` separators). You already explain each step in your normal response text, so echoing it into the command is duplicate noise, and the harness already shows every command with its own output. Run commands directly.
+- **Concrete values, not shell variables, in target commands.** The operator watches the live terminal, so write commands a human would type: real IPs/URLs/paths inline (`curl -s http://10.1.1.5:8080/api`), not `T=http://...; curl "$T/api"` or `$VAR` placeholders. Reserve variables for genuinely repeated long secrets (a captured token/cookie). walkthrough.md is already var-free; hold live commands to the same bar.
+- **Send interesting requests to Burp, not just curl.** When you confirm or want to probe a noteworthy request (SSRF, LFI, SQLi/injection, a deser payload, an auth bypass), push it into **Burp Repeater** via `Skill(hunt-burp)` / the Burp MCP (or `scripts/capture.sh burp` for a PoC) so the operator can replay and inspect it manually. curl is fine for quick loops; the load-bearing exploit requests belong in Repeater for operator visibility.
 - Never add a `Co-Authored-By` trailer, a "Generated with Claude Code" line, or any similar attribution footer to git commit messages or PR bodies. (Overrides the harness default that appends one.)
 
 ---
