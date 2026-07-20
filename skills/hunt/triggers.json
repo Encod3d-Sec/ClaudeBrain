@@ -13,7 +13,7 @@
     "m365|entra|azure ad|exchange online": "hunt-m365",
     "fortigate|pulse secure|cisco vpn|palo alto|vpn appliance": "hunt-vpn",
     "active directory|kerberoast|as-rep|asreproast|\\bdcsync\\b|\\badcs\\b|bloodhound|golden ticket|silver ticket|pass-the-hash|\\bntds\\b|\\besc[0-9]|ntlm relay|domain controller|domain admin|secretsdump|server operators|backup operators|dnsadmins|\\bkrbtgt\\b|\\brbcd\\b|shadow credential|(un)?constrained delegation|kerbrute|\\bnetexec\\b|crackmapexec|evil-winrm": "hunt-ad",
-    "\\baws\\b|\\bs3 bucket|\\bgcp\\b|\\bimds\\b|metadata service|169\\.254\\.169\\.254|iam privesc|\\bec2\\b|service account key|cloud credential": "hunt-cloud",
+    "\\baws\\b|\\bs3 bucket|\\bgcp\\b|\\bimds\\b|metadata service|169\\.254\\.169\\.254|iam privesc|\\bec2\\b|service account key|cloud credential|\\bazure\\b|managed identit|key ?vault|onmicrosoft|az login|azure subscription|\\barm token|az cli|azure module": "hunt-cloud",
     "deserializ|deserialis|ysoserial|gadget chain|\\bpickle\\b|viewstate|marshal\\.load|phpggc": "hunt-deserialization",
     "request smuggling|http smuggling|cl\\.te|te\\.cl|desync|h2c smuggl": "hunt-smuggling",
     "file upload|unrestricted upload|upload (a )?(web)?shell|malicious file upload|\\bzip slip\\b": "hunt-upload",

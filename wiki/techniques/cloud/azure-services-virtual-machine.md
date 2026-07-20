@@ -16,7 +16,7 @@ sources: [InternalAllTheThings]
 
 ## How it works
 
-Azure VM's `Contributor` role grants the ability to run PowerShell scripts on the VM as `NT Authority\System` using the VM Run Command feature, without requiring RDP or SSH credentials. Attackers with `Contributor` or `Virtual Machine Contributor` access invoke `Invoke-AzVMRunCommand` to execute arbitrary code on any VM in the subscription, extracting credentials, pivoting to the internal network, or exfiltrating data. VMs with managed identities expose temporary credentials through the Azure IMDS at `169.254.169.254`, enabling pivot from VM-level access to broader Azure control-plane access.
+Azure VM's `Contributor` role grants the ability to run PowerShell scripts on the VM as `NT Authority\System` using the VM Run Command feature, without requiring RDP or SSH credentials. Attackers with `Contributor` or `Virtual Machine Contributor` access invoke `Invoke-AzVMRunCommand` to execute arbitrary code on any VM in the subscription, extracting credentials, pivoting to the internal network, or exfiltrating data. VMs with managed identities expose temporary credentials through the Azure IMDS at `169.254.169.254`, enabling pivot from VM-level access to broader Azure control-plane access - see [[azure-managed-identity-abuse]] for the full IMDS-token-theft -> over-permissioned-MI -> Key Vault chain and `az login --identity`.
 
 ## Attack phases
 

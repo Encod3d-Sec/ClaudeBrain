@@ -17,6 +17,22 @@ Core pages: [[aws-attacks]], [[cloud-iam-attacks]], [[gcp-attacks]], Azure under
 - Confirm account/subscription/project IDs are in scope. Cloud resources are billable + logged (CloudTrail / Azure Activity / GCP Audit Logs) - enumeration is loud and may cost the client. No resource creation/deletion without RoE sign-off.
 - Reuse keys from `loot.md` first. Never spray IAM users (lockout + GuardDuty).
 
+## Tooling-first: install the CLI, do NOT hand-roll REST (Azure especially)
+The provider CLIs and `roadrecon` do enumeration + attack in one authenticated call - **install them
+FIRST**; hand-rolled `curl`/`urllib` against Graph/ARM is the drift to avoid (weaker, no paging, easy
+to misquote). Reach for a script only for the rare thing the CLI can't express.
+- **Azure creds in hand?** `az login -u <upn> -p <pass>` (ROPC; works on Managed tenants when the CLI
+  client isn't MFA-gated). Then `az account show`, `az account list`, `az resource list -o table`,
+  `az vm list -d -o table`, `az role assignment list --all`. Entra dump = **roadrecon** (`roadrecon auth
+  -r <refresh-token>` reuses a token cross-client via FOCI, no password quoting; then `roadrecon dump`).
+  AzureHound for attack paths; MicroBurst `Get-AzPasswords` (pwsh) to sweep KV/automation/storage secrets.
+- **az cli on Kali gotcha:** the deb repo rejects Kali's dist codename ("Unable to find a package for
+  your system"). Install with `curl -sL https://aka.ms/InstallAzureCLIDeb | DIST_CODE=bookworm bash`,
+  or just run az on the target Ubuntu VM where it installs cleanly.
+- **Compromised an Azure compute resource (VM/App Service/Container)?** Don't parse IMDS JSON by hand -
+  `az login --identity` authenticates AS that resource's managed identity straight from IMDS; then use
+  az normally. `az account show` confirms `user.type=servicePrincipal` / `systemAssignedIdentity`.
+
 ## Attack Surface Signals
 - Leaked creds: `.env`, `~/.aws/credentials`, CI/CD vars, S3/blob/GCS public objects, JS bundles, git history, `AKIA*`/`ASIA*` (AWS), `AccountKey=` (Azure), `"type":"service_account"` JSON (GCP).
 - SSRF reachable app -> metadata service (169.254.169.254 / metadata.google.internal).
