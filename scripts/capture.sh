@@ -11,13 +11,14 @@
 #   web  <eng> <slug> <url> [--no-bar] [width height]        render a LIVE page via chromium (address-bar frame)
 #   recon <eng> <slug> <tmux-tab> [session=<eng>]            card a scan tmux tab (nmap/ffuf/...) into recon/
 #   log  <eng> <slug> <remote-logfile>                      save a long text log (linpeas/pspy) to poc/NN.md
+#   snippet <eng> <slug> <url-or-file> [grep-pattern] [note] fenced source excerpt (app.js/HTML) -> poc/NN-<slug>-snippet.md
 #   burp <eng> <slug> <host> <port> <https> <method> <path> [bodyfile] [tabname]
 #                                                           Burp Repeater request/response grab (via MCP)
 #
 # The VM bridge is $VM_SH (default /root/vm.sh); files cross it base64-in-command (no stdin).
 set -euo pipefail
 
-VAULT="$(cd "$(dirname "$0")/.." && pwd)"
+VAULT="${VAULT:-$(cd "$(dirname "$0")/.." && pwd)}"
 VM_SH="${VM_SH:-/root/vm.sh}"
 
 usage() {
@@ -29,6 +30,7 @@ usage: capture.sh <mode> <eng> <slug> [args]
   web  <eng> <slug> <url> [--no-bar] [width height]
   recon <eng> <slug> <tmux-tab> [session=<eng>]
   log  <eng> <slug> <remote-logfile>
+  snippet <eng> <slug> <url-or-file> [grep-pattern] [reveals-note]
   burp <eng> <slug> <host> <port> <https> <method> <path> [bodyfile] [tabname]
 U
   exit 2
@@ -189,6 +191,48 @@ mode_log() {
   echo "md: [$SLUG](poc/$MD)"
 }
 
+# snippet: extract the LOAD-BEARING lines of a website source (app.js, an inline script, a source map,
+# an HTML/JSON/config) into poc/NN-<slug>-snippet.md as a fenced block + a `reveals:` note. Fire the
+# MOMENT reading source hands you something that shapes the attack - API endpoints, a secret/key, a
+# hidden route, client-side validation/logic - so the walkthrough cites the exact code, not just
+# "app.js revealed the API". <source> is an http(s) URL (fetched via curl on the VM) OR a file already
+# on disk (a poc/ copy, an absolute path, or a vault-relative path). Optional grep -E pattern keeps
+# only the matching lines (with their line numbers). PASTE the fenced block inline into walkthrough Recon.
+mode_snippet() {
+  [ $# -ge 3 ] || { echo "usage: capture.sh snippet <eng> <slug> <url-or-file> [grep-pattern] [reveals-note]" >&2; exit 2; }
+  ENG="$1"; local SLUG="$2" SRC="$3" PAT="${4:-}" NOTE="${5:-}"
+  _poc_target "$ENG" "$SLUG"
+  local MD="$NN-$SLUG-snippet.md" BODY LANG
+  case "${SRC%%\?*}" in
+    *.js|*.mjs) LANG=js ;;
+    *.json)     LANG=json ;;
+    *.css)      LANG=css ;;
+    *.htm|*.html) LANG=html ;;
+    *) LANG=text ;;
+  esac
+  case "$SRC" in
+    http://*|https://*)
+      BODY=$(bash "$VM_SH" "curl -sk -L --max-time 12 $(printf '%q' "$SRC") 2>/dev/null | head -c 200000" 2>/dev/null || true) ;;
+    *)
+      local F="$SRC"; [ -f "$F" ] || F="$VAULT/$SRC"
+      [ -f "$F" ] || { echo "capture(snippet): '$SRC' is neither an http(s) URL nor an existing file" >&2; exit 1; }
+      BODY=$(head -c 200000 "$F" 2>/dev/null || true) ;;
+  esac
+  [ -n "$BODY" ] || { echo "capture(snippet): source '$SRC' empty/unreachable" >&2; exit 1; }
+  if [ -n "$PAT" ]; then
+    local HITS; HITS=$(printf '%s\n' "$BODY" | grep -nE -- "$PAT" || true)
+    [ -n "$HITS" ] || { echo "capture(snippet): pattern '$PAT' matched nothing in '$SRC'" >&2; exit 1; }
+    BODY="$HITS"
+  fi
+  { printf '# snippet: %s\n\nSource: `%s`' "$SLUG" "$SRC"
+    [ -n "$PAT" ] && printf ' · filter: `%s`' "$PAT"
+    printf '\n\n```%s\n%s\n```\n\n_reveals: %s_\n' "$LANG" "$BODY" \
+      "${NOTE:-TODO: what this gave you (endpoints / secret / hidden route / logic)}"
+  } > "$POC/$MD"
+  echo "saved targets/$ENG/poc/$MD ($(wc -l < "$POC/$MD") lines)"
+  echo "md: paste the fenced block into walkthrough.md Recon; file ref: [$SLUG](poc/$MD)"
+}
+
 # burp: drive Burp (via the MCP) to replay a request in Repeater, then screenshot the
 # request+response panes. Grabs as the SEAT user (Burp draws on the seat X session).
 mode_burp() {
@@ -280,6 +324,7 @@ case "$MODE" in
   web)  mode_web "$@" ;;
   recon) mode_recon "$@" ;;
   log)  mode_log "$@" ;;
+  snippet) mode_snippet "$@" ;;
   burp) mode_burp "$@" ;;
   -h|--help|help) usage ;;
   *)    echo "capture: unknown mode '$MODE'" >&2; usage ;;

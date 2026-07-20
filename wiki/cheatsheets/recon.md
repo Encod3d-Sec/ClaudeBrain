@@ -786,3 +786,32 @@ When time is constrained, work in this order:
 /usr/share/wordlists/seclists/Usernames/top-usernames-shortlist.txt
 /usr/share/wordlists/seclists/Usernames/xato-net-10-million-usernames.txt
 ```
+
+### The JS bundle is the ONLY map of a POST-only JSON API (dir scanners are blind to it)
+
+For a JS/SPA front-end, reading the bundle is not merely *better* than content discovery - it is
+often the *only* way to see the API, because feroxbuster / ffuf / gobuster structurally cannot find
+a POST-only JSON API:
+
+- **They send GET.** A route registered only for `POST` (e.g. `/api/move`, `/api/settings`) returns
+  `404`/`405` to the scanner's GET, so it is filtered out as a miss.
+- **A bare `/api` 404s**, so recursive modes (`-d 2`) never treat it as a directory and never descend
+  to try `/api/<word>`. Deep, method-specific routes are unreachable by a top-level word list.
+- Net result: the scanners' output lists only static assets (`/css`, `/js/app.js`, `/`) and you can
+  wrongly conclude "no hidden routes". The endpoints, their methods, request-body shapes, feature
+  flags, and client-side gates are all spelled out in the JS `fetch(...)`/`axios`/`XMLHttpRequest`
+  calls instead.
+
+So on any Express/Node/SPA target, grep the client JS FIRST and treat it as the endpoint map:
+
+```bash
+curl -s http://TARGET/js/app.js | grep -nE "fetch\(|axios|XMLHttpRequest|/api/|/v[0-9]/|token|secret|key|admin"
+```
+
+Then probe each mined route with its real method (`curl -X POST ... -H 'Content-Type: application/json' -d '{...}'`);
+verbose error strings from these routes frequently name the exact server-side property/gate to attack
+(a reward/authorization flag, a missing session key). Preserve the load-bearing excerpt as evidence
+with `capture.sh snippet` so the walkthrough cites the code, not just "the JS revealed the API". See
+[[javascript-source-map-exploitation]] and [[api-testing]].
+
+<!-- promoted-slug: js-api-map-scanners-blind -->

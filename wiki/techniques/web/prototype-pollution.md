@@ -508,3 +508,28 @@ Decode base64 body → reveals `node_apps` and `secret`.
 Decode base64 body → submit decoded value as the solution.
 
 **Key technique:** `-d @-` pipes stdin to the curl POST body; base64 ensures binary-safe transport over HTTP.
+
+### A top-level key allowlist does not stop pollution (nest the gadget under a permitted key)
+
+A "settings/preferences" endpoint that only accepts a fixed set of top-level keys (e.g.
+`theme`, `pieceSet`, `animationMs`) is still pollutable if the **value** of any permitted key is
+passed to a recursive merge. The allowlist only filters the outer keys; nest the gadget inside a
+permitted key's value:
+
+```json
+{"animationMs": {"constructor": {"prototype": {"isAdmin": true}}}}
+```
+
+Confirm the permitted key deep-merges an object rather than replacing it: send
+`{"animationMs":{"x":1}}` and check the response echoes it back verbatim. If it does, the value is
+merged (not coerced/validated), so `constructor.prototype.<prop>` nested under it reaches
+`Object.prototype`. Any later boolean gate that reads an inherited property then flips, e.g. a reward
+or feature gate whose verbose error even names the property to set (`"...config.unlocked is not set"`).
+
+Note `__proto__` nested under the key is often stripped, or is swallowed by `JSON.parse` (it becomes
+the inner object's prototype, so the merge's own-key iteration never sees it) - the nested object
+comes back empty. `constructor.prototype` is an ordinary own key and survives, so it is the reliable
+path against a `__proto__`-only sanitizer. (Node dev mode helps recon here: a malformed-JSON request
+returns a stack trace naming the `node_modules/...` path and the app directory.)
+
+<!-- promoted-slug: protopollution-allowlist-nesting -->

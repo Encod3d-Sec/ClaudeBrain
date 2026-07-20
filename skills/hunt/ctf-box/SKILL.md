@@ -59,6 +59,17 @@ smbclient -N //$T/<share> -c 'recurse;ls'       # then use smbclient ONLY to pul
 #      login or brute-forcing a DB/panel. The real vuln - a SQLi param, a hardcoded cred, a logic flaw,
 #      the flag path - is almost always IN the source you can already read. Grinding phpMyAdmin/creds
 #      while an unread `?search=` SQLi sits in dashboard.php source is the recurring "drift to manual".
+#  (d) READ THE CLIENT-SIDE JS + SNIPPET WHAT IT REVEALS. Pull every app.js / bundle / inline <script> /
+#      source map and grep it for `fetch(`/`axios`/`XMLHttpRequest`/`/api`/`token`/`secret`/`key`/`admin`.
+#      For a JS/SPA front-end the API is NOT reachable by feroxbuster/ffuf: POST-only JSON routes 404 on
+#      the scanners' GET, and a bare `/api` 404s so `-d 2` never recurses into it - so the JS bundle IS
+#      the endpoint map (this box: the whole /api/* surface + the reward-gate came only from app.js; the
+#      ferox card was empty). MANDATE: the MOMENT source (JS/HTML/config/source map) reveals something
+#      load-bearing - an endpoint, a secret/key, a hidden route, a client-side gate/validation - SNIPPET
+#      IT: `scripts/capture.sh snippet <eng> <slug> <url-or-file> '<grep-pattern>' '<what it reveals>'`
+#      writes poc/NN-<slug>-snippet.md (fenced excerpt + reveals note), then PASTE that fenced block
+#      inline into walkthrough.md Recon. Never leave a source finding as ephemeral chat - the snippet is
+#      the recon artifact the empty ferox/nuclei card cannot be.
 #  (b) LAUNCH THE SCANNERS IN PARALLEL the MOMENT nmap shows a web port -- ONE tmux tab each, do not wait serially:
 #        feroxbuster (PRIMARY dir/file discovery), nuclei (CVE/misconfig), whatweb (fingerprint, its OWN tab):
 #        scripts/vm-scan.sh <eng> <T>-ferox 'feroxbuster ...' ; <T>-nuclei 'nuclei -u http://$T' ; <T>-whatweb 'whatweb -a3 http://$T'
@@ -275,10 +286,15 @@ container -> internal Flask app pickle-deser RCE -> `cap_sys_module` kmod escape
 After each phase, write to `targets/<eng>/`: hosts/access -> `state.md`, creds -> `loot.md`, chain -> `paths.md`, vulns -> `Vuln-index.md`, dead-ends -> `Deadends.md`, narrative -> `log.md`. Flags go in the writeup, never in `session/*` or `wiki/`.
 
 **Live-capture machinery (so evidence is NOT all backfilled at close-out - the recurring miss):**
-- **Auto-card of scan tabs is AUTOMATIC.** The Stop hook fires `scripts/autocard.sh` detached every
-  turn; it renders any FINISHED scan tmux tab into `recon/` (idempotent via `.carded-tabs`). So recon
-  cards accumulate as tabs finish - you do NOT hand-card each scan. Just launch scans in tmux tabs
-  (`vm-scan.sh`) and keep working; the cards appear.
+- **Auto-card of scan tabs is a BEST-EFFORT backstop, NOT a guarantee.** The Stop hook fires
+  `scripts/autocard.sh` DETACHED each turn to render any FINISHED scan tmux tab into `recon/`
+  (idempotent via `.carded-tabs`). But the detached spawn is UNRELIABLE over the remote-VM SSH
+  bridge (WSL/headless: the grandchild has been observed to never run - no `.carded-tabs`, no cards -
+  leaving `recon/` empty and the miss discovered only at close-out). So do NOT rely on it: **card as
+  you go remains PRIMARY** (Phase 1: `capture.sh recon <eng> <slug> <tab>` per tab as it finishes),
+  and **before you leave recon for exploitation, VERIFY** `ls targets/<eng>/recon/` is non-empty
+  (or `status.py`'s recon-card count > 0). 0 cards on a web box while scan tabs have finished = the
+  backstop silently failed; hand-card them now. Treat any card autocard happens to produce as a bonus.
 - **You still hand-card the deliberate EXPLOIT-state shots** as they land - the flag in place, the RCE
   firing, a shell, an authed panel - since only judgement knows which moment matters, and persist
   findings to `state.md`/`loot.md`/`paths.md` the moment they land (do not defer to close-out).
@@ -289,7 +305,7 @@ After each phase, write to `targets/<eng>/`: hosts/access -> `state.md`, creds -
 
 **Beware locally-substituted payloads = FALSE-POSITIVE RCE (high-severity trap).** A payload containing `$(...)`, backticks, or `$VAR` sent through the VM bridge (or any local shell / a `for p in $(...)` loop) is substituted LOCALLY before it reaches the target - and the tooling VM runs as ROOT, so a reflected `uid=0(root)` may be YOUR OWN box, not the target. ALWAYS single-quote or base64 injection payloads; confirm the target actually executed it with a marker only the target can produce (its hostname, a file only it has). NEVER claim RCE from a reflected `id`/`uid` that matches your attacker host - re-send the exact payload single-quoted and re-check before believing it.
 
-**Preserve exploit scripts and read source.** When you write the exploit script Rule 0 has you fall back to (a payload HTML, an escape/forge script, a webshell) or read a target's source, copy it into `targets/<eng>/poc/scripts/` and card the source with its URL (e.g. `shot.py --term --url-bar`); the reviewer needs the code and the state together, not just a screenshot. **Save it as `<name>.md` with the code in a ```` ```sh ````/```` ```js ````/```` ```py ```` fence, NOT a bare `.sh`/`.js`/`.py`** - Obsidian only previews `.md`/images in the GUI, so a raw-extension script is invisible to the operator. (`capture.sh log` already writes `.md`; saved page source is `-source.md` with an ```` ```html ```` fence for the same reason.)
+**Preserve exploit scripts and read source.** When you write the exploit script Rule 0 has you fall back to (a payload HTML, an escape/forge script, a webshell) or read a target's source, copy it into `targets/<eng>/poc/scripts/` and card the source with its URL (e.g. `shot.py --term --url-bar`); the reviewer needs the code and the state together, not just a screenshot. **Save it as `<name>.md` with the code in a ```` ```sh ````/```` ```js ````/```` ```py ```` fence, NOT a bare `.sh`/`.js`/`.py`** - Obsidian only previews `.md`/images in the GUI, so a raw-extension script is invisible to the operator. (`capture.sh log` already writes `.md`; saved page source is `-source.md` with an ```` ```html ```` fence for the same reason. For a targeted EXCERPT of source that revealed something, `capture.sh snippet <eng> <slug> <url-or-file> '<grep-pattern>' '<reveals>'` writes a fenced `poc/NN-<slug>-snippet.md` to paste into walkthrough Recon.)
 
 **Screenshot EVERY successful step as you go (not at the end).** The walkthrough must be report-ready
 from the `.md` alone. The moment a step LANDS - valid cred / Pwn3d, a BloodHound edge, a GUI foothold
