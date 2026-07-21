@@ -1,13 +1,14 @@
 ---
 name: wiki-arsenal
-description: Fast PARALLEL wiki lookup engine over wiki/techniques + wiki/payloads + wiki/tools + wiki/cheatsheets for a surface/service/vuln-class. Two modes - quick (one qmd search, cheap, fire constantly) and deep (4 parallel subagents, one per area, merged ready-to-use arsenal card, cached). This is the fast path arsenal and the hunt-* skills delegate to. Use for "what do I use against <surface>", "arsenal for <X>", "deep/full arsenal", "tool + payload + technique + cheatsheet for <X>", "fast wiki lookup", "parallel wiki search", any "how do I attack/exploit <service|vuln-class>" where you want the documented tooling + payloads before hand-rolling.
+description: Fast PARALLEL wiki lookup engine over wiki/techniques + wiki/payloads + wiki/tools + wiki/cheatsheets for a surface/service/vuln-class. Two modes - quick (one qmd search, cheap, fire constantly) and deep (4 parallel subagents, one per area, merged ready-to-use arsenal card, cached). This is the fast path arsenal that `arsenal` delegates to; the hunt-* skills each inline their own qmd_query and can hand off here for a parallel lookup. Use for "what do I use against <surface>", "arsenal for <X>", "deep/full arsenal", "tool + payload + technique + cheatsheet for <X>", "fast wiki lookup", "parallel wiki search", any "how do I attack/exploit <service|vuln-class>" where you want the documented tooling + payloads before hand-rolling.
 ---
 
 # wiki-arsenal
 
 The fast, wiki-first lookup engine for "what do I use against this surface". Runs the four
 knowledge areas in parallel so a deep lookup is one wall-clock, not four serial reads. `arsenal`
-and the `hunt-*` skills delegate here; never hand-roll from memory when the wiki has the answer.
+delegates here; the `hunt-*` skills each carry their own wiki-first `qmd_query` (MCP-independent) and
+can hand off here for a fast parallel lookup. Never hand-roll from memory when the wiki has the answer.
 
 Input: a surface, service, or vuln-class (e.g. `Jenkins on 8080`, `SSRF`, `Kerberoasting`).
 

@@ -7,9 +7,11 @@ evidence actually captured (poc/ + recon/ shots), recent dead-ends, and the rank
 engagement. Run any time:
 
     python3 scripts/status.py
+    python3 scripts/status.py --coverage   # full uncapped asset x vuln-class coverage matrix
 
 The same render is surfaced compactly at SessionStart by engagement-init; this is the full
-on-demand view (evidence + dead-ends included) the operator can pull mid-engagement.
+on-demand view (evidence + dead-ends included) the operator can pull mid-engagement. The
+--coverage flag prints the per-asset coverage grid (Skill(coverage)) instead of the dashboard.
 """
 import glob
 import os
@@ -69,6 +71,46 @@ def board_phase(d):
     return where, open_n, dead_n
 
 
+def render_coverage(base, assets, tested_by_asset):
+    """Pure formatter -> the full asset x vuln-class coverage grid (x=tested . =untested),
+    UNCAPPED (unlike next_move's top-5 per-asset shortlist), so the coverage skill sees every
+    in-scope asset against every base class instead of eyeballing killchain.md. `tested_by_asset`
+    maps an asset name -> its set of tested class names (lowercased). Deterministic."""
+    if not base or not assets:
+        return "coverage: no in-scope assets or no class checklist for this engagement type."
+    lines = ["coverage matrix (x=tested . =untested), %d classes:" % len(base)]
+    for a in assets:
+        tested = tested_by_asset.get(a, set())
+        cells = " ".join("x" if c.lower() in tested else "." for c in base)
+        n = sum(1 for c in base if c.lower() in tested)
+        lines.append("  %-22s %s  (%d/%d)" % (a[:22], cells, n, len(base)))
+    lines.append("  class order: " + " ".join(base))
+    return "\n".join(lines)
+
+
+def coverage_data(d, etype):
+    """Gather (base_classes, in_scope_assets, {asset: tested_set}) for render_coverage.
+    Read-only; reuses the exact helpers next_move.py consumes (in_scope_assets +
+    _engagement.tested_classes) so the uncapped matrix and the ranked [gap] moves agree.
+    Any missing piece degrades to empty. Import is lazy so module load stays dependency-light."""
+    import json
+    import _engagement
+    import next_move
+    try:
+        base = json.load(open(os.path.join(VAULT, "scripts", "coverage-classes.json"),
+                              encoding="utf-8")).get(etype, [])
+    except Exception:
+        base = []
+    if not base:
+        return base, [], {}
+    sc = _engagement.scope(d)
+    state = _engagement._parse_table(os.path.join(d, "state.md"))
+    assets = next_move.in_scope_assets(state, etype, sc)
+    glob_l, norm = next_move.tested_lookup(d, etype, base)
+    tested_by_asset = {a: next_move.tested_for_asset(a, glob_l, norm) for a in assets}
+    return base, assets, tested_by_asset
+
+
 def render(name, etype, solved, summ, board, poc, recon, deads, moves_text):
     """Pure formatter -> the dashboard string. All inputs are precomputed (testable)."""
     head = "=== %s (%s)%s ===" % (name, etype, "  STATUS: SOLVED" if solved else "")
@@ -99,6 +141,9 @@ def main():
         return 0
     name = os.path.basename(d)
     etype = _engagement.engagement_type(d)
+    if "--coverage" in sys.argv:   # full uncapped asset x class matrix (Skill(coverage))
+        print(render_coverage(*coverage_data(d, etype)))
+        return 0
     solved = _engagement.is_solved(d)
     summ = _engagement.summary()
     board = board_phase(d)

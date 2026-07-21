@@ -11,7 +11,7 @@ qmd_query "<technique: kerberoasting | ADCS ESC | RBCD delegation | DCSync | dac
 ```
 Core pages: [[ad-enumeration]], [[kerberos-attacks]], [[adcs]], [[ad-lateral-movement]], [[pass-the-hash]], [[ad-persistence]]. Cheatsheet: [[ad-cheatsheet]].
 
-**Self-heal:** wiki query empty -> create stub `wiki/techniques/active-directory/<slug>.md` (frontmatter + `## Observed during <engagement>`) before proceeding, so the gap fills.
+**Self-heal:** If the wiki query returns nothing, create a stub `wiki/techniques/active-directory/<slug>.md` (frontmatter + a `## Observed during <engagement>` section built from your findings) before proceeding, so the gap fills instead of silently recurring.
 
 ## Scope + Safety Gate (READ FIRST)
 - Confirm DC / domain in scope. Read `Deadends.md` + `loot.md` - **reuse captured creds first** before researching new ones (see [[default-credentials]]).
@@ -105,7 +105,7 @@ impacket-secretsdump <domain>/<user>:<pass>@<dc>        # DCSync if rights
 ## FIND Output
 Confirmed:
 ```
-Create Vulns/Research/FIND-XXX-<SEV>-<issue>-<host>.md   (e.g. FIND-012-CRITICAL-adcs-esc1-dc01.md)
+Create Vulns/Research/FIND-XXX-SEVERITY-<issue>-<host>.md   (e.g. FIND-012-CRITICAL-adcs-esc1-dc01.md)
 Add row to Vuln-index.md: | FIND-XXX | ESC1 cert -> DA | dc01 | CONFIRMED |
 ```
 Severity: CRITICAL = DA / domain compromise / DCSync / ESC1 / ESC8; HIGH = user creds + lateral, Kerberoast cracked to priv account; MEDIUM = enum/info disclosure, spray hit with no privilege.

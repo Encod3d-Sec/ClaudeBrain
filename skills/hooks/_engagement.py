@@ -423,12 +423,28 @@ def scope(d=None):
     return res
 
 
+def _host_of(s):
+    """Reduce a URL / authority string to its bare host: drop scheme, userinfo, any
+    path/query/fragment, and a trailing :port. A plain host or IP passes through. A
+    single-colon `host:port` / `ipv4:port` is de-ported; IPv6 (>=2 colons) is left
+    intact. Lets a URL-form scope entity (a bugbounty asset is a full URL) match a
+    bare-host scope entry."""
+    s = s.split("://", 1)[-1]      # strip scheme
+    s = s.split("/", 1)[0]         # strip path/query/fragment
+    s = s.rsplit("@", 1)[-1]       # strip userinfo
+    if s.count(":") == 1:          # host:port / ipv4:port -> host; IPv6 keeps its colons
+        s = s.split(":", 1)[0]
+    return s
+
+
 def _scope_entry_match(e, o, strict=False):
     """Boundary-aware match of host/ip `e` against scope entry `o`.
 
-    Always matches on: exact host; `o` as a parent domain (`x.com` -> `api.x.com`,
-    the `endswith("." + o)` arm, which is a genuine-subdomain relationship and is
-    safe); or `o` as a CIDR/IP that contains `e`.
+    Handles: exact host; `o` as a parent domain (`x.com` -> `api.x.com`, the
+    `endswith("." + o)` arm, a genuine-subdomain relationship); `o` as a wildcard
+    (`*.x.com` matches `x.com` and any subdomain); `o` as a CIDR/IP containing `e`;
+    and URL-form `e`/`o` (each reduced to its bare host first, so a full-URL bugbounty
+    asset matches a bare-host scope entry).
 
     The label-prefix arm (`o` as a bare-label prefix, `prod-db` -> `prod-db.x.com`,
     only when `o` has no dot) is ADVISORY-ONLY and applies only when `strict=False`.
@@ -436,24 +452,35 @@ def _scope_entry_match(e, o, strict=False):
     so a bare-label prefix does NOT prove `e` is the in-scope host. It is a
     convenience for advisory callers (scope-guard warnings, next_move ranking) but
     must never authorize a security decision that writes data to disk. Strict callers
-    (the poc/pages disk-write gate) pass `strict=True` and get exact/parent/CIDR only.
-    Also avoids the old bidirectional-substring bug (`db` -> `db-staging`) and dotted
-    label-prefix confusion (`10.0.0.9` -> `10.0.0.9.evil.com`).
+    (the poc/pages disk-write gate) pass `strict=True` and get exact/parent/wildcard/CIDR
+    only. Also avoids the old bidirectional-substring bug (`db` -> `db-staging`) and
+    dotted label-prefix confusion (`10.0.0.9` -> `10.0.0.9.evil.com`).
     """
     if not o:
         return False
+    e = _host_of(e)
+    if o.startswith("*."):
+        base = o[2:]   # *.x.com -> matches x.com and any subdomain of it
+        return bool(base) and (e == base or e.endswith("." + base))
+    if "/" in o:
+        # CIDR/IP-network, checked before host-normalizing `o` (which would drop the /prefix).
+        # A "/" that is NOT a parseable network is a URL path -> fall through to host match.
+        try:
+            net = ipaddress.ip_network(o, strict=False)
+        except ValueError:
+            net = None
+        if net is not None:
+            try:
+                return ipaddress.ip_address(e) in net
+            except ValueError:
+                return False
+    o = _host_of(o)
     if e == o or e.endswith("." + o):
         return True
     if not strict and "." not in o and e.startswith(o + "."):
         # advisory-only convenience: a bare-label entry matches its FQDN forms; NOT
         # trusted for a disk-write gate (a host can spoof <label>.attacker.tld).
         return True
-    try:
-        if "/" in o:
-            return ipaddress.ip_address(e) in ipaddress.ip_network(o, strict=False)
-        # bare-IP scope entry: exact-match already handled above
-    except ValueError:
-        pass
     return False
 
 

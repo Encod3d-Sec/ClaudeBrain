@@ -16,7 +16,14 @@ Apply known payload variants, NoSQL patterns, and ORM-specific bypasses already 
 
 ## Scope Check
 - Confirm target is in scope
-- Read Deadends.md - skip already-tested parameters
+- Read Deadends.md - skip paths already marked exhausted
+
+## OOB Gate (READ FIRST)
+**Blind SQLi claims require confirmation. No exceptions.** A single slow response is not proof: a time-based positive needs a repeatable delta (baseline vs injected, re-run), and an out-of-band claim needs a real callback.
+
+NOT confirmation: one non-repeatable slow response, a generic 500, a WAF "SQL injection detected" string. IS confirmation: a reproducible time delta on repeat, or a DNS/HTTP hit to your unique Burp Collaborator / interactsh subdomain from a DNS-exfil payload (MySQL `LOAD_FILE`/UNC, MSSQL `xp_dirtree`, Oracle `UTL_HTTP`).
+
+When you plant a blind/OOB payload, append a row to `targets/<eng>/oob.md`: `| <token> | <sink url+param> | sqli | <date> | waiting | |` (columns: token | sink | class | planted | status | source, where token = your unique Burp Collaborator / interactsh label). The recon-capture hook auto-correlates incoming callbacks to flip the row to HIT and SessionStart surfaces HITs; a HIT row is the confirmation gate to scaffold the FIND. Do NOT claim a blind SQLi without a HIT row.
 
 ## Attack Surface Signals
 URL patterns:

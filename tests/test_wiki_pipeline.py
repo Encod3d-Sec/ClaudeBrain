@@ -303,11 +303,13 @@ def test_skill_and_doc_wiring():
 
 
 def test_all_hunt_skills_footer_converted():
-    """Lock-in for the hunt-wiki-footer-consistency migration: the old ad-hoc
-    '## Wiki Feedback' footer must be gone from every skills/hunt/*/SKILL.md, and
-    every vuln-class hunt skill (the 23 converted here + hunt-sqli + hunt-api,
-    which already used the pattern) plus wiki-recon must carry the staged
-    wiki-stage.py distill step. New lines must not carry a U+2014 em-dash."""
+    """Lock-in for the hunt-wiki-footer-consistency migration, now GLOB-DRIVEN so a
+    newly-added hunt skill is auto-covered (the old hardcoded 25-name list let new
+    skills escape the contract; per-kind enforcement moved to test_skill_contract.py).
+    The old ad-hoc '## Wiki Feedback' footer must be gone from every
+    skills/hunt/*/SKILL.md, and every vuln-class hunt skill (every skills/hunt/hunt-*
+    plus wiki-recon) must carry the staged wiki-stage.py distill step. New lines must
+    not carry a U+2014 em-dash."""
     skill_files = sorted(glob.glob(os.path.join(REPO, "skills", "hunt", "*", "SKILL.md")))
     assert skill_files, "no hunt skill files found under skills/hunt/*/SKILL.md"
 
@@ -315,18 +317,13 @@ def test_all_hunt_skills_footer_converted():
         text = open(path, encoding="utf-8").read()
         assert "## Wiki Feedback" not in text, "%s still has the old footer header" % path
 
-    vuln_class_skills = [
-        "hunt-sqli", "hunt-api", "hunt-ad", "hunt-auth", "hunt-bizlogic", "hunt-burp",
-        "hunt-cache", "hunt-cicd", "hunt-cloud", "hunt-deserialization", "hunt-federation",
-        "hunt-ics", "hunt-idor", "hunt-injection", "hunt-llm", "hunt-m365", "hunt-mcp",
-        "hunt-rce", "hunt-secrets", "hunt-smuggling", "hunt-ssrf", "hunt-upload",
-        "hunt-vpn", "hunt-xss", "wiki-recon",
-    ]
-    assert len(vuln_class_skills) == 25
+    vuln_class_skills = sorted(
+        os.path.dirname(p) for p in glob.glob(os.path.join(REPO, "skills", "hunt", "hunt-*", "SKILL.md"))
+    ) + [os.path.join(REPO, "skills", "hunt", "wiki-recon")]
 
-    for skill in vuln_class_skills:
-        path = os.path.join(REPO, "skills", "hunt", skill, "SKILL.md")
-        text = open(path, encoding="utf-8").read()
+    for skill_dir in vuln_class_skills:
+        skill = os.path.basename(skill_dir)
+        text = open(os.path.join(skill_dir, "SKILL.md"), encoding="utf-8").read()
         assert "wiki-stage.py" in text, "%s missing the wiki-stage.py distill step" % skill
 
         for line in text.splitlines():

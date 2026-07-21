@@ -53,7 +53,8 @@ def test_expected_hooks_trimmed():
     names = _all_basenames(ch)
     assert "no-echo-banner.py" not in names        # deleted (cosmetic deny hook)
     assert "loop-driver.py" not in names           # deleted (488-line render drain)
-    assert len(ch.EXPECTED_HOOKS) == 9
+    assert len(ch.EXPECTED_HOOKS) == 10            # +wiki-reindex (auto-reindex on wiki edits)
+    assert ("PostToolUse", "wiki-reindex.py") in ch.EXPECTED_HOOKS
     # the only Stop hook is the minimal close-out reflex, not the old render drain
     assert [b for e, b in ch.EXPECTED_HOOKS if e == "Stop"] == ["close-out.py"]
 
@@ -119,14 +120,14 @@ def test_tool_lean_removed():
     assert not os.path.exists(os.path.join(root, "skills", "hooks", "tool-lean.py"))
 
 
-def test_wiki_log_removed_and_count_is_9():
+def test_wiki_log_removed_and_count_is_10():
     import importlib.util, os
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     spec = importlib.util.spec_from_file_location("ch", os.path.join(root, "scripts", "check-hooks.py"))
     ch = importlib.util.module_from_spec(spec); spec.loader.exec_module(ch)
     assert not any("wiki-log" in b for _e, b in ch.EXPECTED_HOOKS)
     assert not os.path.exists(os.path.join(root, "skills", "hooks", "wiki-log.py"))
-    assert len(ch.EXPECTED_HOOKS) == 9   # -no-echo-banner -loop-driver +close-out +tool-telemetry
+    assert len(ch.EXPECTED_HOOKS) == 10   # -no-echo-banner -loop-driver +close-out +tool-telemetry +wiki-reindex
 
 
 def test_docs_hook_count_matches_expected():
@@ -136,4 +137,4 @@ def test_docs_hook_count_matches_expected():
     ch = importlib.util.module_from_spec(spec); spec.loader.exec_module(ch)
     setup = open(os.path.join(root, "docs", "setup.md"), encoding="utf-8").read()
     m = re.search(r"(\d+)\s+hook commands", setup)
-    assert m and int(m.group(1)) == len(ch.EXPECTED_HOOKS) == 9
+    assert m and int(m.group(1)) == len(ch.EXPECTED_HOOKS) == 10

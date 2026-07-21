@@ -64,3 +64,21 @@ def test_render_composes_dashboard():
 def test_board_phase_none_when_no_board(tmp_path):
     st = _load()
     assert st.board_phase(str(tmp_path)) is None
+
+
+def test_render_coverage_marks_tested_and_untested():
+    st = _load()
+    out = st.render_coverage(["rce", "sqli", "ssrf"], ["a.x", "b.x"], {"a.x": {"rce"}})
+    assert "coverage matrix" in out
+    lines = out.splitlines()
+    a_line = next(l for l in lines if l.strip().startswith("a.x"))
+    b_line = next(l for l in lines if l.strip().startswith("b.x"))
+    # per-asset grid cells follow the base-class order (rce, sqli, ssrf)
+    assert a_line.split()[1:4] == ["x", ".", "."] and "(1/3)" in a_line
+    assert b_line.split()[1:4] == [".", ".", "."] and "(0/3)" in b_line
+    assert "class order: rce sqli ssrf" in out
+
+
+def test_render_coverage_empty_when_no_assets():
+    st = _load()
+    assert "no in-scope assets" in st.render_coverage(["rce"], [], {})

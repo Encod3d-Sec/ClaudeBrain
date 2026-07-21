@@ -9,7 +9,7 @@ description: ICS/SCADA/OT exploitation - Modbus (502), S7comm (102), EtherNet/IP
 ```
 qmd_query "ICS SCADA modbus PLC" via wiki-search MCP -> read [[ics-scada-modbus]] + payloads [[modbus]].
 ```
-**Self-heal:** if the query returns nothing, stub `wiki/techniques/mobile-iot/ics-scada-modbus.md` before proceeding.
+**Self-heal:** If the wiki query returns nothing, create a stub `wiki/techniques/mobile-iot/ics-scada-modbus.md` (frontmatter + a `## Observed during <engagement>` section built from your findings) before proceeding, so the gap fills instead of silently recurring.
 
 ## Scope Check
 - Confirm in scope. OT writes can damage real equipment - on a real engagement, `no_dos`/`passive_only` means READ-ONLY (FC1-4), never write (FC5/6/15/16). On a CTF/lab, writing is the point.
@@ -37,7 +37,7 @@ Open OT ports: **502 (Modbus), 102 (S7/iso-tsap), 44818 (EtherNet/IP), 20000 (DN
 
 ## FIND Output
 ```
-Create Vulns/Research/FIND-XXX-<SEV>-ics-<issue>-<host>.md
+Create Vulns/Research/FIND-XXX-SEVERITY-ics-<issue>-<host>.md
 Severity: CRITICAL = unauthenticated write to a safety-critical coil/register (physical impact / ESD bypass); HIGH = unauth process-variable write; MEDIUM = unauth read of OT state.
 Add row to Vuln-index.md
 ```

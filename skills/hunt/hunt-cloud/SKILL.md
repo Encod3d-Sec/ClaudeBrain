@@ -11,7 +11,7 @@ qmd_query "<provider> <service> attack iam privesc" via wiki-search MCP -> read 
 ```
 Core pages: [[aws-attacks]], [[cloud-iam-attacks]], [[gcp-attacks]], Azure under [[azure-ad-iam]] / [[azure-ad-enumerate]]. Metadata: [[aws-metadata-ssrf]], payload [[imds-cloud-metadata]].
 
-**Self-heal:** wiki query empty -> create stub `wiki/techniques/cloud/<slug>.md` before proceeding.
+**Self-heal:** If the wiki query returns nothing, create a stub `wiki/techniques/cloud/<slug>.md` (frontmatter + a `## Observed during <engagement>` section built from your findings) before proceeding, so the gap fills instead of silently recurring.
 
 ## Scope + Safety Gate (READ FIRST)
 - Confirm account/subscription/project IDs are in scope. Cloud resources are billable + logged (CloudTrail / Azure Activity / GCP Audit Logs) - enumeration is loud and may cost the client. No resource creation/deletion without RoE sign-off.
@@ -68,7 +68,7 @@ gcloud projects get-iam-policy <proj>;  curl https://... (roadtools / ROADrecon 
 ## FIND Output
 Confirmed:
 ```
-Create Vulns/Research/FIND-XXX-<SEV>-<provider>-<issue>.md
+Create Vulns/Research/FIND-XXX-SEVERITY-<provider>-<issue>.md
 ```
 Severity: CRITICAL = creds to admin/owner, cross-account/tenant takeover, metadata role creds; HIGH = sensitive data read (secrets/buckets), IAM privesc path; MEDIUM = enumeration / public bucket with non-sensitive data.
 

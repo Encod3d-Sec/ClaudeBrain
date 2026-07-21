@@ -6,11 +6,12 @@ applies internal-pentest heuristics to produce a ranked, deduped list of
 actionable moves. Deterministic + cheap (no model tokens). The model elaborates
 on demand via the `next-move` skill; the SessionStart hook surfaces the top few.
 
-Also emits low-ranked [gap] floor moves for untested vuln classes (the per-type
-checklist in coverage-classes.json minus classes auto-credited as tested from
-the killchain.md 4a table + written findings + Deadends.md), so systematic breadth
-reaches the shortlist even when nothing was fingerprinted. Skill(coverage) has the
-full per-asset matrix; these are just the "don't forget class X" nudge.
+Also emits low-ranked [gap] floor moves, PER IN-SCOPE ASSET, for untested vuln classes
+(the per-type checklist in coverage-classes.json minus THAT asset's own tested classes,
+credited from the killchain.md 4a table + written findings + Deadends.md), so a class
+tested on asset A still surfaces as a gap on asset B. Skill(coverage) / status.py
+--coverage print the full uncapped asset x class matrix; these are just the top-5
+per-asset "don't forget class X" nudge.
 
 CLI:  python3 scripts/next_move.py [-v]
 API:  next_move.suggest(limit=5) -> list[str]
@@ -57,6 +58,70 @@ def _norm_key(text):
     return " ".join(toks)
 
 
+def _row_in_scope(r, etype, sc):
+    """Scope gate for a full state ROW: not out-of-scope AND (no in-scope allowlist OR at least
+    one of the row's identifiers matches an entry). Checks EVERY identifier column (host AND ip
+    for pentest, asset AND url for bugbounty), not just the displayed entity - so a host tracked
+    by hostname whose ip falls inside an in-scope/out-of-scope CIDR (the standard internal-pentest
+    scoping) is judged correctly instead of silently dropped. Empty allowlist == the old deny-list
+    behaviour. URL/wildcard/CIDR matching is owned by _engagement._scope_entry_match."""
+    ids = []
+    for k in _engagement.ENTITY_KEY.get(etype, ("host",)):
+        v = (str(r.get(k, "")) or "").lower().strip()
+        if v and v != "?" and v not in ids:
+            ids.append(v)
+    if not ids:
+        return False
+    if any(_engagement.out_of_scope_match(i, sc) for i in ids):
+        return False
+    inl = [(o or "").lower().strip() for o in sc.get("in_scope", []) if o]
+    if inl and not any(_engagement._scope_entry_match(i, o) for i in ids for o in inl):
+        return False
+    return True
+
+
+def tested_lookup(d, etype, base):
+    """(glob_lower_set, {normalized_asset: tested_set}) for `base` classes. The per-asset tested
+    map (killchain 4a [x] + findings + Deadends, via _engagement.tested_classes) has its join key
+    host-normalized (_host_of) so a 4a cell written as a URL (https://api.x/graphql) still credits
+    an asset tracked by bare host (api.x); otherwise scheme/port/path drift orphans the credit and
+    regresses a cleared class back to a gap. Shared by the ranker gap floor and status.py's
+    coverage matrix so they never disagree. Error-safe -> ({}, set())."""
+    try:
+        per_asset, glob = _engagement.tested_classes(d, etype, base) if base else ({}, set())
+    except Exception:
+        per_asset, glob = {}, set()
+    glob_l = {t.lower() for t in glob}
+    norm = {}
+    for k, v in per_asset.items():
+        nk = _engagement._host_of((k or "").lower().strip())
+        norm.setdefault(nk, set()).update(t.lower() for t in v)
+    return glob_l, norm
+
+
+def tested_for_asset(ent, glob_l, norm):
+    """Lowercased tested classes crediting `ent`: global un-attributable credits (a Deadends line
+    naming no entity) plus its own host-normalized per-asset set."""
+    return glob_l | norm.get(_engagement._host_of((ent or "").lower().strip()), set())
+
+
+def in_scope_assets(state, etype, sc):
+    """Unique, order-preserving list of in-scope entity names from state rows (skipping
+    unidentifiable '?' rows). Single source of the in-scope asset set so the ranker's
+    per-asset gap floor and status.py's coverage matrix never disagree."""
+    out, seen = [], set()
+    for r in state:
+        e = _engagement.entity(r, etype)
+        if e == "?" or not _row_in_scope(r, etype, sc):
+            continue
+        k = e.lower()
+        if k in seen:
+            continue
+        seen.add(k)
+        out.append(e)
+    return out
+
+
 def _ranked(limit=5):
     """Core ranking: list of (score, tag, text) tuples, highest first, capped at
     limit. None when there is no active engagement. suggest()/suggest_json() wrap it."""
@@ -75,7 +140,18 @@ def _ranked(limit=5):
         return _engagement.entity(r, etype)
 
     def in_scope(r):
-        return not _engagement.out_of_scope_match(entity(r), sc)
+        return _row_in_scope(r, etype, sc)
+
+    # per-asset tested-class state, computed once (killchain.md 4a [x] + written findings +
+    # Deadends.md, via _engagement.tested_classes - do NOT reimplement that here). Consumed
+    # twice below: the fingerprint block suppresses a re-surfaced [test] move once its class
+    # is done/dead on the asset, and the coverage-gap floor subtracts each asset's OWN tested
+    # set (not a flattened global one, so a class tested on A still gaps on B).
+    base = CLASSES.get(etype, [])
+    glob_tested_l, per_asset_norm = tested_lookup(d, etype, base)
+
+    def tested_for(ent):
+        return tested_for_asset(ent, glob_tested_l, per_asset_norm)
 
     # 1. open paths - directly actionable (all engagement types)
     for r in paths:
@@ -89,6 +165,14 @@ def _ranked(limit=5):
 
     # 1b. fingerprint-driven tests: match tech/services -> targeted tests (top 4)
     if not passive and PLAYBOOK:
+        # vuln class(es) each fingerprint implies (from its pattern + tests + skills, via the
+        # SAME alias vocab _engagement uses to credit tested classes). A fingerprint whose
+        # every implied class is already tested/dead on an asset is suppressed there (1.1
+        # repeat); an un-attributable fingerprint (empty set, e.g. a VPN CVE) is always shown.
+        fp_cls = {}
+        for pat, info in PLAYBOOK.items():
+            txt = pat + " " + " ".join(info.get("tests", [])) + " " + " ".join(info.get("skills", []))
+            fp_cls[pat] = {c.lower() for c in _engagement._match_classes(txt, base)} if base else set()
         seen = set()
         tests = []
         for r in state:
@@ -107,6 +191,9 @@ def _ranked(limit=5):
                     continue
                 if not (hi or lo):
                     continue
+                implied = fp_cls.get(pat)
+                if implied and implied <= tested_for(ent):
+                    continue                     # class already tested/dead on this asset (1.1 repeat)
                 if (ent, pat) in seen:
                     continue
                 seen.add((ent, pat))
@@ -168,26 +255,20 @@ def _ranked(limit=5):
             acq.append((score, "acquire", f"{verb}: {ent}{detail}"))
         sugg.extend(sorted(acq, key=lambda x: -x[0])[:3])
 
-    # 4b. coverage-gap floor: untested base vuln classes (per-type checklist in
-    #     coverage-classes.json, ordered high-to-low impact) minus whatever the killchain.md
-    #     4a table records as tested anywhere. Ranked BELOW every concrete move (scores 24-28,
-    #     under the acquisition floor of 30), so a gap never displaces a real lead but
-    #     systematic breadth still reaches the shortlist when no fingerprint matched.
-    #     Skill(coverage) holds the per-asset matrix; this is only the "test class X"
-    #     nudge. Suppressed under passive_only (active testing forbidden).
-    if not passive and any(in_scope(r) and entity(r) != "?" for r in state):
-        base = CLASSES.get(etype, [])
-        try:
-            per_asset, glob = _engagement.tested_classes(d, etype, base)
-        except Exception:
-            per_asset, glob = {}, set()
-        tested_any = {t.lower() for t in glob}
-        for s in per_asset.values():
-            tested_any |= {t.lower() for t in s}
-        untested = [c for c in base if c.lower() not in tested_any]
-        for i, cls in enumerate(untested[:5]):        # cap: shortlist, not the full matrix
-            sugg.append((28 - i, "gap",
-                         f"{cls}: untested vuln class (Skill(coverage) for per-asset gaps)"))
+    # 4b. coverage-gap floor: PER IN-SCOPE ASSET, the untested base vuln classes (per-type
+    #     checklist in coverage-classes.json, ordered high-to-low impact) minus THAT asset's
+    #     own tested set (tested_for). Iterating asset x class - not a flattened global set -
+    #     is what makes "untested in scope" provably complete: a class tested on asset A still
+    #     surfaces as a gap on asset B. Ranked BELOW every concrete move (scores 24-28, under
+    #     the acquisition floor of 30). Top-5 per asset here (shortlist); status.py --coverage /
+    #     Skill(coverage) carry the full uncapped matrix. Suppressed under passive_only.
+    if not passive and base:
+        for ent in in_scope_assets(state, etype, sc):
+            tested = tested_for(ent)
+            untested = [c for c in base if c.lower() not in tested]
+            for i, cls in enumerate(untested[:5]):    # per-asset shortlist cap; matrix is uncapped
+                sugg.append((28 - i, "gap",
+                             f"{ent}: {cls} untested (Skill(coverage) for per-asset gaps)"))
 
     # 5. blocked paths - surface unblock hint
     for r in paths:

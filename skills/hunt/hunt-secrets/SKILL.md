@@ -16,7 +16,7 @@ Apply documented dorks, extraction patterns, and validation steps. Wiki refs: [[
 
 ## Scope Check
 - Confirm target (host, repo, bucket) is in scope
-- Read Deadends.md - skip assets already mined dry
+- Read Deadends.md - skip paths already marked exhausted
 - Honor RoE: a secret in a public repo is fair game; do NOT act on creds for out-of-scope third-party systems
 
 ## Validation Gate (Read First)

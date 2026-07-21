@@ -14,8 +14,7 @@ Hub: [[macos-moc]] (links every macOS technique page). Core pages: [[macos-prive
 [[macos-persistence]], [[macos-code-signing]]. Payload: [[macos-app-injection]]. Cheatsheets:
 [[macos-enumeration]] (fast local recon), [[macos-loot-locations]] (credential/DB harvest map).
 
-**Self-heal:** wiki query empty -> create stub `wiki/techniques/macos/<slug>.md` (frontmatter + `##
-Observed during <engagement>`), link it from [[macos-moc]], before proceeding.
+**Self-heal:** If the wiki query returns nothing, create a stub `wiki/techniques/macos/<slug>.md` (frontmatter + a `## Observed during <engagement>` section built from your findings), link it from [[macos-moc]], before proceeding, so the gap fills instead of silently recurring.
 
 ## Scope + Safety Gate (READ FIRST)
 - Confirm the macOS host/user is in scope. Read `Deadends.md` + `loot.md` - reuse captured creds first.
@@ -66,11 +65,12 @@ sqlite3 ~/Library/Application\ Support/com.apple.TCC/TCC.db "select * from acces
      surface for code exec in that app's context.
 5. **Persistence + lateral** - [[macos-persistence]] (launch agents/daemons, login items, cron) and
    [[macos-mdm]] (enrolled-MDM abuse for fleet-wide reach, if the host is MDM-managed).
+6. **Distill to wiki (when confirmed):** if the finding is a reusable macOS privesc, TCC/SIP/Gatekeeper bypass, or injection chain, stage a GENERIC wiki candidate now (no client host): `python3 scripts/wiki-stage.py --kind technique --slug <slug> --target-page techniques/macos/macos-privesc.md`. Promote later via `scripts/wiki-promote.py`.
 
 ## FIND Output
 Confirmed:
 ```
-Create Vulns/Research/FIND-XXX-<SEV>-<issue>-<host>.md
+Create Vulns/Research/FIND-XXX-SEVERITY-<issue>-<host>.md
 Add row to Vuln-index.md: | FIND-XXX | TCC bypass -> full-disk access | <host> | CONFIRMED |
 ```
 Severity: CRITICAL = root/SIP-disabled code exec, MDM fleet compromise; HIGH = sandbox escape, XPC

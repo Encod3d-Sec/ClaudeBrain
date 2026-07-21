@@ -16,7 +16,7 @@ Apply known redirect_uri bypass patterns and SAML XSW techniques already documen
 
 ## Scope Check
 - Confirm target is in scope
-- Read Deadends.md - skip already-tested auth flows
+- Read Deadends.md - skip paths already marked exhausted
 
 ## Attack Surface Signals
 ```

@@ -11,7 +11,7 @@ qmd_query "insecure deserialization gadget chain ysoserial" via wiki-search MCP 
 ```
 Core page: [[insecure-deserialization]]. Related: [[os-command-injection]] (RCE sink), [[wiki/payloads/ssrf]] (URLDNS/blind probe).
 
-**Self-heal:** wiki query empty -> create stub `wiki/techniques/web/insecure-deserialization.md` before proceeding.
+**Self-heal:** If the wiki query returns nothing, create a stub `wiki/techniques/web/insecure-deserialization.md` (frontmatter + a `## Observed during <engagement>` section built from your findings) before proceeding, so the gap fills instead of silently recurring.
 
 ## Scope Check
 - Confirm target in scope. Read `Deadends.md` - skip exhausted sinks.

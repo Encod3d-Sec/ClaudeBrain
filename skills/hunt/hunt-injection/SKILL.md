@@ -17,7 +17,7 @@ Other XML-family surfaces: [[soap-attacks]] (SOAP/JAX-WS auth-bypass and threadl
 
 ## Scope Check
 - Confirm target is in scope
-- Read Deadends.md - skip already-tested endpoints
+- Read Deadends.md - skip paths already marked exhausted
 
 ---
 

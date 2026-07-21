@@ -4,6 +4,8 @@ import os
 import subprocess
 import time
 
+import pytest
+
 # Import _engagement at module (collection) level, before any `vault` fixture runs,
 # so its VAULT global self-locates to the REAL vault while CLAUDEBRAIN_VAULT is still
 # unset. Without this, if this file is run in isolation, the first import happens
@@ -759,30 +761,133 @@ def test_fingerprint_hits_is_routing_only():
 
 
 
-def test_scope_guard_enforces_echo_banner(vault):
-    """scope-guard now DENIES `echo "=== ... ==="` banners (enforce, not nudge); clean cmds pass."""
+def _write_scope(vault, in_scope=(), out_of_scope=(), flags=()):
+    """Write a scope.md into the fixture 'acme' engagement for scope-guard tests."""
+    lines = ["---", "type: engagement-scope"]
+    lines += ["%s: true" % f for f in flags]
+    lines += ["---", "", "# Scope", "", "## In scope"]
+    lines += (["- " + h for h in in_scope] or ["-"])
+    lines += ["", "## Out of scope"]
+    lines += (["- " + h for h in out_of_scope] or ["-"])
+    (vault / "targets" / "acme" / "scope.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+# --- scope-guard enforcing decision path (safety properties a + b) ---
+
+def test_scope_guard_denies_out_of_scope_ipv4(vault):
+    # safety property (b): an OOS IPv4 host must be denied
+    _write_scope(vault, in_scope=["10.0.0.5"], out_of_scope=["10.9.9.0/24"])
+    out = run_hook("scope-guard.py", {"tool_name": "Bash",
+                   "tool_input": {"command": "nmap -sV 10.9.9.42"}}, _env(vault)).stdout
+    assert '"permissionDecision": "deny"' in out and "out-of-scope" in out and "10.9.9.42" in out
+
+
+def test_scope_guard_denies_out_of_scope_host_and_skips_filename(vault):
+    _write_scope(vault, in_scope=["app.example.com"], out_of_scope=["prod.example.com"])
+    deny = run_hook("scope-guard.py", {"tool_name": "Bash",
+                    "tool_input": {"command": "curl https://prod.example.com/api"}}, _env(vault)).stdout
+    assert '"deny"' in deny and "prod.example.com" in deny
+    # FILE_EXT branch: config.yml / app.py look host-shaped but are filenames -> not a target -> allowed
+    ok = run_hook("scope-guard.py", {"tool_name": "Bash",
+                  "tool_input": {"command": "cat config.yml app.py notes.md"}}, _env(vault)).stdout
+    assert ok.strip() == ""
+
+
+def test_scope_guard_denies_roe_forbidden_tooling(vault):
     env = _env(vault)
-    banner = run_hook("scope-guard.py", {"tool_name": "Bash",
-                      "tool_input": {"command": 'echo "=== recon ==="; ls -la'}}, env).stdout
-    assert '"permissionDecision": "deny"' in banner and "output-banner" in banner
-    clean = run_hook("scope-guard.py", {"tool_name": "Bash",
-                     "tool_input": {"command": "ls -la; grep foo bar.txt"}}, env).stdout
-    assert clean.strip() == ""
-    # banner inside a vm.sh single-quoted wrapper is still blocked (the text is in the command)
-    wrapped = run_hook("scope-guard.py", {"tool_name": "Bash",
-                       "tool_input": {"command": "bash /root/vm.sh 'echo \"### ports ###\"; nmap x'"}}, env).stdout
-    assert '"deny"' in wrapped
+    _write_scope(vault, in_scope=["10.0.0.5"], flags=["no_bruteforce"])
+    bf = run_hook("scope-guard.py", {"tool_name": "Bash",
+                  "tool_input": {"command": "hydra -l admin -P rockyou.txt ssh://10.0.0.5"}}, env).stdout
+    assert '"deny"' in bf and "no_bruteforce" in bf
+    _write_scope(vault, in_scope=["10.0.0.5"], flags=["no_dos"])
+    dos = run_hook("scope-guard.py", {"tool_name": "Bash",
+                   "tool_input": {"command": "nmap -T5 --min-rate 90000 10.0.0.5"}}, env).stdout
+    assert '"deny"' in dos and "no_dos" in dos
+    _write_scope(vault, in_scope=["10.0.0.5"], flags=["passive_only"])
+    pas = run_hook("scope-guard.py", {"tool_name": "Bash",
+                   "tool_input": {"command": "nuclei -u http://10.0.0.5"}}, env).stdout
+    assert '"deny"' in pas and "passive_only" in pas
+
+
+def test_scope_guard_allows_in_scope_with_active_out_of_scope(vault):
+    # safety property (a): a valid in-scope command is NOT blocked even when an out_of_scope list is active
+    _write_scope(vault, in_scope=["10.0.0.5", "app.example.com"],
+                 out_of_scope=["10.9.9.0/24", "prod.example.com"])
+    out = run_hook("scope-guard.py", {"tool_name": "Bash",
+                   "tool_input": {"command": "nmap -sV 10.0.0.5; curl https://app.example.com/api"}},
+                   _env(vault)).stdout
+    assert out.strip() == ""
+
+
+def test_scope_guard_denies_out_of_scope_ipv6(vault):
+    # safety property (b), IPv6 under-block fix: IP_RE is IPv4-only, so this was NOT denied before
+    _write_scope(vault, in_scope=["2001:db8:1::5"], out_of_scope=["2001:db8:dead::/48"])
+    out = run_hook("scope-guard.py", {"tool_name": "Bash",
+                   "tool_input": {"command": "nmap -6 2001:db8:dead::1"}}, _env(vault)).stdout
+    assert '"deny"' in out and "out-of-scope" in out and "2001:db8:dead::1" in out
+
+
+def test_scope_guard_allows_param_ip_against_in_scope_host(vault):
+    # safety property (a), over-block fix: in-scope host, OOS IP only in a query param
+    # (SSRF/redirect testing) -> must NOT deny
+    _write_scope(vault, in_scope=["app.example.com"], out_of_scope=["10.9.9.0/24"])
+    out = run_hook("scope-guard.py", {"tool_name": "Bash",
+                   "tool_input": {"command": "curl 'http://app.example.com/x?next=10.9.9.42'"}},
+                   _env(vault)).stdout
+    assert out.strip() == ""
+
+
+def test_scope_guard_denies_option_assigned_out_of_scope_target(vault):
+    # safety property (b), under-block fix: an OOS target passed as --url=/-u= must be denied.
+    # The old blanket `=`-strip hid it and let the out-of-scope host escape the guard.
+    _write_scope(vault, in_scope=["app.example.com"],
+                 out_of_scope=["10.9.9.0/24", "prod.example.com"])
+    env = _env(vault)
+    ip = run_hook("scope-guard.py", {"tool_name": "Bash",
+                  "tool_input": {"command": "curl --url=http://10.9.9.42/"}}, env).stdout
+    assert '"deny"' in ip and "10.9.9.42" in ip
+    host = run_hook("scope-guard.py", {"tool_name": "Bash",
+                    "tool_input": {"command": "wpscan --url=https://prod.example.com"}}, env).stdout
+    assert '"deny"' in host and "prod.example.com" in host
+
+
+def test_scope_guard_allows_ssrf_payload_in_data_flag(vault):
+    # over-block fix preserved for the POST/header vector: an OOS URL that is an SSRF PAYLOAD in
+    # a -d/--data value (not the target) against an in-scope host must NOT deny.
+    _write_scope(vault, in_scope=["app.example.com"], out_of_scope=["10.9.9.0/24"])
+    out = run_hook("scope-guard.py", {"tool_name": "Bash",
+                   "tool_input": {"command": "curl -d 'redirect=http://10.9.9.42/' http://app.example.com/"}},
+                   _env(vault)).stdout
+    assert out.strip() == ""
+
+
+def test_scope_guard_fails_open_on_malformed_json(vault):
+    p = subprocess.run(["python3", os.path.join(HOOKS, "scope-guard.py")],
+                       input="garbage{", capture_output=True, text=True, env=_env(vault), timeout=20)
+    assert p.returncode == 0
+    assert "permissionDecision" not in p.stdout
+
+
+def test_scope_guard_fails_open_on_malformed_scope(vault):
+    # garbage scope.md must not crash the guard; a clean in-scope command is still allowed
+    (vault / "targets" / "acme" / "scope.md").write_bytes(
+        b"\xff\xfe not yaml ## In scope\n- [unclosed\x00 garbage")
+    p = run_hook("scope-guard.py", {"tool_name": "Bash",
+                 "tool_input": {"command": "nmap -sV 10.0.0.5"}}, _env(vault))
+    assert p.returncode == 0
+    assert "permissionDecision" not in p.stdout
 
 
 def test_scope_guard_escape_hatch_downgrades_to_advisory(vault):
-    """The skills/hooks/.enforce-off marker turns every deny back into an advisory warning,
-    so a false block can never trap the operator."""
+    """The skills/hooks/.enforce-off marker turns every deny into an advisory warning, so a
+    false block can never trap the operator."""
+    _write_scope(vault, in_scope=["10.0.0.5"], out_of_scope=["10.9.9.0/24"])
     marker = os.path.join(HOOKS, ".enforce-off")
     env = _env(vault)
     try:
         open(marker, "w").close()
         out = run_hook("scope-guard.py", {"tool_name": "Bash",
-                       "tool_input": {"command": 'echo "=== x ==="'}}, env).stdout
+                       "tool_input": {"command": "nmap 10.9.9.42"}}, env).stdout
         assert "permissionDecision" not in out
         assert "additionalContext" in out and "advisory" in out
     finally:
@@ -831,3 +936,138 @@ def test_paths_write_gap(tmp_path):
     assert e.paths_write_gap(str(d)) == 0
     # fail-open on missing dir
     assert e.paths_write_gap(None) == 0
+
+
+# --- hunt-trigger framework-meta guard + intent-gate tightening (0.4) ---
+
+def test_hunt_trigger_api_methodology_does_not_fire(vault):
+    # the exact hard false-fire: "document the api security testing methodology in the wiki"
+    # HARD-fired hunt-api because the adjacent "testing" satisfied the intent gate. The
+    # intent-gate tightening (_expand_span masks the bordering "testing") keeps it out of a
+    # MANDATORY load; a mild soft "consider" is acceptable (it does mention api security).
+    out = run_hook("hunt-trigger.py",
+                   {"prompt": "document the api security testing methodology in the wiki"},
+                   _env(vault)).stdout
+    assert "MANDATORY" not in out
+
+
+def test_hunt_trigger_framework_meta_prompts_silent(vault):
+    # prompts ABOUT the harness itself (a config file, or "the harness") must not route a hunt
+    # skill. Narrow by design: only unambiguous harness references silence a vuln keyword.
+    env = _env(vault)
+    for prompt in (
+        "update the ssrf trigger in triggers.json",
+        "improve the deserialization fingerprint in the playbook.json",
+        "review the sqli detection methodology for the harness",
+    ):
+        out = run_hook("hunt-trigger.py", {"prompt": prompt}, env).stdout
+        assert out.strip() == "", prompt
+
+
+def test_hunt_trigger_offensive_prompt_with_meta_words_still_fires(vault):
+    # the meta guard must NOT silence a real hunt just because it uses a common word like
+    # "documentation" / "methodology" - those appear constantly in genuine target work.
+    env = _env(vault)
+    idor = run_hook("hunt-trigger.py",
+                    {"prompt": "read the api documentation and test each endpoint for idor"}, env).stdout
+    assert "Skill(hunt-idor)" in idor, idor
+    ssrf = run_hook("hunt-trigger.py",
+                    {"prompt": "exploit the ssrf per the pentest methodology"}, env).stdout
+    assert "Skill(hunt-ssrf)" in ssrf, ssrf
+
+
+def test_hunt_trigger_wiki_app_target_still_fires(vault):
+    # bare "wiki" is NOT a meta key: a wiki APP (MediaWiki/Confluence/DokuWiki) is a
+    # common pentest target, so an offensive prompt against one must still fire.
+    out = run_hook("hunt-trigger.py",
+                   {"prompt": "exploit xss in the target's mediawiki app"}, _env(vault)).stdout
+    assert "Skill(hunt-xss)" in out and "Relevant skill" in out
+
+
+def test_hunt_trigger_intent_gate_ignores_adjacent_test_noun(vault):
+    # intent-gate tightening (no meta words): a trailing "testing" bordering the "api security"
+    # keyword is a noun phrase, not intent -> hunt-api must NOT fire hard.
+    out = run_hook("hunt-trigger.py",
+                   {"prompt": "write up the api security testing steps for the client report"},
+                   _env(vault)).stdout
+    assert "Relevant skill" not in out          # not a hard MANDATORY fire
+
+
+def test_hunt_trigger_genuine_vuln_still_fires_despite_guard(vault):
+    # the guard must not silence real target work
+    env = _env(vault)
+    ssrf = run_hook("hunt-trigger.py", {"prompt": "test ssrf on the login endpoint"}, env).stdout
+    assert "Skill(hunt-ssrf)" in ssrf and "Relevant skill" in ssrf
+    sqli = run_hook("hunt-trigger.py", {"prompt": "exploit the sqli behind the search box"}, env).stdout
+    assert "Skill(hunt-sqli)" in sqli and "Relevant skill" in sqli
+
+
+# --- wiki-reindex auto-reindex hook (2.1) ---
+
+def _reindex_env(vault):
+    """Point qmd at the fixture AND drop the qmd bin dir from PATH, so a real `qmd update`
+    can never fire against the fixture (which would pollute the real ~/.qmd index). python3
+    stays resolvable for the hook subprocess itself."""
+    import shutil
+    env = _env(vault)
+    env["QMD_VAULT"] = str(vault)
+    py = shutil.which("python3") or "/usr/bin/python3"
+    qmd = shutil.which("qmd")
+    parts = [os.path.dirname(py), "/usr/bin", "/bin"]
+    if qmd:
+        parts = [p for p in parts if p != os.path.dirname(qmd)]
+    env["PATH"] = ":".join(dict.fromkeys(parts))
+    return env
+
+
+def test_wiki_reindex_acts_on_wiki_edit(vault):
+    stamp = vault / ".wiki-reindex-stamp"
+    assert not stamp.exists()
+    run_hook("wiki-reindex.py",
+             {"tool_name": "Edit",
+              "tool_input": {"file_path": str(vault / "wiki" / "techniques" / "foo.md")}},
+             _reindex_env(vault))
+    assert stamp.exists()                       # a wiki .md edit records a (debounced) reindex
+
+
+def test_wiki_reindex_skips_non_wiki_edit(vault):
+    env = _reindex_env(vault)
+    run_hook("wiki-reindex.py",
+             {"tool_name": "Edit",
+              "tool_input": {"file_path": str(vault / "targets" / "acme" / "state.md")}}, env)
+    assert not (vault / ".wiki-reindex-stamp").exists()   # non-wiki path -> no-op
+    # a wiki-dir path that is NOT markdown is also skipped
+    run_hook("wiki-reindex.py",
+             {"tool_name": "Write",
+              "tool_input": {"file_path": str(vault / "wiki" / "index.json")}}, env)
+    assert not (vault / ".wiki-reindex-stamp").exists()
+
+
+def test_wiki_reindex_debounces_burst(vault):
+    env = _reindex_env(vault)
+    ev = {"tool_name": "Edit",
+          "tool_input": {"file_path": str(vault / "wiki" / "payloads" / "xss.md")}}
+    run_hook("wiki-reindex.py", ev, env)
+    first = (vault / ".wiki-reindex-stamp").stat().st_mtime
+    run_hook("wiki-reindex.py", ev, env)         # immediate second edit within the window
+    assert (vault / ".wiki-reindex-stamp").stat().st_mtime == first   # not re-fired
+
+
+def test_wiki_reindex_malformed_exits_zero(vault):
+    p = subprocess.run(["python3", os.path.join(HOOKS, "wiki-reindex.py")],
+                       input="garbage", capture_output=True, text=True, env=_env(vault), timeout=20)
+    assert p.returncode == 0
+    assert not (vault / ".wiki-reindex-stamp").exists()
+
+
+# --- fail-open across every hook (2.3a) ---
+
+@pytest.mark.parametrize("payload", ["garbage", ""])
+@pytest.mark.parametrize("hook", [
+    "scope-guard.py", "hunt-trigger.py", "session-guard.py",
+    "engagement-init.py", "recon-capture.py", "wiki-reindex.py"])
+def test_all_hooks_fail_open(vault, hook, payload):
+    p = subprocess.run(["python3", os.path.join(HOOKS, hook)],
+                       input=payload, capture_output=True, text=True, env=_env(vault), timeout=25)
+    assert p.returncode == 0, (hook, payload, p.stderr)
+    assert "permissionDecision" not in p.stdout, (hook, payload, p.stdout)

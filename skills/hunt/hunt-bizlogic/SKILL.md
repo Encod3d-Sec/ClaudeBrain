@@ -11,7 +11,7 @@ qmd_query "business logic flaw workflow bypass" via wiki-search MCP -> read matc
 ```
 Core page: [[business-logic]]. Overlaps [[access-control]] (IDOR), [[race-conditions]] (logic races), mass assignment. Payload arsenal: `wiki/payloads/race-conditions.md`.
 
-**Self-heal:** wiki query empty -> create stub `wiki/techniques/web/business-logic.md` before proceeding.
+**Self-heal:** If the wiki query returns nothing, create a stub `wiki/techniques/web/business-logic.md` (frontmatter + a `## Observed during <engagement>` section built from your findings) before proceeding, so the gap fills instead of silently recurring.
 
 ## Scope Check
 - Confirm in scope. **Logic bugs are app-specific: map the intended workflow first** (read the feature, the happy path, every state transition). Read `Deadends.md`.
@@ -39,7 +39,7 @@ decimal/rounding (0.001 * 1000)
 ## FIND Output
 Confirmed (demonstrate the unintended favorable outcome):
 ```
-Create Vulns/Research/FIND-XXX-<SEV>-logic-<feature>-<host>.md
+Create Vulns/Research/FIND-XXX-SEVERITY-logic-<feature>-<host>.md
 Add row to Vuln-index.md: | FIND-XXX | price tamper -> free order | host | CONFIRMED |
 ```
 Severity: by impact - CRITICAL = direct financial theft / auth bypass / unlimited privilege; HIGH = discount/refund abuse, quota bypass with money impact; MEDIUM = limited abuse, needs preconditions.

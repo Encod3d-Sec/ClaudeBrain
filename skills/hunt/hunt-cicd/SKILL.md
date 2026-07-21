@@ -11,7 +11,7 @@ qmd_query "GitHub Actions pwn request CI/CD" via wiki-search MCP -> read cicd-gi
 ```
 Apply documented pwn-request, cache-poisoning, OIDC-theft, and PPE techniques + payloads/cicd.
 
-**Self-heal:** if the query returns nothing, stub `wiki/techniques/cloud/<slug>.md` before proceeding.
+**Self-heal:** If the wiki query returns nothing, create a stub `wiki/techniques/cloud/<slug>.md` (frontmatter + a `## Observed during <engagement>` section built from your findings) before proceeding, so the gap fills instead of silently recurring.
 
 ## Scope Check
 - Confirm the repo/org/pipeline is in scope. RoE note: opening PRs against third-party repos may be out of scope; do not test unauthorised orgs.

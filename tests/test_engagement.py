@@ -172,6 +172,25 @@ def test_scope_entry_match_preserved_cases():
     assert _engagement._scope_entry_match("10.0.0.9", "10.0.0.0/24") is True
 
 
+def test_scope_entry_match_url_and_wildcard():
+    # 1.2: a URL-form entity reduces to its bare host, and a *.dom wildcard entry
+    # matches the apex + any subdomain. One function serves scope-guard (out-of-scope)
+    # and next_move's in-scope allowlist gate, so both gain URL/wildcard handling.
+    m = _engagement._scope_entry_match
+    # URL-form entity vs a bare-host scope entry (scheme/port/path/query stripped)
+    assert m("https://api.example.com/admin", "api.example.com") is True
+    assert m("http://api.example.com:8443/x?u=1", "api.example.com") is True
+    # bare-host entity vs a URL-form scope entry (path present, not a CIDR)
+    assert m("api.example.com", "https://api.example.com/admin") is True
+    # wildcard entry: apex + subdomain in, lookalike out
+    assert m("api.example.com", "*.example.com") is True
+    assert m("example.com", "*.example.com") is True
+    assert m("api.evil.com", "*.example.com") is False
+    assert m("notexample.com", "*.example.com") is False
+    # a URL entity still resolves into a CIDR scope entry
+    assert m("http://10.9.9.42:8080/", "10.9.9.0/24") is True
+
+
 def test_scope_entry_match_strict_drops_spoofable_label_prefix():
     # The label-prefix arm is attacker-spoofable (anyone can register
     # <label>.attacker.tld), so under strict=True -- used by the poc/pages disk-write

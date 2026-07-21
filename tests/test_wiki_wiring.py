@@ -17,9 +17,13 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 AUDIT = os.path.join(ROOT, "scripts", "wiki-wiring-audit.py")
 
 # wiki/ is gitignored (local Obsidian content, not in the repo). In CI / a fresh checkout it is
-# absent, so these coverage gates only run where the wiki actually exists.
-pytestmark = pytest.mark.skipif(
-    not glob.glob(os.path.join(ROOT, "wiki", "techniques", "**", "*.md"), recursive=True),
+# absent, so the coverage gates below can only run where the wiki actually exists. A silent
+# module-level skip was invisible in CI (a skip reads like a pass), so the per-test skip is paired
+# with test_wiki_wiring_gate_visible(), which ALWAYS runs and xfails LOUDLY when wiki is absent -
+# a CI run then shows an xfail with a reason, never a silent pass.
+_WIKI_PRESENT = bool(glob.glob(os.path.join(ROOT, "wiki", "techniques", "**", "*.md"), recursive=True))
+_needs_wiki = pytest.mark.skipif(
+    not _WIKI_PRESENT,
     reason="wiki/ not present (gitignored local content); wiring coverage gate runs locally only",
 )
 
@@ -29,6 +33,19 @@ def _audit():
     return json.loads(out)
 
 
+def test_wiki_wiring_gate_visible():
+    """Always collected: makes the wiki-wiring gate's status visible in CI instead of a silent
+    skip. wiki present -> assert the auditor actually ran (gate live). wiki absent -> xfail with a
+    loud reason so a skipped coverage gate is never mistaken for a green pass."""
+    if not _WIKI_PRESENT:
+        pytest.xfail("wiki/ absent (gitignored); wiki-wiring coverage gate was NOT exercised this "
+                     "run - this is not a pass. Run locally with wiki/ present, or ship a wiki fixture.")
+    data = _audit()
+    assert data["total"] > 100, "wiring auditor produced no page set; gate is inert"
+    assert "orphans" in data and "coverage_pct" in data
+
+
+@_needs_wiki
 def test_no_orphaned_wiki_pages():
     data = _audit()
     orphans = data["orphans"]
@@ -40,6 +57,7 @@ def test_no_orphaned_wiki_pages():
     )
 
 
+@_needs_wiki
 def test_no_unwired_tools():
     """Every wiki/tools/ page must be recommended by some context (fingerprint tools/refs or a skill)."""
     data = _audit()
@@ -50,6 +68,7 @@ def test_no_unwired_tools():
     )
 
 
+@_needs_wiki
 def test_no_unwired_cheatsheets():
     """Every wiki/cheatsheets/ page must surface by context or be exempt."""
     data = _audit()
@@ -60,6 +79,7 @@ def test_no_unwired_cheatsheets():
     )
 
 
+@_needs_wiki
 def test_coverage_reported():
     """Sanity: the auditor computes a coverage number over a non-trivial page set."""
     data = _audit()

@@ -16,7 +16,7 @@ Apply known CVEs and template injection payloads already documented.
 
 ## Scope Check
 - Confirm target is in scope
-- Read Deadends.md - skip already-tested execution surfaces
+- Read Deadends.md - skip paths already marked exhausted
 
 ## Attack Surface Signals
 URL patterns: `/management-console/*`, `/admin/settings/*`, `/webhook/*`, `/render?template=`, `/import?url=`

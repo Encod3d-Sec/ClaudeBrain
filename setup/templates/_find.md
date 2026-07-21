@@ -34,3 +34,9 @@ How to fix it. Specific, actionable.
 ## References
 
 CVE / advisory / docs links.
+
+<!-- canonical-vocab (single source of truth; read by tests/test_skill_contract.py, do not drift)
+find_filename_placeholder: FIND-XXX-SEVERITY-short-slug.md
+vuln_index_status: CONFIRMED | PARTIAL
+-->
+

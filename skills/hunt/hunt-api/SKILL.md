@@ -12,7 +12,7 @@ qmd_query "api security BOLA mass assignment" via wiki-search MCP -> read matchi
 Core pages: [[api-security]], [[api-testing]]. Overlaps [[access-control]] (BOLA -> hunt-idor), [[jwt-attacks]], [[graphql]] payloads. Payload arsenal: `wiki/payloads/api.md`.
 Protocol/query-language variants: [[grpc-web-attacks]] (gRPC-Web/protobuf transcoder abuse), [[rsql-injection]] / [[rsql]] payload (RSQL/FIQL filter-query injection, e.g. Spring Data REST), [[rate-limit-bypass]] (header/race/distributed-source throttling bypass), [[redos]] payload (catastrophic-backtracking regex DoS in an input validator).
 
-**Self-heal:** wiki query empty -> create stub `wiki/techniques/web/api-security.md` before proceeding.
+**Self-heal:** If the wiki query returns nothing, create a stub `wiki/techniques/web/api-security.md` (frontmatter + a `## Observed during <engagement>` section built from your findings) before proceeding, so the gap fills instead of silently recurring.
 
 ## Scope Check
 - Confirm in scope. Get the spec if any (Swagger/OpenAPI, GraphQL introspection, `.proto`). Read `Deadends.md`.
@@ -38,7 +38,7 @@ Protocol/query-language variants: [[grpc-web-attacks]] (gRPC-Web/protobuf transc
 ## FIND Output
 Confirmed:
 ```
-Create Vulns/Research/FIND-XXX-<SEV>-api-<issue>-<host>.md   (e.g. FIND-021-HIGH-bola-orders-api.md)
+Create Vulns/Research/FIND-XXX-SEVERITY-api-<issue>-<host>.md   (e.g. FIND-021-HIGH-bola-orders-api.md)
 Add row to Vuln-index.md: | FIND-XXX | BOLA on /api/orders/{id} | host | CONFIRMED |
 ```
 Severity: CRITICAL = unauth admin action / cross-tenant data; HIGH = BOLA/BFLA to other users' data, mass-assign privesc; MEDIUM = excessive exposure, rate-limit gaps.

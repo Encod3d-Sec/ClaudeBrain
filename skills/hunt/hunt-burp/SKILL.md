@@ -58,7 +58,7 @@ SQLi -> `hunt-sqli`, IDOR/BOLA -> `hunt-idor`, XSS -> `hunt-xss`, SSRF/open-redi
 ## FIND Output
 Confirmed:
 ```
-Create Vulns/Research/FIND-XXX-<SEV>-<class>-<host>.md   (capture the raw request/response as evidence: Skill(screenshot-burp) -> a Burp Repeater PoC image)
+Create Vulns/Research/FIND-XXX-SEVERITY-<class>-<host>.md   (capture the raw request/response as evidence: Skill(screenshot-burp) -> a Burp Repeater PoC image)
 Add row to Vuln-index.md: | FIND-XXX | <issue> via Burp | host | CONFIRMED |
 ```
 Capture signals into `state.md`/`loot.md`/`paths.md` as you go. Exhausted a vector -> one line in `Deadends.md`.

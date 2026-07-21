@@ -17,11 +17,13 @@ Related client-side vectors: [[dangling-markup]] (scriptless HTML-injection exfi
 
 ## Scope Check
 - Confirm target is in scope
-- Read Deadends.md - skip already-tested reflection points
+- Read Deadends.md - skip paths already marked exhausted
 
 ## OOB Gate (for blind/stored XSS)
 NOT confirmation: payload URL-encoded or HTML-encoded in response, `<script>` appears as `&lt;script&gt;`, ASP.NET validator blocked `<`.
 IS confirmation: HTTP/DNS request to your unique Collaborator subdomain with browser User-Agent (Mozilla/Chrome).
+
+When you plant a blind/stored XSS beacon, append a row to `targets/<eng>/oob.md`: `| <token> | <sink url+param> | xss | <date> | waiting | |` (columns: token | sink | class | planted | status | source, where token = your unique Burp Collaborator / interactsh label). The recon-capture hook auto-correlates incoming callbacks to flip the row to HIT and SessionStart surfaces HITs; a HIT row is the confirmation gate to scaffold the FIND. Do NOT claim a blind XSS without a HIT row.
 
 **Marker discipline:** use unique 8+ char alphanumeric canaries (e.g., `x4hd2k9pq`), NOT `test`/`marker`/`evil`/`payload`. Check the baseline response for your canary before claiming reflection.
 

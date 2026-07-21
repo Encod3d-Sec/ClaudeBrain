@@ -42,9 +42,10 @@ def test_pentest_spray_excludes_reused_host(monkeypatch):
     _patch(monkeypatch, "pentest",
            [{"host": "PC1", "access": "port-open"}, {"host": "PC2", "access": "creds"}],
            [{"cred": "u:p", "status": "active", "reused-where": "PC2"}], [])
-    out = " ".join(next_move.suggest())
-    assert "spray u:p at PC1" in out
-    assert "PC2" not in out  # already sprayed
+    # PC2 is already sprayed -> it must not be a spray target (it legitimately still
+    # appears as an in-scope per-asset coverage [gap] target, which is a different move).
+    spray = [s for s in next_move.suggest(limit=99) if "spray" in s]
+    assert spray == ["[now] spray u:p at PC1"]
 
 
 def test_pentest_relay_blocked_without_cred(monkeypatch):
@@ -218,3 +219,60 @@ def test_coverage_gap_none_without_assets(monkeypatch):
     # no in-scope assets -> no gap moves (breadth is per-target, not free-floating)
     _patch(monkeypatch, "bugbounty", [], [], [])
     assert not any(s.startswith("[gap]") for s in next_move.suggest(limit=99))
+
+
+def test_coverage_gap_per_asset_not_flattened(monkeypatch):
+    # THE completeness property: rce tested on A only must NOT suppress the rce gap on B.
+    # (single-asset test_coverage_gap_excludes_tested cannot catch the old flatten bug.)
+    _patch(monkeypatch, "bugbounty",
+           [{"asset": "a.x", "access": "recon"}, {"asset": "b.x", "access": "recon"}],
+           [], [],
+           killchain=[{"asset": "a.x", "vuln class": "rce", "status": "[x]"}])
+    gaps = [s for s in next_move.suggest(limit=99) if s.startswith("[gap]")]
+    a_gaps = " ".join(g for g in gaps if "a.x:" in g)
+    b_gaps = " ".join(g for g in gaps if "b.x:" in g)
+    assert "rce" not in a_gaps       # tested on A -> not a gap on A
+    assert "rce" in b_gaps           # untested on B -> STILL a gap on B
+
+
+def test_fingerprint_suppressed_after_tested(monkeypatch):
+    # graphql marked [x] on api.x in killchain 4a -> its re-ranked [test] move disappears.
+    _patch(monkeypatch, "bugbounty",
+           [{"asset": "api.x", "tech": "GraphQL Apollo", "access": "tested"}], [], [],
+           killchain=[{"asset": "api.x", "vuln class": "graphql", "status": "[x]"}])
+    out = next_move.suggest(limit=99)
+    assert not any(s.startswith("[test] api.x") and "introspection" in s for s in out)
+
+
+def test_allowlist_gate_drops_unlisted_host(monkeypatch):
+    # 1.2: with a non-empty in-scope allowlist, a host in neither list is dropped.
+    _patch(monkeypatch, "pentest",
+           [{"host": "app.example.com", "access": "port-open", "services": "smb"},
+            {"host": "stray.other.com", "access": "port-open", "services": "smb"}],
+           [], [], scope=_scope(in_scope=["app.example.com"]))
+    out = " ".join(next_move.suggest(limit=99))
+    assert "app.example.com" in out
+    assert "stray.other.com" not in out
+
+
+def test_allowlist_cidr_matches_host_by_ip_column(monkeypatch):
+    # HIGH regression: a pentest host tracked by HOSTNAME whose ip falls inside an in-scope
+    # CIDR must NOT be dropped. The gate checks every identifier column (host AND ip), not
+    # just the displayed hostname (a hostname never matches a CIDR). This is the standard
+    # internal-pentest scoping; the old single-entity gate silenced the entire ranker.
+    _patch(monkeypatch, "pentest",
+           [{"host": "dc01", "ip": "10.10.10.5", "access": "port-open", "services": "smb ldap"}],
+           [], [], scope=_scope(in_scope=["10.10.10.0/24"]))
+    out = next_move.suggest(limit=99)
+    assert out != ["No open moves. Recon more hosts or capture a cred."]
+    assert any("dc01" in s for s in out)   # in-scope via its ip column, still ranked
+
+
+def test_tested_credit_matches_across_url_host_drift(monkeypatch):
+    # MED regression: a killchain 4a cell written as a URL must still credit a state asset
+    # tracked by bare host (host-normalized join). Otherwise scheme/path drift orphans the
+    # credit and a cleared class wrongly regresses to a [gap].
+    _patch(monkeypatch, "bugbounty", [{"asset": "api.x", "access": "recon"}], [], [],
+           killchain=[{"asset": "https://api.x/graphql", "vuln class": "rce", "status": "[x]"}])
+    gaps = " ".join(s for s in next_move.suggest(limit=99) if s.startswith("[gap]"))
+    assert "rce" not in gaps

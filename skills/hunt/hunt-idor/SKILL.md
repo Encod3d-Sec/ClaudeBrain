@@ -16,7 +16,7 @@ Apply known patterns and GraphQL IDOR techniques already documented. Payload ars
 
 ## Scope Check
 - Confirm target is in scope
-- Read Deadends.md - skip already-tested endpoints
+- Read Deadends.md - skip paths already marked exhausted
 
 ## Attack Surface Signals
 URL patterns: `/api/v1/users/{id}`, `/invoices?id=`, `/reports/{uuid}/`, `/messages/{thread_id}`, `/admin/orgs/{org_id}/members`

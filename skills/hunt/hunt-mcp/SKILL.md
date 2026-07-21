@@ -11,7 +11,7 @@ qmd_query "MCP server attacks tool poisoning" via wiki-search MCP -> read mcp-se
 ```
 Apply documented poisoning/shadowing/rug-pull payloads and the lethal-trifecta model.
 
-**Self-heal:** if the query returns nothing, stub `wiki/techniques/web/<slug>.md` (frontmatter + `## Observed during <engagement>`) before proceeding.
+**Self-heal:** If the wiki query returns nothing, create a stub `wiki/techniques/web/<slug>.md` (frontmatter + a `## Observed during <engagement>` section built from your findings) before proceeding, so the gap fills instead of silently recurring.
 
 ## Scope Check
 - Confirm the target MCP server / AI agent is in scope

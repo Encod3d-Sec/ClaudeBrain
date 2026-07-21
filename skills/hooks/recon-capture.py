@@ -256,8 +256,15 @@ _FRAMEWORK_META = re.compile(
 
 def _is_framework_meta(cmd):
     """True if the command operates on the vault's own framework machinery (playbook/hooks/
-    wiki-wiring), so the fingerprint router must NOT treat its output as target recon."""
-    return bool(_FRAMEWORK_META.search(cmd or ""))
+    wiki-wiring), so the fingerprint router must NOT treat its output as target recon.
+
+    Delegates to the shared _meta helper (same regex, now also used by hunt-trigger); falls
+    back to the local pattern if that import fails, so the guard stays fail-open."""
+    try:
+        import _meta
+        return _meta.is_framework_meta(cmd)
+    except Exception:
+        return bool(_FRAMEWORK_META.search(cmd or ""))
 
 
 def _emit(blocks):

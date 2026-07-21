@@ -11,7 +11,7 @@ qmd_query "file upload bypass web shell" via wiki-search MCP -> read matching pa
 ```
 Core page: [[file-upload]]. RCE sink overlaps [[os-command-injection]]; SVG overlaps [[xss]]. Payload arsenal: `wiki/payloads/file-upload.md`.
 
-**Self-heal:** wiki query empty -> create stub `wiki/techniques/web/file-upload.md` before proceeding.
+**Self-heal:** If the wiki query returns nothing, create a stub `wiki/techniques/web/file-upload.md` (frontmatter + a `## Observed during <engagement>` section built from your findings) before proceeding, so the gap fills instead of silently recurring.
 
 ## Scope Check
 - Confirm target in scope. Identify where uploads land (web-root? CDN? processed?) and how they're served back. Read `Deadends.md`.

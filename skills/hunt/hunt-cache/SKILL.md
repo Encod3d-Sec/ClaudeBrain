@@ -11,10 +11,17 @@ qmd_query "web cache poisoning deception unkeyed input" via wiki-search MCP -> r
 ```
 Core pages: [[web-cache-poisoning]], [[web-cache-deception]], [[web-cache-attacks]]. Related: [[http-host-header-attacks]], [[http-request-smuggling]]. Payload arsenal: `wiki/payloads/web-cache.md`.
 
-**Self-heal:** wiki query empty -> create stub `wiki/techniques/web/web-cache-poisoning.md` before proceeding.
+**Self-heal:** If the wiki query returns nothing, create a stub `wiki/techniques/web/web-cache-poisoning.md` (frontmatter + a `## Observed during <engagement>` section built from your findings) before proceeding, so the gap fills instead of silently recurring.
 
 ## Scope Check
 - Confirm in scope. Needs a cache in front (CDN/Varnish/Cloudflare/Akamai/Fastly or app cache). Read `Deadends.md`.
+
+## OOB Gate (READ FIRST)
+**Blind cache-poisoning claims require confirmation that the poisoned response is served to OTHERS. No exceptions.**
+
+NOT confirmation: your own poisoned response echoed back to you alone, an `Age`/`X-Cache` change with no cross-user hit. IS confirmation: a fresh, unauthenticated request receiving the poisoned response, or a DNS/HTTP hit to your unique Burp Collaborator / interactsh subdomain from a resource you injected into the cached page (proving other clients load it).
+
+When you plant a blind/OOB payload, append a row to `targets/<eng>/oob.md`: `| <token> | <sink url+param> | cache | <date> | waiting | |` (columns: token | sink | class | planted | status | source, where token = your unique Burp Collaborator / interactsh label). The recon-capture hook auto-correlates incoming callbacks to flip the row to HIT and SessionStart surfaces HITs; a HIT row is the confirmation gate to scaffold the FIND. Do NOT claim a blind cache poisoning without a HIT row.
 
 ## Attack Surface Signals
 Cache headers (`Age`, `X-Cache: hit/miss`, `Cache-Control`, `CF-Cache-Status`), static-ish responses, CDN in front, responses that reflect headers/params.
@@ -34,7 +41,7 @@ Cache headers (`Age`, `X-Cache: hit/miss`, `Cache-Control`, `CF-Cache-Status`), 
 ## FIND Output
 Confirmed (poisoned response served to a clean request, or a victim's private data cached):
 ```
-Create Vulns/Research/FIND-XXX-<SEV>-web-cache-<poisoning|deception>-<host>.md
+Create Vulns/Research/FIND-XXX-SEVERITY-web-cache-<poisoning|deception>-<host>.md
 Add row to Vuln-index.md: | FIND-XXX | cache poisoning via X-Forwarded-Host | host | CONFIRMED |
 ```
 Severity: HIGH (stored XSS/redirect to all users, or PII disclosure via deception); CRITICAL if it yields mass account takeover; MEDIUM if self-only / weak impact.

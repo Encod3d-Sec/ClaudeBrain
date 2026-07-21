@@ -16,7 +16,7 @@ Apply known CVE payloads and fingerprinting techniques already documented. CVE a
 
 ## Scope Check
 - Confirm target is in scope
-- Read Deadends.md - skip already-tested appliances and CVEs
+- Read Deadends.md - skip appliance CVEs and paths already marked exhausted
 
 ## When to Use
 Recon surfaces: `+CSCOE+` paths (Cisco ASA), `Set-Cookie: SVPNCOOKIE=` (Fortinet), `NSC_AAA=` (Citrix), `DSAuthSession=` (Pulse), `BIGipServer*` (F5), ports 443/8443/10443 with VPN login pages.
@@ -124,7 +124,7 @@ Document: version confirmed, CVE applies, PoC not yet available/run
 
 If path exhausted:
 ```
-Append to Deadends.md: - [ ] VPN CVEs on <host> -- patched, CVE-2024-21762 returns 404, Citrix Bleed response <1KB
+Append to Deadends.md: - [ ] VPN CVEs on <host>: patched, CVE-2024-21762 returns 404, Citrix Bleed response <1KB
 ```
 
 Report: Status + files created.

@@ -11,13 +11,20 @@ qmd_query "http request smuggling desync CL.TE TE.CL" via wiki-search MCP -> rea
 ```
 Core page: [[http-request-smuggling]]. Payload arsenal: `wiki/payloads/smuggling.md`.
 
-**Self-heal:** wiki query empty -> create stub `wiki/techniques/web/http-request-smuggling.md` before proceeding.
+**Self-heal:** If the wiki query returns nothing, create a stub `wiki/techniques/web/http-request-smuggling.md` (frontmatter + a `## Observed during <engagement>` section built from your findings) before proceeding, so the gap fills instead of silently recurring.
 
 ## Scope Check
 - Confirm target in scope. Smuggling needs a front-end/back-end split (CDN/LB/proxy + origin). Read `Deadends.md`.
 
 ## Confirmation Gate (READ FIRST)
 **A timing delay alone is a signal, not proof.** Confirm with a differential: a smuggled prefix that changes the *next* request's response (your own follow-up, or a captured victim request). Use Burp Repeater "Send group in sequence (single connection)" or the HTTP Request Smuggler extension. Never report on timing alone.
+
+## OOB Gate (READ FIRST)
+**A timing delay alone is a signal, not proof.** Beyond the differential above, an out-of-band callback confirms a desync that reaches an internal component.
+
+NOT confirmation: a back-end read timeout alone, a single slow response. IS confirmation: the captured differential (your smuggled prefix altering the next response), or a DNS/HTTP hit to your unique Burp Collaborator / interactsh subdomain triggered by the smuggled request.
+
+When you plant a blind/OOB payload, append a row to `targets/<eng>/oob.md`: `| <token> | <sink url+param> | smuggling | <date> | waiting | |` (columns: token | sink | class | planted | status | source, where token = your unique Burp Collaborator / interactsh label). The recon-capture hook auto-correlates incoming callbacks to flip the row to HIT and SessionStart surfaces HITs; a HIT row is the confirmation gate to scaffold the FIND. Do NOT claim a blind smuggling desync without a HIT row.
 
 ## Attack Surface Signals
 Front-end that differs from back-end on header parsing: CDN/WAF/LB in front of an origin; HTTP/1.1 keep-alive reused; HTTP/2 to HTTP/1.1 downgrade at the edge. Higher odds where `Transfer-Encoding` and `Content-Length` are both honored somewhere in the chain.

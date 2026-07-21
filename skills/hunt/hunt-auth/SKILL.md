@@ -16,7 +16,7 @@ Apply known legacy endpoint patterns and JWT bypass techniques already documente
 
 ## Scope Check
 - Confirm target is in scope
-- Read Deadends.md - skip already-probed auth endpoints
+- Read Deadends.md - skip paths already marked exhausted
 
 ## Legacy Protocol Matrix (Probe First on Any Custom-Branded Login)
 

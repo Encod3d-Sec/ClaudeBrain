@@ -67,6 +67,21 @@ _INTENT = re.compile(
     r"takeover|take\s+over|look\s+for|search\s+for|attempt\w*)\b",
     re.IGNORECASE)
 _INTENT_WINDOW = 64
+# a test-stem word DIRECTLY bordering a keyword match (only whitespace between) is part of the
+# same noun phrase ("api security testing", "sql injection testing"), NOT an independent intent
+# verb. Swallowing it into the masked span stops "document the api security testing methodology"
+# from re-satisfying the gate via that trailing "testing". A leading "test " (e.g. "test the api")
+# is genuine imperative intent and is left alone.
+_ADJ_TEST = re.compile(r"\s+test\w*", re.IGNORECASE)
+
+
+def _expand_span(text, a, b):
+    """Grow keyword span [a,b) to also cover a trailing, directly-adjacent test-stem word."""
+    m = _ADJ_TEST.match(text[b:])
+    if m:
+        b += m.end()
+    return a, b
+
 
 def _match_gated(patterns, text, window=_INTENT_WINDOW):
     """Like _match, but splits hard-tier results into (hard, downgraded).
@@ -90,7 +105,7 @@ def _match_gated(patterns, text, window=_INTENT_WINDOW):
     if not hits:
         return hard, downgraded
     masked = list(text)
-    for a, b in spans:
+    for a, b in (_expand_span(text, a, b) for a, b in spans):
         for i in range(a, b):
             masked[i] = " "
     masked = "".join(masked)
@@ -163,6 +178,16 @@ def main():
     for s in soft_raw:
         if s not in seen:
             seen.add(s); soft.append(s)
+
+    # Framework-meta prompt: a prompt ABOUT the harness itself (documenting the wiki, editing
+    # triggers.json, discussing methodology) is not target work -- suppress every fire so it
+    # does not route a hunt skill. Logged as a miss below (hard/soft now empty).
+    try:
+        import _meta
+        if _meta.is_prompt_framework_meta(scan):
+            hard, soft = [], []
+    except Exception:
+        pass
 
     # Locate the vault for telemetry (CLAUDEBRAIN_VAULT override honored via _engagement).
     try:
