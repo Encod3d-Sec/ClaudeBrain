@@ -34,6 +34,7 @@ CLI:
 import glob
 import os
 import re
+import subprocess
 import sys
 from datetime import date
 
@@ -283,6 +284,27 @@ def _demo():
     print("build-walkthrough _demo: ok")
 
 
+def _autocard_sweep(eng_dir):
+    """Close-out safety net: card EVERY not-yet-carded tmux scan tab before the gallery is built.
+    `AUTOCARD_ALL=1` makes autocard.sh drop the per-turn cap AND the finished-prompt gate, so a
+    fast box's long scans (ferox/nuclei) and never-finishing listener tabs (http.server/nc/shell)
+    are not silently missing from the walkthrough. Best-effort + fail-open: no VM / no tmux / any
+    error just leaves the gallery to whatever is already on disk. Skipped in tests via
+    BUILD_WT_NO_SWEEP=1 (no live VM there)."""
+    if os.environ.get("BUILD_WT_NO_SWEEP"):
+        return
+    sh = os.path.join(os.path.dirname(os.path.abspath(__file__)), "autocard.sh")
+    if not os.path.isfile(sh):
+        return
+    eng = os.path.basename(os.path.normpath(eng_dir))
+    try:
+        subprocess.run(["bash", sh, eng], timeout=90,
+                       env=dict(os.environ, AUTOCARD_ALL="1"),
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception:
+        pass
+
+
 def main():
     if "--demo" in sys.argv[1:]:
         _demo()
@@ -303,6 +325,7 @@ def main():
         with open(wt_path, encoding="utf-8", errors="ignore") as fh:
             was_bare = _is_bare(fh.read())
 
+    _autocard_sweep(eng_dir)          # card every finished/running/listener tab before the gallery
     build(eng_dir, force=force)
     n = len(scan_evidence(eng_dir))
     name = os.path.basename(os.path.normpath(eng_dir))
@@ -314,6 +337,13 @@ def main():
         print("build-walkthrough: WARNING - reproduction sections (Recon/Foothold/Privesc) have NO "
               "commands; the walkthrough is images-only and cannot reproduce the box. Write the exact "
               "steps (Skill(walkthrough)) before close-out.")
+    scripts_dir = os.path.join(eng_dir, "poc", "scripts")
+    has_scripts = os.path.isdir(scripts_dir) and any(
+        not f.startswith(".") for f in os.listdir(scripts_dir))
+    if cmds > 0 and not has_scripts:
+        print("build-walkthrough: WARNING - reproduction steps exist but poc/scripts/ is empty; "
+              "preserve the exploit scripts used (payload / shell / dropper) into poc/scripts/ so the "
+              "reviewer gets the code, not just screenshots.")
     return 0
 
 
