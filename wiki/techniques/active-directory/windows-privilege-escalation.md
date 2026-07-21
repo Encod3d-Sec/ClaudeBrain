@@ -1892,3 +1892,28 @@ Apply vendor baselines for logging, least privilege, patch cadence, and segmenta
 ## Sources
 
 - Swisskyrepo [InternalAllTheThings](https://github.com/swisskyrepo/InternalAllTheThings) (ingest slug `InternalAllTheThings`).
+
+## Scheduled task with a writable Run-As-Administrator binary
+
+A scheduled task set to run as Administrator (or SYSTEM) whose "Task To Run" binary sits in a
+user-writable directory is a direct privesc: overwrite the binary with your payload, then trigger the
+task. `schtasks /query /tn <task> /v /fo list` shows the "Task To Run" path and "Run As User"; a write
+test (or `icacls`) confirms the path/dir is writable by the current user.
+
+Key nuances:
+- **`/run` can succeed even when `/change` is denied.** A low-priv user may be able to
+  `schtasks /run /tn <task>` to trigger on demand, yet be refused
+  `schtasks /change /tn <task> /tr ...` (reconfiguring the action needs elevation or the run-as
+  password). When `/change` is denied, do NOT abandon the vector - overwrite the target BINARY instead.
+- **On a Defender-active host, compile a fresh custom binary, not msfvenom.** A canned msfvenom/potato
+  exe is signatured and quarantined on write. A tiny custom C# exe (a unique binary with no known
+  signature) that shells `cmd /c` to a benign action (copy/type a protected file to a readable path,
+  or `net localgroup administrators <user> /add`) passes AV. Compile with the TARGET's own
+  `C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe` when no compiler is on the attacker box.
+- Trigger and read: `schtasks /run /tn <task>`, then read whatever the payload wrote (a web-readable
+  path is convenient when the box already serves one).
+
+Same idea as the writable-service-binary vector (a privileged process runs a user-controlled binary),
+different Windows subsystem: Task Scheduler rather than the Service Control Manager.
+
+<!-- promoted-slug: scheduled-task-writable-admin-binary -->

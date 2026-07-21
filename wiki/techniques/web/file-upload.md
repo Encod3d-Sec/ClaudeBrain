@@ -650,3 +650,28 @@ def handleResponse(req, interesting):
 - PortSwigger Academy — Upload Vulns (General Concepts) and File Upload Vulnerabilities (In-depth)
 - PortSwigger Labs 1–7: Unrestricted shell, Content-Type bypass, Path traversal filename, .htaccess override, Null byte, Polyglot, Race condition
 - THM CTF: Expose (upload with magic bytes + null byte bypass)
+
+## Upload to an app that EXECUTES the file (analyser / validator / sandbox) = RCE
+
+Distinct from the "trick the server into executing a `.php`/`.jsp` by extension or config" case: some
+apps EXECUTE the uploaded file as their intended function - a "script analyser", "malware/AV scanner",
+"linter", "sandbox", "format converter", "template/report renderer". There the accepted file type IS an
+executable script, so no extension/content-type bypass is needed: upload your payload AS the allowed
+type and it runs.
+
+Signals: the UI says "analyse / scan / validate / preview / convert this <script/macro/template>",
+accepts `.ps1`/`.py`/`.sh`/`.rb`/`.js`/`.svg`/office-macro/`.tex`, and returns an
+"analysing.../output:" style response.
+
+Method:
+1. **OOB-gate first** (the run is usually blind): upload a file whose only action is an out-of-band
+   callback (`Invoke-WebRequest http://<LHOST>/x`, a `curl`, or a DNS lookup). A hit on your listener
+   confirms execution before you claim RCE; never infer it from the response text.
+2. Then upload the real payload (a reverse shell in that language). If the host runs EDR/AMSI (common
+   for a PowerShell/macro analyser), the payload needs in-line evasion (e.g. an AMSI patch for executed
+   PowerShell), because the file is run through the normal interpreter.
+
+The extension allowlist is irrelevant here - the allowed type is the exploit. See [[os-command-injection]]
+for the RCE sink and [[windows-amsi-bypass]] when the executed language is PowerShell under Defender.
+
+<!-- promoted-slug: upload-executed-by-analyser-rce -->
