@@ -382,6 +382,39 @@ def test_recon_completeness_silent_when_solved(vault):
     assert "RECON COMPLETENESS" not in out
 
 
+def test_web_evidence_fires_without_capture(vault):
+    # web activity but neither a page render nor a saved source -> nudge naming BOTH missing axes
+    out = run_hook("recon-capture.py",
+                   {"tool_name": "Bash",
+                    "tool_input": {"command": "curl -s http://10.0.0.5/blog/"}}, _env(vault)).stdout
+    assert "WEB EVIDENCE" in out
+    assert "missing: render, source" in out
+    assert (vault / "targets" / "acme" / ".web-cap-fires").read_text().strip() == "1"
+
+
+def test_web_evidence_silent_once_render_and_source_captured(vault):
+    env = _env(vault)
+    run_hook("recon-capture.py",
+             {"tool_name": "Bash",
+              "tool_input": {"command": "bash scripts/capture.sh web acme blog http://10.0.0.5/blog/"}}, env)
+    run_hook("recon-capture.py",
+             {"tool_name": "Bash",
+              "tool_input": {"command": "curl -s http://10.0.0.5/blog/ > poc/blog-source.html"}}, env)
+    out = run_hook("recon-capture.py",
+                   {"tool_name": "Bash", "tool_input": {"command": "curl -s http://10.0.0.5/blog/x"}}, env).stdout
+    assert "WEB EVIDENCE" not in out
+    rec = (vault / "targets" / "acme" / ".web-cap").read_text()
+    assert "render" in rec and "source" in rec
+
+
+def test_web_evidence_silent_when_solved(vault):
+    state = vault / "targets" / "acme" / "state.md"
+    state.write_text(state.read_text() + "\n## STATUS: SOLVED\nowned it\n", encoding="utf-8")
+    out = run_hook("recon-capture.py",
+                   {"tool_name": "Bash", "tool_input": {"command": "curl -s http://10.0.0.5/blog/"}}, _env(vault)).stdout
+    assert "WEB EVIDENCE" not in out
+
+
 def test_screenshot_on_finding_fires_per_distinct_flag(vault):
     # once-per-engagement under-shot a multi-level chain; fire per distinct finding instead
     env = _env(vault)

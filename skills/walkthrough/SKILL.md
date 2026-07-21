@@ -48,6 +48,14 @@ Privilege escalation -> root/flag), using the EXACT commands, creds, and per-ste
 captured in those files. If a fact needed for a section is not present in the state files, do NOT
 invent it -- leave a clearly marked `_TODO: <what is missing>_` for the operator instead.
 
+**Rewrite each command to the HUMAN form for the reader (technical team / client).** `log.md` holds
+the messy automation that actually ran (base64/pty wrappers, `export`s, `;`-merged diagnostic
+pipelines) - the walkthrough must NOT. Each step is ONE standalone command a person would type:
+concrete values + FULL paths, no `$VAR`/`export` (inline an env var on the one command,
+`KRB5CCNAME=/tmp/x.ccache impacket-... `), no `;`/`&&` chains, no `echo` banners. A merged
+diagnostic from log.md becomes 2-3 clean single commands here. Interactive sub-steps (an smbclient
+`get`, an `su` + password) are shown as the plain human action, not scripted.
+
 ### (d) Preserve exploit scripts
 Copy any exploit script (payload, escape/forge script, webshell) into
 `targets/<eng>/poc/scripts/`, the same exploit-script-preservation discipline `ctf-box` and `screenshot` use --

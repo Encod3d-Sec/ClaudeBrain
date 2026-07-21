@@ -4,6 +4,12 @@
 # PNG on the VM (via shot.py) and pulls it into targets/<eng>/poc/NN-<slug>.png (auto-numbered),
 # then prints the walkthrough `md:` ref. Call it the MOMENT a step LANDS, not at the end.
 #
+# HUMAN-COMMAND RULE: what you capture goes in front of a technical team. Card ONE standalone,
+# human-authored command with concrete values + FULL paths - no `export VAR=`/`$VAR`, no `;`/`&&`
+# multi-step chains, no `echo "-- label --"` banners, no base64/pty wrappers. Needed a merged
+# pipeline to work the box? Re-run the clean single command for the card. Inline any env var on the
+# one command (`KRB5CCNAME=/tmp/x.ccache impacket-... `), never a separate `export`.
+#
 # Modes:
 #   ev   <eng> <slug> <request-url> <cmd-label> [logfile]   terminal card (cmd + url) from a tee'd log
 #   req  <eng> <slug> [--] <curl-args...>                   real `curl -iv` request/response card

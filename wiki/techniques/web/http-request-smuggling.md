@@ -892,3 +892,22 @@ Modern-testing caveat: if the PoC only works with `requestsPerConnection > 1` or
 <!-- auto-wired: context-reachable sub-technique pages -->
 - [[parser-differentials]]
 - [[smuggling]]
+
+## Tool gotcha: h2csmuggler needs an OLD Python — run it in a throwaway docker
+
+`h2csmuggler.py` pins the deprecated `hyper` H2 library (plus `h2`/`requests`), which only installs/runs cleanly on **Python 3.11 or older** — on a modern Kali (3.12/3.13) the deps fail to build or the tool errors at import. Don't fight the system Python; run the tool inside a disposable container pinned to the version it wants:
+
+```bash
+# throwaway python 3.11 container, cwd mounted at /app, auto-removed on exit (--rm)
+docker run -it --rm -v $(pwd):/app python:3.11 bash
+# inside the container:
+cd /app
+python3.11 -m pip install hyper requests h2
+python h2csmuggler.py -x https://target:8200/ https://target:8200/private
+```
+
+- The container is deleted the moment you exit / Ctrl-C (that is what `--rm` does) — no cleanup, no host pollution.
+- Flaky by nature: **re-run the smuggle a couple of times if it fails** (the H2 upgrade race does not always land).
+- **Generic pattern — any tool pinning an old/abandoned dependency** (old python, a specific node, a legacy openssl): reach for a version-matched throwaway container instead of downgrading the host — `docker run -it --rm -v $(pwd):/app python:3.11 bash` (swap `python:3.11` for `python:3.9`, `node:16`, etc.). Cheaper and cleaner than a venv fight or a host downgrade.
+
+<!-- promoted-slug: h2csmuggler-python-version-docker -->

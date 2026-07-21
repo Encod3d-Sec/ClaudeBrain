@@ -582,3 +582,28 @@ ldapsearch -x -H ldap://$target -D "<user>@<domain>" -w "<pass>" \
 - [[password-cracking]] — offline hash cracking
 - [[ad-cheatsheet|Active Directory cheatsheet]] — LDAP/SMB/WinRM/RDP in AD context
 - [[recon]] — passive recon before enumeration
+
+## Fingerprint -> Exploit: the searchsploit + Metasploit quick-win reflex
+
+The instant a service is fingerprinted to a **product + version**, run BOTH of these BEFORE hand-rolling a PoC or deep-diving a CVE writeup. A canned Exploit-DB PoC or a ready `use`-able msf module is very often an instant shell, and it beats reinventing it.
+
+```bash
+# local Exploit-DB search (offline) — then read/copy the match
+searchsploit blogengine 3.3          # match by product + version
+searchsploit -x 47010                 # READ the PoC before running it
+searchsploit -m 47010                 # copy it into the working dir
+
+# Metasploit module search — a matching module = often instant RCE
+msfconsole -qx "search blogengine; exit"
+msfconsole -qx "search type:exploit platform:windows cve:2019-6714; exit"
+```
+
+Habit / checklist:
+1. nmap/whatweb gives `<product> <version>` -> immediately `searchsploit <product> <version>` AND `msfconsole -qx "search <product>"`.
+2. A hit -> `searchsploit -x <id>` (read it) or `use <module>` before writing anything custom.
+3. Cross-check the version against the wiki CVE lookup ([[cve-arsenal]]) and [[metasploit]]; prefer the documented/ready PoC over a fresh one.
+4. Watch for **mislabeled CVE/EDB numbers** — vendors and write-ups conflate them (one EDB id can map to a differently-numbered CVE, and the same bug gets cited under 2-3 CVEs). Trust the PoC's actual behaviour + the affected-version string, not the label.
+
+This is the "known version -> quick win" reflex: most boot-to-root footholds are a searchsploit/msf one-liner away once the version is pinned, and skipping it to hand-roll is the recurring time sink. See [[pentest-methodology]] · [[metasploit]] · [[cve-arsenal]].
+
+<!-- promoted-slug: version-searchsploit-msf-reflex -->

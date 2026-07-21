@@ -45,6 +45,16 @@ _DISCOVERY_TOOLS = r"ffuf|feroxbuster|gobuster|dirb|dirsearch"        # content-
 # unambiguous web-app activity: probing/exploiting a web surface -> discovery should have run
 _WEB_ACTIVITY = r"curl|wget|whatweb|httpx|nikto|wpscan|sqlmap|dalfox"
 _RECON_GAP_CAP = 3   # escalate the recon-completeness nudge up to N times, then go silent
+
+# web-evidence reflex: a web surface must be RENDERED (a page shot) AND its HTML SOURCE saved
+# as it is first explored -- scan cards are NOT a page render/source (recurring evidence gap:
+# engagements finished with recon scan cards but no rendered page and no saved source).
+_WEB_RENDER_RE = re.compile(r"capture\.sh\s+web\b|shot\.py\s+\S*https?://|gowitness|aquatone|eyewitness", re.I)
+_WEB_SOURCE_RE = re.compile(
+    r"capture\.sh\s+(?:snippet|log)\b"
+    r"|(?:curl|wget)\b[^\n;|&]*https?://[^\n;|&]*(?:>|-[oO]\s+)\s*\S*(?:source|\.html?|\.xml|\.json|\.js|\.aspx?)\b",
+    re.I)
+_WEB_CAP_CAP = 3     # escalate the web-evidence nudge up to N times, then go silent
 # a LANDED finding: a full flag value, or a shell/privesc `id` -- narrow, unambiguous SUCCESS
 _FINDING_RE = re.compile(
     r"(?:THM|FLAG|HTB|CTF)\{[^}\n]{0,80}\}"            # a full flag value (dedup key)
@@ -384,6 +394,41 @@ def main():
                         "path -- launch ffuf/feroxbuster (content) + nuclei (CVE) in parallel tmux "
                         "tabs (scripts/vm-scan.sh) and READ their output before concluding no web "
                         "vuln." + sharper)
+        except Exception:
+            pass
+
+    # web-evidence reflex (capture, not methodology): a web surface must be RENDERED and its HTML
+    # SOURCE saved as it is first explored. Record which axes ran (render / source); while EITHER is
+    # missing on an unsolved box with web activity, nudge -- ESCALATING+capped like recon-completeness.
+    # Fixes the recurring "recon scan cards but no rendered page and no saved source" evidence gap.
+    if d and _engagement and not _is_framework_meta(cmd):
+        try:
+            blob_cap = "\n".join([cmd] + inner_cmds(cmd))
+            recw = os.path.join(d, ".web-cap")
+            for axis, rx in (("render", _WEB_RENDER_RE), ("source", _WEB_SOURCE_RE)):
+                if rx.search(blob_cap):
+                    with open(recw, "a", encoding="utf-8") as fh:
+                        fh.write(axis + "\n")
+            ranw = open(recw, encoding="utf-8", errors="ignore").read() if os.path.exists(recw) else ""
+            missing = [a for a in ("render", "source") if a not in ranw]
+            if missing and _invokes_any(cmd, _WEB_ACTIVITY) and not _engagement.is_solved(d):
+                capf = os.path.join(d, ".web-cap-fires")
+                n = 0
+                if os.path.exists(capf):
+                    try:
+                        n = int((open(capf).read().strip() or "0"))
+                    except ValueError:
+                        n = 0
+                if n < _WEB_CAP_CAP:
+                    with open(capf, "w") as fh:
+                        fh.write(str(n + 1))
+                    sharper = (" [reminder %d/%d]" % (n + 1, _WEB_CAP_CAP)) if n else ""
+                    blocks.append(
+                        "WEB EVIDENCE: web activity but the surface is not captured (missing: "
+                        + ", ".join(missing) + "). As you first open each web page, RENDER it "
+                        "(scripts/capture.sh web <eng> <slug> <url>) AND save its HTML SOURCE "
+                        "(curl -s <url> > poc/<slug>-source.html) -- scan cards are not a page "
+                        "render or source." + sharper)
         except Exception:
             pass
 
