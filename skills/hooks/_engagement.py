@@ -352,9 +352,9 @@ def _vuln_index_confirmed_ids(d):
     rows are credited only under an `id | title | host | status` header, so the
     Severity-Count table is ignored. ID cell may be a bare `FIND-NNN` or a markdown link
     `[FIND-NNN](...)` (re.search, not match). Status may be decorated (emoji/`**`/leading
-    whitespace) -- only the first alphabetic token is compared, so '✅ CONFIRMED (Flag 1)'
-    and '**CONFIRMED HIGH**' count, while 'VERSION CONFIRMED / PoC pending' (first token
-    VERSION) and 'CLOSED' are excluded. -> {} on any problem."""
+    whitespace); only the first alphabetic token is compared, so '(emoji/bold-decorated)
+    CONFIRMED (Flag 1)' and '**CONFIRMED HIGH**' count, while 'VERSION CONFIRMED / PoC
+    pending' (first token VERSION) and 'CLOSED' are excluded. -> {} on any problem."""
     ids = {}
     try:
         lines = open(os.path.join(d, "Vuln-index.md"), encoding="utf-8",
@@ -392,7 +392,7 @@ def confirmed_findings(d):
     `status:` stays Research in practice). One record per `affected` asset (comma-split
     when `affected` is a single scalar string, e.g. 'web08a, web08b'). Class = explicit
     frontmatter `class:` (when a known class) else fuzzy _match_classes(title+filename).
-    The record's `status` field is always the literal 'confirmed' -- a gate-provenance
+    The record's `status` field is always the literal 'confirmed', a gate-provenance
     tag meaning "passed the CONFIRMED/PARTIAL gate", not the original Vuln-index status.
     Error-safe -> []."""
     out = []
@@ -427,6 +427,8 @@ def confirmed_findings(d):
                 cls = explicit
             else:
                 hits = _match_classes(f + " " + title, vocab)
+                # multiple fuzzy hits: alphabetical-first is a fallback; explicit
+                # frontmatter `class:` is the reliable disambiguator.
                 cls = sorted(hits)[0] if hits else ""
             if not cls:
                 continue
@@ -539,6 +541,8 @@ def phase_explicit(d):
     """The killchain frontmatter `current_phase`, IFF present and its `entered_because`
     names no out-of-scope asset; else None (caller falls back to the heuristic phase scan).
     The citation-scope check keeps a phase transition in scope. Deterministic, no network."""
+    if not d:
+        return None
     try:
         raw = open(os.path.join(d, "killchain.md"), encoding="utf-8", errors="ignore").read()
     except OSError:

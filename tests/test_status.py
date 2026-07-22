@@ -48,6 +48,26 @@ def test_board_phase_picks_highest_open(tmp_path):
     assert open_n == 2 and dead_n == 1
 
 
+def test_board_phase_prefers_explicit_current_phase_over_heuristic(tmp_path):
+    st = _load()
+    (tmp_path / "scope.md").write_text(
+        "## In Scope\n- host1.internal\n## Out of Scope\n- other.internal\n",
+        encoding="utf-8")
+    (tmp_path / "killchain.md").write_text(
+        "---\n"
+        "current_phase: Phase 2 Weaponize (explicit)\n"
+        "entered_because: pivot via host1.internal\n"
+        "---\n"
+        "## 1. Recon\n- [x] nmap\n"
+        "## 4. Exploit\n- [ ] foothold\n- [!] dead vector\n",
+        encoding="utf-8")
+    where, open_n, dead_n = st.board_phase(str(tmp_path))
+    # explicit frontmatter field wins over the heuristic, which would otherwise
+    # report "Phase 4 Exploit" from the highest-numbered phase with an open item
+    assert where == "Phase 2 Weaponize (explicit)"
+    assert open_n == 1 and dead_n == 1
+
+
 def test_render_composes_dashboard():
     st = _load()
     summ = {"hosts": 5, "owned": 1, "creds": 3, "open_paths": 0}
