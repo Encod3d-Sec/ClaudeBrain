@@ -173,26 +173,29 @@ def load_exempt() -> set[str]:
     return out
 
 
+def _one_hop(anchors: set[str], everypath: dict[str, list[str]]) -> set[str]:
+    """Tier (c): slugs linked FROM an anchor page (the hub lists its children). An anchor slug
+    may match more than one file (duplicate basename across subtrees), so union the links from
+    ALL of them, not just whichever glob() returned first. Shared by the page, tool, and
+    cheatsheet audits so all three honour the same tier (c) the module docstring describes."""
+    out: set[str] = set()
+    for a in anchors:
+        for p in everypath.get(a, []):
+            out |= links_in(p)
+    return out
+
+
 def compute():
     pages = audited_pages()
     everypath = all_page_paths()
     exempt = load_exempt()
 
-    # Tier (a) + (b): direct anchors.
+    # Tier (a) + (b): direct anchors. Tier (c): one hop through an anchor page.
     anchors = playbook_refs() | skill_body_links()
-
-    # Tier (c): one hop -- pages linked FROM an anchor page (the hub lists its children).
-    # An anchor slug may match >1 file (duplicate basename across subtrees); union links
-    # from ALL of them, not just whichever glob() happened to return first.
-    one_hop = set()
-    for a in anchors:
-        for p in everypath.get(a, []):
-            one_hop |= links_in(p)
-
-    wired = anchors | one_hop
-    # Orphan status is per-SLUG (that's the unit a [[wikilink]]/playbook ref names) -- if a
-    # slug resolves to >1 file, either file being wired counts as the slug being wired, since
-    # a link to the bare slug can't distinguish which twin was intended.
+    wired = anchors | _one_hop(anchors, everypath)
+    # Orphan status is per-SLUG (the unit a [[wikilink]]/playbook ref names): if a slug resolves
+    # to more than one file, either file being wired counts as the slug being wired, since a
+    # link to the bare slug cannot distinguish which twin was intended.
     orphans = sorted(s for s in pages if s not in wired and s not in exempt)
     return pages, wired, exempt, orphans, anchors
 
@@ -200,9 +203,12 @@ def compute():
 def compute_tools():
     tools = tool_pages()
     exempt = load_exempt()
-    # a tool is wired if a fingerprint recommends it (tools/refs) or a hunt skill links it
+    # A tool is wired if a fingerprint recommends it (tools/refs), a hunt skill links it, or it
+    # is one hop from such an anchor (linked by an anchor wiki page). Same tier (c) as the page
+    # audit, so a tool referenced from an anchor cheatsheet/technique page counts as reachable.
     anchors = playbook_tools() | playbook_refs() | skill_body_links()
-    orphans = sorted(s for s in tools if s not in anchors and s not in exempt)
+    wired = anchors | _one_hop(anchors, all_page_paths())
+    orphans = sorted(s for s in tools if s not in wired and s not in exempt)
     return tools, orphans, anchors
 
 
@@ -210,7 +216,8 @@ def compute_cheats():
     cheats = cheat_pages()
     exempt = load_exempt()
     anchors = playbook_tools() | playbook_refs() | skill_body_links()
-    orphans = sorted(s for s in cheats if s not in anchors and s not in exempt)
+    wired = anchors | _one_hop(anchors, all_page_paths())
+    orphans = sorted(s for s in cheats if s not in wired and s not in exempt)
     return cheats, orphans, anchors
 
 

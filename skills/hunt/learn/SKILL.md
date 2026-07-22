@@ -56,7 +56,14 @@ normal edit+test loop; larger -> record as a proposed item for operator approval
   in `skills/hooks/` (stay within "reflexes = capture/route", NOT methodology), with a test in
   `tests/`. Run `python3 -m pytest tests/ -q` green before moving on.
 - **Discipline under-specified** -> tighten the governing skill (`ctf-box`/`hunt-*`): make the
-  step an explicit ordered checklist item, not buried prose.
+  step an explicit ordered checklist item, not buried prose. Skill bodies carry lesson PROSE +
+  `[[wikilink]]` ONLY - never inline runnable exploit/rootkit/PoC code (magic-signal dumps,
+  syscall PoCs, CVE exploits, reversing walks). That code is the KNOWLEDGE half: promote it to a
+  `wiki/` page through the Phase 5-6 gate and point the skill at it with a one-line "try X (see
+  [[page]])". A skill body loads wholesale into model/API context on EVERY invocation, so raw
+  offensive code there trips the Claude API safety classifier (real: ctf-box's LKM-rootkit +
+  CVE-PoC lessons got flagged on load, forcing a manual purge) and bloats context. Prose that
+  says WHAT to try in WHAT order belongs in the skill; the code that does it belongs in the wiki.
 - **Script/analyzer gap** -> extend `scripts/` (coverage, next_move, find-lint) to surface it.
 
 ### 0c. Log the retrospective (generic, tracked)
@@ -188,6 +195,11 @@ host/IP/domain in either.
 - **Read-only on the engagement.** Phase 0 may edit HARNESS files (`skills/`, `skills/hooks/`,
   `scripts/`, `tests/`, `docs/superpowers/harness-retro.md`) and Phases 1-7 write to `wiki/`
   (via the gate) and the `.learn-done` marker - but NEVER the engagement's own findings/narrative.
+- **No offensive code in a skill body.** A tightened skill (`ctf-box`/`hunt-*`) gets lesson prose +
+  `[[wikilinks]]` only. Runnable exploit/rootkit/PoC code lives in `wiki/` (through the Phase 5-6
+  gate) and is referenced by link, never inlined - the skill loads into API context wholesale and
+  the classifier flags raw offensive code (it has). Reversing walks, syscall PoCs, magic-signal
+  dumps, CVE exploits = wiki page + a one-line skill pointer.
 - **Phase 0 changes ship green.** Any hook/script edit lands with a test and a passing
   `python3 -m pytest tests/ -q`; do not leave the harness broken by an improvement.
 - **Retro log is generic + tracked.** `harness-retro.md` describes harness failures generically

