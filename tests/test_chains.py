@@ -114,8 +114,7 @@ def test_confirmed_findings_comma_split_affected(tmp_path):
 
 def test_chains_json_schema_valid():
     vocab = _engagement._class_vocab()
-    root = os.path.dirname(os.path.dirname(os.path.abspath(_engagement.__file__)))
-    chains = json.load(open(os.path.join(root, "scripts", "chains.json"), encoding="utf-8"))
+    chains = json.load(open(os.path.join(_engagement.VAULT, "scripts", "chains.json"), encoding="utf-8"))
     edges = chains["edges"]
     assert edges, "chains.json must define at least one edge"
     for src, spec in edges.items():
