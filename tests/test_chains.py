@@ -68,3 +68,44 @@ def test_confirmed_findings_gated_and_classed(tmp_path):
 
 def test_confirmed_findings_missing_files(tmp_path):
     assert _engagement.confirmed_findings(str(tmp_path / "nope")) == []
+
+
+# Synthetic-only: markdown-linked IDs and decorated statuses, as seen in real
+# Vuln-index.md files but never copying real client rows.
+VULN_INDEX_DECORATED = """---
+type: engagement-vuln-index
+---
+
+# Vuln Index
+
+## CRITICAL
+
+| ID | Title | Host | Status |
+|----|-------|------|--------|
+| [FIND-005](FIND-005-HIGH-x.md) | Linked finding | web05 | CONFIRMED |
+| FIND-006 | Emoji confirmed | web06 | ✅ CONFIRMED (Flag 1) |
+| FIND-007 | Bold confirmed | web07 | **CONFIRMED HIGH** (x) |
+| FIND-008 | Version confirmed | web08 | VERSION CONFIRMED / PoC pending |
+| FIND-009 | Closed | web09 | CLOSED |
+"""
+
+
+def test_vuln_index_confirmed_ids_linked_and_decorated(tmp_path):
+    eng = tmp_path / "eng"
+    eng.mkdir()
+    (eng / "Vuln-index.md").write_text(VULN_INDEX_DECORATED, encoding="utf-8")
+    ids = _engagement._vuln_index_confirmed_ids(str(eng))
+    # markdown-linked ID cell + emoji/bold-decorated status all still count as CONFIRMED;
+    # VERSION CONFIRMED / PoC pending and CLOSED still excluded
+    assert ids == {"FIND-005": "web05", "FIND-006": "web06", "FIND-007": "web07"}
+
+
+def test_confirmed_findings_comma_split_affected(tmp_path):
+    eng = tmp_path / "eng"
+    eng.mkdir()
+    (eng / "Vuln-index.md").write_text(VULN_INDEX, encoding="utf-8")
+    _mkfind(eng, "FIND-001-CRITICAL-ssrf-fetch.md",
+            {"title": "SSRF in fetch", "class": "ssrf", "affected": "web08a, web08b",
+             "status": "Research"})
+    got = _engagement.confirmed_findings(str(eng))
+    assert sorted(f["asset"] for f in got) == ["web08a", "web08b"]

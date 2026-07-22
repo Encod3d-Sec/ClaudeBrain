@@ -345,11 +345,14 @@ def _class_vocab():
 
 
 def _vuln_index_confirmed_ids(d):
-    """{FIND-NNN: host} for Vuln-index.md rows whose Status starts CONFIRMED or PARTIAL.
-    Multi-table aware (_parse_table only reads the first table): rows are credited only
-    under an `id | title | host | status` header, so the Severity-Count table is ignored.
-    'VERSION CONFIRMED / PoC pending' (starts VERSION) and 'CLOSED' are excluded. -> {} on
-    any problem."""
+    """{FIND-NNN: host} for Vuln-index.md rows whose Status's first alphabetic word token
+    is CONFIRMED or PARTIAL. Multi-table aware (_parse_table only reads the first table):
+    rows are credited only under an `id | title | host | status` header, so the
+    Severity-Count table is ignored. ID cell may be a bare `FIND-NNN` or a markdown link
+    `[FIND-NNN](...)` (re.search, not match). Status may be decorated (emoji/`**`/leading
+    whitespace) -- only the first alphabetic token is compared, so '✅ CONFIRMED (Flag 1)'
+    and '**CONFIRMED HIGH**' count, while 'VERSION CONFIRMED / PoC pending' (first token
+    VERSION) and 'CLOSED' are excluded. -> {} on any problem."""
     ids = {}
     try:
         lines = open(os.path.join(d, "Vuln-index.md"), encoding="utf-8",
@@ -373,9 +376,10 @@ def _vuln_index_confirmed_ids(d):
             continue
         if header != "finding" or len(cells) < 4:
             continue
-        m = re.match(r"(FIND-\d+)", cells[0])
-        status = cells[3].strip().upper()
-        if m and (status.startswith("CONFIRMED") or status.startswith("PARTIAL")):
+        m = re.search(r"(FIND-\d+)", cells[0])
+        tok = re.match(r"[^A-Za-z]*([A-Za-z]+)", cells[3].strip())
+        first = tok.group(1).upper() if tok else ""
+        if m and first in ("CONFIRMED", "PARTIAL"):
             ids[m.group(1)] = cells[2].strip()
     return ids
 
@@ -383,8 +387,11 @@ def _vuln_index_confirmed_ids(d):
 def confirmed_findings(d):
     """CONFIRMED/PARTIAL findings as typed records: [{class, asset, severity, status}].
     The Vuln-index Status column is the authoritative gate (a FIND file's own frontmatter
-    `status:` stays Research in practice). One record per `affected` asset. Class = explicit
+    `status:` stays Research in practice). One record per `affected` asset (comma-split
+    when `affected` is a single scalar string, e.g. 'web08a, web08b'). Class = explicit
     frontmatter `class:` (when a known class) else fuzzy _match_classes(title+filename).
+    The record's `status` field is always the literal 'confirmed' -- a gate-provenance
+    tag meaning "passed the CONFIRMED/PARTIAL gate", not the original Vuln-index status.
     Error-safe -> []."""
     out = []
     if not d:
@@ -424,8 +431,8 @@ def confirmed_findings(d):
             sev_m = re.match(r"FIND-\d+-([A-Za-z]+)-", f)
             sev = (sev_m.group(1).upper() if sev_m else str(fm.get("severity", "")).upper())
             aff = fm.get("affected", "")
-            assets = aff if isinstance(aff, list) else [aff]
-            assets = [a for a in assets if a] or [ok[m.group(1)]]
+            raw = aff if isinstance(aff, list) else str(aff).split(",")
+            assets = [a.strip() for a in raw if a and a.strip()] or [ok[m.group(1)]]
             for a in assets:
                 out.append({"class": cls, "asset": a, "severity": sev, "status": "confirmed"})
     return out
