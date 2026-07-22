@@ -4,11 +4,13 @@ type: technique
 tags: [exploitation, file-upload, h1, portswigger, rce, thm, web]
 phase: exploitation
 date_created: 2026-05-08
-date_updated: 2026-05-13
+date_updated: 2026-07-21
 sources: [ps-general-concepts, ps-indepth-file-upload, ps-labs-file-upload, thm-web-file-upload, h1-scraped-file-upload, 0xdf-linux-easy-web, payloadsallthethings-upload-insecure-files, git-payloadsallthethings, git-portswigger-all-labs]
 ---
 
 # File Upload Vulnerabilities
+
+Quick payloads: [[payloads/file-upload]].
 
 ## What it is
 
@@ -675,3 +677,9 @@ The extension allowlist is irrelevant here - the allowed type is the exploit. Se
 for the RCE sink and [[windows-amsi-bypass]] when the executed language is PowerShell under Defender.
 
 <!-- promoted-slug: upload-executed-by-analyser-rce -->
+
+## Related
+
+- [[xxe]] (uploaded SVG, DOCX, or XML is parsed with external entities enabled)
+- [[ssti]] (an uploaded file rendered server-side as a template yields RCE)
+- [[xss]] (a stored SVG or HTML upload served inline executes as XSS)

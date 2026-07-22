@@ -385,3 +385,20 @@ def test_walkthrough_skill_exists_and_carries_required_steps():
     text.encode("ascii")                           # raises UnicodeEncodeError on any non-ASCII char
     for line in text.splitlines():
         assert "—" not in line, "em-dash found in skills/walkthrough/SKILL.md: %r" % line
+
+
+def test_delta_yield_logged_generic(tmp_path):
+    """wiki-promote records a per-harvest delta-yield line (date, engagement_type, count) to a
+    tracked, GENERIC docs/wiki-delta-log.md - never a client codename. A zero-yield promote still
+    logs, so a sustained zero is visible."""
+    import datetime
+    v, eng, env = _vault(tmp_path)
+    (eng / "state.md").write_text("---\nengagement_type: ctf\n---\n", encoding="utf-8")
+    r = _run(PROMOTE, ["--promote", "all"], env)   # no candidates staged -> yields 0
+    assert r.returncode == 0, r.stdout + r.stderr
+    log = v / "docs" / "wiki-delta-log.md"
+    assert log.exists(), "delta-yield log not created"
+    content = log.read_text(encoding="utf-8")
+    assert f"{datetime.date.today().isoformat()}  ctf  0" in content, content
+    assert "clientx" not in content, "client codename leaked into a tracked file"
+    assert "engagement_type" in content            # header present

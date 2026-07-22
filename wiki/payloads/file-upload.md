@@ -4,12 +4,12 @@ type: payloads
 tags: [payloads, file-upload, rce, web]
 sources: []
 date_created: 2026-06-16
-date_updated: 2026-06-16
+date_updated: 2026-07-21
 ---
 
 # Payloads: File Upload
 
-Extension / content-type / magic-byte / path bypasses to web-shell RCE, plus SVG/XXE and archive tricks. Routed via the `hunt-upload` skill. See [[file-upload]].
+Extension / content-type / magic-byte / path bypasses to web-shell RCE, plus SVG/XXE and archive tricks. Routed via the `hunt-upload` skill. See [[techniques/web/file-upload]].
 
 ## Extension bypass
 ```

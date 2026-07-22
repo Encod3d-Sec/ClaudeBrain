@@ -4,12 +4,12 @@ type: payloads
 tags: [payloads, xssi, jsonp, information-disclosure, web]
 sources: [hacktricks-web]
 date_created: 2026-07-14
-date_updated: 2026-07-14
+date_updated: 2026-07-21
 ---
 
 # Payloads: XSSI
 
-Cross-Site Script Inclusion leak primitives (JSONP callback hijack + non-script leak). See [[xssi]].
+Cross-Site Script Inclusion leak primitives (JSONP callback hijack + non-script leak). See [[techniques/web/xssi]].
 
 ## Regular XSSI (secret in a global var of a cross-origin script)
 ```html

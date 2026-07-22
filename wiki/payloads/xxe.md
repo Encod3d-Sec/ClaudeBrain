@@ -4,12 +4,12 @@ type: payloads
 tags: [payloads, xxe, xml, ssrf, web]
 sources: []
 date_created: 2026-06-16
-date_updated: 2026-06-16
+date_updated: 2026-07-21
 ---
 
 # Payloads: XXE
 
-XML External Entity probes: file read, SSRF, OOB blind, error-based. Blind variants need an external DTD on your server - callback setup in [[oob-callbacks]]. Routed via the `hunt-injection` skill. See [[xxe]].
+XML External Entity probes: file read, SSRF, OOB blind, error-based. Blind variants need an external DTD on your server - callback setup in [[oob-callbacks]]. Routed via the `hunt-injection` skill. See [[techniques/web/xxe]].
 
 ## Basic file read (in-band)
 ```xml

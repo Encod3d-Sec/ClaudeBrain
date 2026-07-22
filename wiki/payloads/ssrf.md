@@ -4,12 +4,12 @@ type: payloads
 tags: [payloads, ssrf, web, cloud]
 sources: [hacktricks-web]
 date_created: 2026-06-05
-date_updated: 2026-07-14
+date_updated: 2026-07-21
 ---
 
 # Payloads: SSRF
 
-Reusable SSRF probes + filter bypasses. Always confirm with OOB (Collaborator/interactsh) - channel setup in [[oob-callbacks]]. See [[wiki/payloads/ssrf]].
+Reusable SSRF probes + filter bypasses. Always confirm with OOB (Collaborator/interactsh) - channel setup in [[oob-callbacks]]. See [[techniques/web/ssrf]].
 
 ## OOB confirm
 ```

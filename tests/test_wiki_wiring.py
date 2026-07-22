@@ -85,3 +85,14 @@ def test_coverage_reported():
     data = _audit()
     assert data["total"] > 100
     assert 0 <= data["coverage_pct"] <= 100
+
+
+@_needs_wiki
+def test_twins_mutually_linked():
+    """Every payload<->technique twin must be mutually cross-linked with a PATH-QUALIFIED
+    [[link]] (a bare [[slug]] is ambiguous between the twins)."""
+    viol = _audit()["twin_link_violations"]
+    assert not viol, (
+        "payload<->technique twins must be mutually path-qualified [[linked]]; gaps:\n"
+        + "\n".join(f'  {v["file"]} missing [[{v["missing_link"]}]] ({v["direction"]})' for v in viol)
+    )

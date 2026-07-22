@@ -4,12 +4,12 @@ type: payloads
 tags: [payloads, orm-injection, injection, idor, web]
 sources: [hacktricks-web]
 date_created: 2026-07-14
-date_updated: 2026-07-14
+date_updated: 2026-07-21
 ---
 
 # Payloads: ORM Injection
 
-ORM Leak / filter-smuggling primitives. See [[orm-injection]]; confirm via a differential oracle.
+ORM Leak / filter-smuggling primitives. See [[techniques/web/orm-injection]]; confirm via a differential oracle.
 
 ## Django ORM (JSON body merged into `filter(**request.data)`)
 ```json

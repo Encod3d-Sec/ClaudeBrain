@@ -4,12 +4,12 @@ type: payloads
 tags: [payloads, redos, dos, regex, web]
 sources: [hacktricks-web]
 date_created: 2026-07-14
-date_updated: 2026-07-14
+date_updated: 2026-07-21
 ---
 
 # Payloads: ReDoS
 
-Evil-regex denial-of-service and blind regex exfiltration primitives. See [[redos]].
+Evil-regex denial-of-service and blind regex exfiltration primitives. See [[techniques/web/redos]].
 
 ## Evil patterns (all catastrophic on `"a"*N + "!"`)
 ```

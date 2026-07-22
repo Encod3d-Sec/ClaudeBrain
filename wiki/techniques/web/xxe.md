@@ -4,11 +4,13 @@ type: technique
 tags: [exploitation, h1, injection, ssrf, thm, web, xxe]
 phase: exploitation
 date_created: 2026-05-08
-date_updated: 2026-05-13
+date_updated: 2026-07-21
 sources: [thm-adv-xxe, thm-cve-wp-xxe, thm-web-xxe-ctf, h1-scraped-xxe, payloadsallthethings-xxe, git-payloadsallthethings, git-portswigger-all-labs]
 ---
 
 # XXE Injection
+
+Quick payloads: [[payloads/xxe]].
 
 ## What it is
 
@@ -772,3 +774,9 @@ Steps:
 Other known overridable entities in system DTDs:
 - `%constant;` in `/usr/share/xml/fontconfig/fonts.dtd` (Linux)
 - `%SuperClass;` in `C:\Windows\System32\wbem\xml\cim20.dtd` (Windows)
+
+## Related
+
+- [[ssrf]] (external entities turn the XML parser into an SSRF client)
+- [[file-upload]] (SVG, DOCX, and XML uploads are prime XXE entry points)
+- [[path-traversal-lfi]] (XXE file:// entities read arbitrary local files)

@@ -4,11 +4,13 @@ type: technique
 tags: [exploitation, h1, portswigger, race-condition, thm, web]
 phase: exploitation
 date_created: 2026-05-08
-date_updated: 2026-05-13
+date_updated: 2026-07-21
 sources: [ps-indepth-race-conditions, ps-labs-race-conditions, thm-adv-race-conditions, h1-scraped-race-conditions, payloadsallthethings-race-condition, git-portswigger-all-labs]
 ---
 
 # Race Conditions
+
+Quick payloads: [[payloads/race-conditions]].
 
 ## What it is
 
@@ -429,3 +431,9 @@ def handleResponse(req, interesting):
 - PortSwigger Academy — Race Conditions (In-depth)
 - PortSwigger Labs 1–6: Limit overrun, Rate limit bypass, Multi-endpoint, Single-endpoint, Time-sensitive, Partial construction
 - THM Advanced Web — Race Conditions room (`raceconditionsattacks`)
+
+## Related
+
+- [[access-control]] (TOCTOU races bypass single-use limits and permission checks)
+- [[business-logic]] (limit-overrun and coupon races are a business-logic flaw class)
+- [[idor]] (concurrent access to a shared object mirrors direct-object-reference abuse)

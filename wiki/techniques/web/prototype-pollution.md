@@ -4,11 +4,13 @@ type: technique
 tags: [client-side, exploitation, h1, javascript, prototype-pollution, server-side, thm, web]
 phase: exploitation
 date_created: 2026-05-08
-date_updated: 2026-05-13
+date_updated: 2026-07-21
 sources: [thm-adv-prototype-pollution, h1-scraped-prototype-pollution, 0xdf-specialty-web, payloadsallthethings-prototype-pollution, git-portswigger-all-labs]
 ---
 
 # Prototype Pollution
+
+Quick payloads: [[payloads/prototype-pollution]].
 
 ## What it is
 
@@ -533,3 +535,8 @@ path against a `__proto__`-only sanitizer. (Node dev mode helps recon here: a ma
 returns a stack trace naming the `node_modules/...` path and the app directory.)
 
 <!-- promoted-slug: protopollution-allowlist-nesting -->
+
+## Related
+
+- [[xss]] (polluted prototype gadgets commonly sink into DOM XSS)
+- [[insecure-deserialization]] (both are object-injection classes that can reach RCE)

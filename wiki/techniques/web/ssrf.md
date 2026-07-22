@@ -4,11 +4,13 @@ type: technique
 tags: [exploitation, h1, portswigger, server-side, ssrf, thm, web]
 phase: exploitation
 date_created: 2026-05-08
-date_updated: 2026-07-02
+date_updated: 2026-07-21
 sources: [ps-general-concepts, ps-labs-ssrf, thm-adv-ssrf, thm-web-ssrf, h1-scraped-ssrf, 0xdf-linux-easy-web, payloadsallthethings-ssrf, git-payloadsallthethings, git-portswigger-all-labs, assetnote-ssrf-redirect-loops]
 ---
 
 # SSRF
+
+Quick payloads: [[payloads/ssrf]].
 
 ## What it is
 
@@ -806,3 +808,9 @@ Final payload:
 ```http
 stockApi=http://localhost%2523@stock.weliketoshop.net/admin/delete?username=carlos
 ```
+
+## Related
+
+- [[open-redirect]] (a redirect on an allowlisted domain chains past SSRF host filters)
+- [[aws-metadata-ssrf]] (the cloud metadata endpoint is the highest-impact SSRF target)
+- [[dns-rebinding]] (rebinding defeats resolve-then-fetch SSRF validation)

@@ -4,9 +4,11 @@ type: technique
 tags: [h1, open-redirect, phishing, web]
 phase: exploitation
 date_created: 2026-05-08
-date_updated: 2026-05-13
+date_updated: 2026-07-21
 sources: [h1-scraped-open-redirect, payloadsallthethings-open-redirect]
 ---
+
+Quick payloads: [[payloads/open-redirect]].
 
 ## What it is
 
@@ -91,3 +93,9 @@ Exploitation — often chained with phishing, OAuth token theft, or SSRF.
 
 - [[burp-suite]] — intercept and modify redirect parameters
 - [[ffuf]] — fuzz for redirect parameter names
+
+## Related
+
+- [[ssrf]] (an allowlisted open redirect chains past SSRF host filters)
+- [[xss]] (javascript: or data: redirect targets execute script)
+- [[oauth-attacks]] (an open redirect on redirect_uri steals OAuth codes and tokens)

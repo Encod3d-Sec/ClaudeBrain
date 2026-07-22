@@ -184,6 +184,7 @@ ClaudeBrain/
 ├── scripts/                     <- automation (self-documenting via docstrings): next_move,
 │                                   status.py (on-demand engagement dashboard: phase/counts/evidence/deadends/moves),
 │                                   wiki-query.sh (qmd CLI wiki-first fallback when the MCP drops),
+│                                   wiki-eval.py (retrieval eval + regression gate over scripts/wiki-eval-gold.json: hit@3/hit@5/MRR; run --check before/after any qmd chunker/index change),
 │                                   find-lint, lint-wiki, lint-md-tables.py (GFM table integrity), gen_index, build_moc, cve_feed, freshness,
 │                                   check-hooks, check-leaks.sh, trigger-stats, wordlist-* (+wordlists/),
 │                                   shot.py, capture.sh (one entrypoint, modes: ev=live cmd+url card / req=curl
@@ -191,7 +192,7 @@ ClaudeBrain/
 │                                   build-walkthrough.py (scaffold + auto-populate the walkthrough Evidence gallery),
 │                                   playbook.json; archive/ = old migrations
 ├── setup/                       <- bootstrap.sh, install-hooks.sh (per-device hook reg), install-skills.sh, new-engagement.sh, new-research.sh, templates/<type>/ + templates/research/
-├── tests/                       <- pytest suite for engagement + wiki automation (205 tests)
+├── tests/                       <- pytest suite for engagement + wiki automation (445 tests)
 ├── skills/                      <- code-review/ obsidian/ wiki/ research/ disclosure/
 │   │                               claude-md-improver/ (offline fallback) + hooks/ (hook scripts)
 │   └── hunt/                    <- all hunt-* + triage/evidence/coverage/ingest/next-move/

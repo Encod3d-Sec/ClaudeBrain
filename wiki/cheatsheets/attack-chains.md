@@ -3,7 +3,7 @@ title: "Attack Chains (Real-World Kill Chains)"
 type: cheatsheet
 tags: [cheatsheet, attack-chain, methodology, kill-chain, exploitation]
 date_created: 2026-06-16
-date_updated: 2026-06-16
+date_updated: 2026-07-21
 sources: []
 ---
 
@@ -86,6 +86,20 @@ Proven end-to-end paths from how real engagements actually win. Each step links 
 4. Enumerate the MI's power: `az role assignment list --assignee <mi-oid> --all`. Over-permissioned (Owner/Contributor) MIs see resources the user cannot.
 5. Owner on an RBAC Key Vault's RG: self-assign `Key Vault Secrets User`, read the secret, revert -> [[azure-services-keyvault]].
 **Impact:** one low-priv identity + a compute foothold -> secrets/lateral movement across the subscription. Misconfig class: over-permissioned managed identities.
+
+## 13. Unauth analyser service executes uploaded input -> RCE
+**Scenario:** a service that ingests an uploaded artifact (log/config/rule/report/model) and then evaluates or executes it, colocated so the upload path reaches the executor.
+1. Find the upload/ingest surface and confirm the analyser runs what it ingests -> [[file-upload]].
+2. Craft the artifact so ingestion triggers code execution (embedded template expression / rule / deserialized gadget) -> [[ssti]], [[insecure-deserialization]].
+3. Deliver, trigger the analyse action, catch the shell as the service user -> `hunt-upload`.
+**Impact:** authenticated (or unauth) upload -> RCE. Generalises to any "service parses-then-executes user content" pattern. See [[linux-privesc]] to escalate onward.
+
+## 14. Writable scheduled task / Administrator-owned job -> privesc
+**Scenario:** a low-privilege user can write to a script or binary that a privileged scheduled task, cron job, or Administrator-owned job later executes.
+1. Enumerate scheduled tasks / cron / services and their target paths and ACLs -> [[linux-privesc]], [[windows-privilege-escalation]], [[pspy]].
+2. Confirm write access to a path the privileged job runs; drop a payload there.
+3. Wait for (or trigger) the job -> execution in the privileged context.
+**Impact:** file-write on a job target -> SYSTEM/root. Generalises to any "privileged job runs a writable file" pattern.
 
 ## Notes
 OOB-gate every blind step (SSRF/RCE/deser). Capture creds/hosts into `targets/<eng>/` as you go; reuse loot before researching new paths. Pick the chain from what recon/fingerprints surface (next-move / `playbook.json`).

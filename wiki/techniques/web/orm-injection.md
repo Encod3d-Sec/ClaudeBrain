@@ -4,11 +4,13 @@ type: technique
 tags: [orm-injection, injection, idor, data-exfiltration, web]
 phase: exploitation
 date_created: 2026-07-14
-date_updated: 2026-07-14
+date_updated: 2026-07-21
 sources: [hacktricks-web]
 ---
 
 # ORM Injection (ORM Leak)
+
+Quick payloads: [[payloads/orm-injection]].
 
 When a handler passes an attacker-controlled object straight into an ORM filter/where clause
 (`Model.objects.filter(**request.data)`, `prisma.model.findMany(req.body.filter)`,
@@ -50,3 +52,8 @@ Payload strings: [[orm-injection]] (payloads). Related: [[rsql-injection]], [[no
 
 ## Sources
 - HackTricks (pentesting-web)
+
+## Related
+
+- [[sql-injection]] (ORM injection often reaches the raw SQL underneath the mapper)
+- [[nosql-injection]] (ORMs over NoSQL backends leak operator injection)

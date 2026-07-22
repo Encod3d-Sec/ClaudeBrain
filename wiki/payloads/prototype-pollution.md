@@ -4,12 +4,12 @@ type: payloads
 tags: [payloads, prototype-pollution, javascript, client-side, rce, web]
 sources: []
 date_created: 2026-06-16
-date_updated: 2026-06-16
+date_updated: 2026-07-21
 ---
 
 # Payloads: Prototype Pollution
 
-Pollute `Object.prototype` in JS apps (OWASP A03, Node + client). Routed via the `hunt-xss` skill. See [[prototype-pollution]].
+Pollute `Object.prototype` in JS apps (OWASP A03, Node + client). Routed via the `hunt-xss` skill. See [[techniques/web/prototype-pollution]].
 
 ## Injection vectors
 ```json

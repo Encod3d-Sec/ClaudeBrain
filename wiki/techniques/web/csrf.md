@@ -4,11 +4,13 @@ type: technique
 tags: [client-side, csrf, exploitation, h1, portswigger, thm, web]
 phase: exploitation
 date_created: 2026-05-08
-date_updated: 2026-05-13
+date_updated: 2026-07-21
 sources: [thm-adv-csrf, h1-scraped-csrf, payloadsallthethings-csrf, git-portswigger-all-labs]
 ---
 
 # Cross-Site Request Forgery (CSRF)
+
+Quick payloads: [[payloads/csrf]].
 
 ## What it is
 
@@ -752,3 +754,9 @@ Force the browser to send the full URL including query string using `unsafe-url`
 ```
 
 Also works by adding response header on exploit server: `Referrer-Policy: unsafe-url`
+
+## Related
+
+- [[xss]] (any XSS on the target defeats CSRF token protection entirely)
+- [[cors-sop]] (SOP and CORS decide which cross-origin requests a CSRF can forge)
+- [[clickjacking]] (sibling forced-action attack, shares the SameSite and frame-busting defenses)

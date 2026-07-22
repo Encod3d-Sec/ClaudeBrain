@@ -161,7 +161,10 @@ python3 scripts/wiki-promote.py --review <slug>    # read one in full
 python3 scripts/wiki-promote.py --promote all      # leak-checked merge + re-index
 ```
 Promote runs `check-leaks.sh` on each body and refuses (writes nothing) on a client
-marker. Report what promoted, what was refused, and why.
+marker. Report what promoted, what was refused, and why. `--promote` also appends a
+generic delta-yield tally (date, engagement_type, count) to `docs/wiki-delta-log.md`;
+a zero-yield harvest is worth a sanity check (was the sweep actually run, or is the wiki
+already saturated for this box).
 
 ### 7. Re-index, lint, self-clear
 ```bash

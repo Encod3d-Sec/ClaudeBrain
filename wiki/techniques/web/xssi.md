@@ -4,11 +4,13 @@ type: technique
 tags: [xssi, cors, information-disclosure, jsonp, web]
 phase: exploitation
 date_created: 2026-07-14
-date_updated: 2026-07-14
+date_updated: 2026-07-21
 sources: [hacktricks-web]
 ---
 
 # XSSI (Cross-Site Script Inclusion)
+
+Quick payloads: [[payloads/xssi]].
 
 Scripts are exempt from Same-Origin Policy, so `<script src>` sends ambient cookies cross-origin
 and the response body becomes readable to the including page. Any endpoint that returns
@@ -28,3 +30,9 @@ Bappstore extension: DetectDynamicJS. Payload strings: [[xssi]] (payloads). Rela
 
 ## Sources
 - HackTricks (pentesting-web)
+
+## Related
+
+- [[xss]] (both abuse cross-origin script inclusion in the victim page)
+- [[cors-sop]] (SOP and CORS govern the cross-origin reads XSSI steals)
+- [[xs-leak]] (XSSI is a classic cross-site data leak)

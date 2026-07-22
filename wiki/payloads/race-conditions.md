@@ -4,12 +4,12 @@ type: payloads
 tags: [payloads, race-condition, business-logic, web]
 sources: []
 date_created: 2026-06-16
-date_updated: 2026-06-16
+date_updated: 2026-07-21
 ---
 
 # Payloads: Race Conditions
 
-Concurrent requests to break a limit or state check (OWASP A04). Routed via the `hunt-bizlogic` skill. See [[race-conditions]].
+Concurrent requests to break a limit or state check (OWASP A04). Routed via the `hunt-bizlogic` skill. See [[techniques/web/race-conditions]].
 
 ## Targets (limit-overrun / TOCTOU)
 ```

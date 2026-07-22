@@ -4,9 +4,11 @@ type: technique
 tags: [authentication, exploitation, mfa, portswigger, thm, web]
 phase: exploitation
 date_created: 2026-05-08
-date_updated: 2026-05-08
+date_updated: 2026-07-21
 sources: [ps-general-concepts, ps-indepth-attacks, ps-labs-auth, thm-adv-mfa]
 ---
+
+Quick payloads: [[payloads/mfa-bypass]].
 
 ## What it is
 
@@ -182,3 +184,9 @@ Min fraction digits: 0
 - PortSwigger Lab 6: 2FA simple bypass
 - PortSwigger Lab 7: 2FA broken logic
 - TryHackMe: Multifactor Authentications room
+
+## Related
+
+- [[account-takeover]] (bypassing MFA is a direct route to full account takeover)
+- [[rate-limit-bypass]] (OTP brute forcing depends on breaking the rate limit first)
+- [[authentication-attacks]] (MFA is one layer of the broader authentication surface)

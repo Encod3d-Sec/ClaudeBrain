@@ -4,12 +4,12 @@ type: payloads
 tags: [payloads, csrf, access-control, web]
 sources: []
 date_created: 2026-06-16
-date_updated: 2026-06-16
+date_updated: 2026-07-21
 ---
 
 # Payloads: CSRF
 
-Cross-site request forgery + token/SameSite bypass (OWASP A01). Routed via the `hunt-auth` skill. See [[csrf]].
+Cross-site request forgery + token/SameSite bypass (OWASP A01). Routed via the `hunt-auth` skill. See [[techniques/web/csrf]].
 
 ## Basic PoC (auto-submit)
 ```html

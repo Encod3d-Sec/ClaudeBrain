@@ -4,12 +4,12 @@ type: payloads
 tags: [payloads, xss, web, client-side]
 sources: []
 date_created: 2026-06-05
-date_updated: 2026-06-05
+date_updated: 2026-07-21
 ---
 
 # Payloads: XSS
 
-Reflected/stored/DOM probes + sanitizer/CSP bypasses. See [[xss]].
+Reflected/stored/DOM probes + sanitizer/CSP bypasses. See [[techniques/web/xss]].
 
 ## Polyglots (context-agnostic first probes)
 ```

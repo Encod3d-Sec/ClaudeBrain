@@ -4,11 +4,13 @@ type: technique
 tags: [exploitation, h1, injection, rce, ssti, thm, web]
 phase: exploitation
 date_created: 2026-05-08
-date_updated: 2026-07-15
+date_updated: 2026-07-21
 sources: [thm-adv-ssti, thm-web-ssti-ctf, h1-scraped-ssti, 0xdf-linux-easy-web, payloadsallthethings-server-side-template-injection, git-payloadsallthethings, git-portswigger-all-labs, korchagin-successful-errors, hacktricks-web]
 ---
 
 # SSTI (Server-Side Template Injection)
+
+Quick payloads: [[payloads/ssti]].
 
 ## What it is
 
@@ -801,3 +803,8 @@ blog-post-author-display=user.gdprDelete()
 **Warning:** Do not run `setAvatar` on `User.php` and then `gdprDelete()` — this deletes the class file and breaks the lab (requires 20-minute reset).
 
 **Key lesson:** When the template engine is hardened, look for developer-created objects exposed in templates. Error messages and upload endpoints are the primary reconnaissance surface.
+
+## Related
+
+- [[insecure-deserialization]] (a sibling server-side injection class that reaches RCE)
+- [[os-command-injection]] (SSTI commonly escalates to OS command execution)

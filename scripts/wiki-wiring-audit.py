@@ -38,6 +38,8 @@ EXEMPT_FILE = os.path.join(ROOT, "scripts", "wiring-exempt.txt")
 AUDITED_SUBDIRS = ("techniques", "payloads")
 
 WIKILINK = re.compile(r"\[\[([^\]|#]+)")
+_FENCE_RE = re.compile(r"```.*?```", re.S)     # fenced code block
+_INLINE_RE = re.compile(r"`[^`]*`")            # inline code span
 
 
 def slug(path: str) -> str:
@@ -76,6 +78,55 @@ def links_in(path: str) -> set[str]:
     except OSError:
         return set()
     return {m.strip().lower() for m in WIKILINK.findall(text)}
+
+
+def _rel_noext(path: str) -> str:
+    """wiki-relative path without extension, forward-slashed, lowercased (matches a
+    path-qualified [[link]] body, e.g. techniques/web/ssrf)."""
+    rel = os.path.relpath(path, WIKI)
+    return os.path.splitext(rel)[0].replace(os.sep, "/").lower()
+
+
+def twin_pairs(pages: dict[str, list[str]]) -> list[tuple[str, str]]:
+    """Intentional arsenal<->methodology twins: a basename shared by exactly one payloads/
+    page and one techniques/ page. Data-driven (no hardcoded count); adapts as twins are
+    added or removed."""
+    out = []
+    for _slug, paths in pages.items():
+        pay = [p for p in paths if os.path.relpath(p, WIKI).startswith("payloads" + os.sep)]
+        tech = [p for p in paths if os.path.relpath(p, WIKI).startswith("techniques" + os.sep)]
+        if len(pay) == 1 and len(tech) == 1:
+            out.append((pay[0], tech[0]))
+    return out
+
+
+def links_outside_fences(path: str) -> set[str]:
+    """Like links_in(), but ignores [[links]] inside fenced or inline code. A wikilink buried in
+    a code block renders as literal text in Obsidian (not a functional link), so it must NOT count
+    toward the twin mutual-link requirement."""
+    try:
+        text = open(path, encoding="utf-8", errors="ignore").read()
+    except OSError:
+        return set()
+    text = _INLINE_RE.sub("", _FENCE_RE.sub("", text))
+    return {m.strip().lower() for m in WIKILINK.findall(text)}
+
+
+def twin_link_violations(pages: dict[str, list[str]]) -> list[dict]:
+    """Each twin pair must be MUTUALLY cross-linked with a PATH-QUALIFIED [[link]] (a bare
+    [[slug]] is ambiguous between the twins and does not count). A link inside a code fence does
+    not count (not a functional link). Returns one record per missing direction."""
+    bad = []
+    for pay, tech in twin_pairs(pages):
+        pay_links = links_outside_fences(pay)
+        tech_links = links_outside_fences(tech)
+        if _rel_noext(tech) not in pay_links:
+            bad.append({"file": os.path.relpath(pay, ROOT), "missing_link": _rel_noext(tech),
+                        "direction": "payload->technique"})
+        if _rel_noext(pay) not in tech_links:
+            bad.append({"file": os.path.relpath(tech, ROOT), "missing_link": _rel_noext(pay),
+                        "direction": "technique->payload"})
+    return bad
 
 
 def playbook_refs() -> set[str]:
@@ -184,6 +235,7 @@ def main():
 
     # duplicate-slug diagnostic: surfaced so a future collision doesn't silently hide a page again
     dupes = {s: paths for s, paths in pages.items() if len(paths) > 1}
+    twin_viol = twin_link_violations(pages)
 
     by_dom: dict[str, list[str]] = {}
     for s in orphans:
@@ -205,6 +257,7 @@ def main():
                         for s in orphans if (not args.domain) or args.domain in domain_of(pages[s][0])],
             "anchors": sorted(a for a in anchors),
             "duplicate_slugs": {s: [os.path.relpath(p, ROOT) for p in paths] for s, paths in dupes.items()},
+            "twin_link_violations": twin_viol,
             "tools_total": len(tools), "tools_coverage_pct": round(tcov, 1), "tool_orphans": tool_orphans,
             "cheats_total": len(cheats), "cheat_orphans": cheat_orphans,
         }, indent=2))
@@ -221,6 +274,10 @@ def main():
         print("  unwired cheatsheets:", ", ".join(cheat_orphans))
     if dupes:
         print(f"  duplicate slugs ({len(dupes)}, both files audited independently):", ", ".join(sorted(dupes)))
+    if twin_viol:
+        print(f"  twin cross-link gaps ({len(twin_viol)}): payload<->technique pairs not mutually [[linked]]")
+        for v in twin_viol:
+            print(f"    {v['file']} missing [[{v['missing_link']}]] ({v['direction']})")
     print("-" * 70)
     for dom in sorted(by_dom):
         print(f"\n### {dom}  ({len(by_dom[dom])} orphaned)")

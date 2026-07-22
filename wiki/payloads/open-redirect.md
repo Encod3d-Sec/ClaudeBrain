@@ -4,12 +4,12 @@ type: payloads
 tags: [payloads, open-redirect, ssrf, oauth, web]
 sources: []
 date_created: 2026-06-16
-date_updated: 2026-06-16
+date_updated: 2026-07-21
 ---
 
 # Payloads: Open Redirect
 
-Redirect-filter bypasses. Useful standalone (phishing) and as a chain primitive for OAuth `redirect_uri` theft and SSRF allowlist bypass. See [[open-redirect]]; chains -> [[oauth-saml]], [[wiki/payloads/ssrf]].
+Redirect-filter bypasses. Useful standalone (phishing) and as a chain primitive for OAuth `redirect_uri` theft and SSRF allowlist bypass. See [[techniques/web/open-redirect]]; chains -> [[oauth-saml]], [[wiki/payloads/ssrf]].
 
 ## Where found
 `?url= ?next= ?redirect= ?return= ?returnUrl= ?dest= ?destination= ?continue= ?r= ?u= ?target= ?redir= ?redirect_uri= ?callback=`, `Location` headers, JS `location=`/`window.open`, meta-refresh.

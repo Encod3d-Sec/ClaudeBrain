@@ -4,11 +4,13 @@ type: technique
 tags: [client-side, exploitation, h1, injection, thm, web, xss]
 phase: exploitation
 date_created: 2026-05-08
-date_updated: 2026-05-13
+date_updated: 2026-07-21
 sources: [thm-adv-xss, thm-web-xss, portswigger-scripts, h1-scraped-xss, payloadsallthethings-xss, git-payloadsallthethings, git-portswigger-all-labs]
 ---
 
 # Cross-Site Scripting (XSS)
+
+Quick payloads: [[payloads/xss]].
 
 ## What it is
 
@@ -894,3 +896,9 @@ Script execution blocked by CSP; only HTML injection into an attribute is possib
 ?search=<script>alert(1)</script>&token=;script-src-elem%20'unsafe-inline'
 ```
 This appends `script-src-elem 'unsafe-inline'` to the response CSP, allowing the inline `<script>` to execute.
+
+## Related
+
+- [[csrf]] (XSS bypasses CSRF tokens to forge authenticated requests)
+- [[xssi]] (both abuse the cross-origin script-inclusion boundary)
+- [[cors-sop]] (XSS runs in-origin, defeating the data protections SOP and CORS enforce)

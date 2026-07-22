@@ -4,12 +4,12 @@ type: payloads
 tags: [payloads, ssti, rce, web]
 sources: []
 date_created: 2026-06-05
-date_updated: 2026-06-29
+date_updated: 2026-07-21
 ---
 
 # Payloads: SSTI
 
-Detect engine, then escalate to RCE. See [[ssti]].
+Detect engine, then escalate to RCE. See [[techniques/web/ssti]].
 
 ## Detect + fingerprint
 ```

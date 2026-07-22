@@ -4,11 +4,13 @@ type: technique
 tags: [redos, dos, regex, exfiltration, web]
 phase: exploitation
 date_created: 2026-07-14
-date_updated: 2026-07-14
+date_updated: 2026-07-21
 sources: [hacktricks-web]
 ---
 
 # ReDoS (Regular-Expression DoS + Blind Regex Exfiltration)
+
+Quick payloads: [[payloads/redos]].
 
 Backtracking engines (PCRE, Java `java.util.regex`, Python `re`, JS `RegExp`) blow up
 super-linearly on crafted input against "evil" patterns (nested/overlapping quantifiers). Two
@@ -32,3 +34,7 @@ davisjam/vuln-regex-detector, tjenkinson/redos-detector. Payload strings: [[redo
 
 ## Sources
 - HackTricks (pentesting-web)
+
+## Related
+
+- [[dos-attacks]] (ReDoS is an algorithmic-complexity denial of service via catastrophic backtracking)
