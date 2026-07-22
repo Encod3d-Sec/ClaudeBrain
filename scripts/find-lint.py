@@ -128,6 +128,8 @@ def lint_file(path):
     if band and sev in SEVERITIES and band != sev:
         warnings.append(f"CVSS score maps to {band} but filename severity is {sev} "
                         f"(intentional? otherwise fix the label or the score)")
+    if not re.search(r"^class:\s*\S", fmt, re.M):
+        warnings.append("no `class:` set (canonical vuln class sharpens chain triggers + coverage)")
     return issues, warnings
 
 

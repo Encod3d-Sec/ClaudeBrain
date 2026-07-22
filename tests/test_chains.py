@@ -166,3 +166,15 @@ def test_phase_explicit_absent_field(tmp_path):
     (eng / "killchain.md").write_text("---\ntype: engagement-killchain\n---\n\n## 1. Recon\n",
                                       encoding="utf-8")
     assert _engagement.phase_explicit(str(eng)) is None
+
+
+def test_tested_classes_honors_explicit_class(tmp_path):
+    eng = tmp_path / "eng"
+    (eng / "Vulns").mkdir(parents=True)
+    # title says nothing matchable; explicit class: ssrf must still credit ssrf
+    (eng / "Vulns" / "FIND-009-HIGH-weird-name.md").write_text(
+        "---\ntitle: weird name\nclass: ssrf\naffected: web09\nstatus: Research\n---\n\nx\n",
+        encoding="utf-8")
+    per_asset, _glob = _engagement.tested_classes(str(eng), "bugbounty",
+                                                  ["ssrf", "rce", "idor"])
+    assert "ssrf" in per_asset.get("web09", set())

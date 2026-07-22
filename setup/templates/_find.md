@@ -2,6 +2,7 @@
 title: "<short title>"
 type: finding
 severity: MEDIUM
+class: ""            # optional: canonical vuln class (ssrf/idor/rce/...) for chain triggers + coverage; fuzzy-inferred from title if blank
 status: RESEARCH
 cvss: ""
 affected: ""

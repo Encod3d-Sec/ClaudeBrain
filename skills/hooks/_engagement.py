@@ -298,7 +298,9 @@ def tested_classes(d, etype, classes):
                 title = fm.get("title", "")
                 if isinstance(title, list):
                     title = " ".join(title)
-                hits = _match_classes(f + " " + title, classes)
+                explicit = (fm.get("class") or "").strip().lower()
+                hits = ({explicit} if explicit in {c.lower() for c in classes}
+                        else _match_classes(f + " " + title, classes))
                 aff = fm.get("affected", "")
                 for a in (aff if isinstance(aff, list) else [aff]):   # block-list affected -> per-asset
                     credit(hits, a)

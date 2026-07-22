@@ -196,6 +196,7 @@ def test_find_lint_warns_on_cvss_severity_mismatch(tmp_path):
 def test_find_lint_no_warning_when_score_matches_label(tmp_path):
     fl = _load("scripts/find-lint.py", "find_lint_match")
     matched = ('---\nseverity: HIGH\ncvss: "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:N — 7.5"\n'
+               "class: ssrf\n"
                "affected: api.x\n---\n# t\n## Description\nA real description with enough text here.\n"
                "## Proof of Concept\nstep 1 do the thing exactly like so.\n"
                "## Impact\nAttacker reads all the data, full account takeover.\n"
