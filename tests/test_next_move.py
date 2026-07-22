@@ -276,3 +276,49 @@ def test_tested_credit_matches_across_url_host_drift(monkeypatch):
            killchain=[{"asset": "https://api.x/graphql", "vuln class": "rce", "status": "[x]"}])
     gaps = " ".join(s for s in next_move.suggest(limit=99) if s.startswith("[gap]"))
     assert "rce" not in gaps
+
+
+_EDGE = {
+    "ssrf": {"then": [{"move": "hit metadata from {asset}", "to_class": "rce", "to_phase": 4,
+                       "gain": 2, "cost": "cheap", "likelihood": 0.5, "gate": "oob",
+                       "skill": "hunt-ssrf"}]},
+}
+
+
+def _chain_patch(monkeypatch, findings, scope=None, killchain=None):
+    _patch(monkeypatch, "bugbounty", [], [], [], scope=scope, killchain=killchain)
+    monkeypatch.setattr(next_move, "CHAINS", _EDGE)
+    monkeypatch.setattr(_engagement, "confirmed_findings", lambda d: findings)
+
+
+def test_chain_candidate_emitted_and_scored(monkeypatch):
+    _chain_patch(monkeypatch, [{"class": "ssrf", "asset": "web01", "severity": "HIGH",
+                                "status": "confirmed"}])
+    sj = next_move.suggest_json(limit=99)
+    chain = [c for c in sj if c["tag"] == "chain"]
+    assert len(chain) == 1
+    assert chain[0]["score"] == 96                      # 80 + 6*2 + round(8*0.5) - 0
+    assert "web01: ssrf->rce" in chain[0]["text"]
+    assert "OOB-gate: confirm callback first" in chain[0]["text"]
+    assert "[hunt-ssrf]" in chain[0]["text"]
+
+
+def test_chain_suppressed_when_dest_class_tested(monkeypatch):
+    # killchain 4a marks rce [x] on web01 -> the ssrf->rce pivot is already covered there
+    _chain_patch(monkeypatch,
+                 [{"class": "ssrf", "asset": "web01", "severity": "HIGH", "status": "confirmed"}],
+                 killchain=[{"asset": "web01", "vuln class": "rce", "status": "[x]"}])
+    assert not any(c["tag"] == "chain" for c in next_move.suggest_json(limit=99))
+
+
+def test_chain_out_of_scope_asset_filtered(monkeypatch):
+    _chain_patch(monkeypatch,
+                 [{"class": "ssrf", "asset": "web01", "severity": "HIGH", "status": "confirmed"}],
+                 scope=_scope(out_of_scope=["web01"]))
+    assert not any(c["tag"] == "chain" for c in next_move.suggest_json(limit=99))
+
+
+def test_chain_no_edge_no_move(monkeypatch):
+    _chain_patch(monkeypatch, [{"class": "xxe", "asset": "web01", "severity": "LOW",
+                                "status": "confirmed"}])
+    assert not any(c["tag"] == "chain" for c in next_move.suggest_json(limit=99))

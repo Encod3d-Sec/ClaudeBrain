@@ -41,6 +41,17 @@ try:
 except Exception:
     CLASSES = {}   # absent/unreadable -> coverage-gap moves just off
 
+_CH_PATH = os.path.join(VAULT, "scripts", "chains.json")
+try:
+    CHAINS = json.load(open(_CH_PATH, encoding="utf-8")).get("edges", {})
+except FileNotFoundError:
+    CHAINS = {}   # absent (fresh clone) -> chain moves just off
+except Exception as _e:
+    CHAINS = {}
+    sys.stderr.write(f"next_move: chains.json unreadable ({_e}); chain moves disabled\n")
+
+_CHAIN_COST = {"cheap": 0, "medium": 3, "expensive": 6}
+
 DEAD = ("dead", "done")
 HIGH_VALUE_SVC = ("mssql", "winrm", "smb", "ssh", "rdp", "ldap", "kerberos")
 # which access values mean "reachable, go get a foothold" per engagement type
@@ -76,6 +87,21 @@ def _row_in_scope(r, etype, sc):
         return False
     inl = [(o or "").lower().strip() for o in sc.get("in_scope", []) if o]
     if inl and not any(_engagement._scope_entry_match(i, o) for i in ids for o in inl):
+        return False
+    return True
+
+
+def _chain_asset_in_scope(asset, sc):
+    """Scope gate for a bare asset string (a finding's affected host): not out-of-scope AND
+    (no in-scope allowlist OR it matches one). Mirrors _row_in_scope's identifier logic for a
+    single value. Reuses _engagement's matchers; deterministic."""
+    a = (asset or "").lower().strip()
+    if not a or a == "?":
+        return False
+    if _engagement.out_of_scope_match(a, sc):
+        return False
+    inl = [(o or "").lower().strip() for o in sc.get("in_scope", []) if o]
+    if inl and not any(_engagement._scope_entry_match(a, o) for o in inl):
         return False
     return True
 
@@ -214,6 +240,38 @@ def _ranked(limit=5):
         # never silently truncated below an info-level one by dict-insertion order
         tests.sort(key=lambda t: (-t[0], -t[1]))
         sugg.extend((s, "test", text) for s, c, text in tests[:4])
+
+    # 1c. chain candidates: a CONFIRMED/PARTIAL finding of class X -> ranked pivots from
+    #     chains.json (data-driven horizontal edges; complements the vertical fingerprint
+    #     tests above). Suggestions ONLY - gate:"oob" edges are tagged, never auto-fired.
+    #     Reuses the scope filter (_chain_asset_in_scope) + tested-suppression (tested_for) +
+    #     the final _norm_key dedup. Suppressed under passive_only.
+    if not passive and CHAINS:
+        for fnd in _engagement.confirmed_findings(d):
+            cls = (fnd.get("class") or "").lower()
+            asset = fnd.get("asset") or "?"
+            edge = CHAINS.get(cls)
+            if not edge or not _chain_asset_in_scope(asset, sc):
+                continue
+            done = tested_for(asset)
+            for cand in edge.get("then", []):
+                to_cls = (cand.get("to_class") or "").lower()
+                if to_cls and to_cls in done:
+                    continue                       # destination class already tested/dead here
+                try:
+                    gain = int(cand.get("gain", 0))
+                except (TypeError, ValueError):
+                    gain = 0
+                try:
+                    lik = float(cand.get("likelihood", 0))
+                except (TypeError, ValueError):
+                    lik = 0.0
+                score = 80 + 6 * gain + round(8 * lik) - _CHAIN_COST.get(
+                    (cand.get("cost") or "").lower(), 0)
+                move = (cand.get("move") or "").replace("{asset}", asset)
+                gate = " (OOB-gate: confirm callback first)" if cand.get("gate") == "oob" else ""
+                sk = " [" + cand["skill"] + "]" if cand.get("skill") else ""
+                sugg.append((score, "chain", f"{asset}: {cls}->{to_cls} - {move}{gate}{sk}"))
 
     # 2+3. pentest-only: cred reuse spray + relay posture (AD-specific)
     if etype == "pentest" and not passive:
