@@ -7,6 +7,7 @@ What the framework fires on its own, so you know what activates for a given task
 **Source of truth** (edit these, not this doc, to change behaviour):
 - keyword -> skill: `skills/hunt/triggers.json`
 - tech fingerprint -> tests: `scripts/playbook.json`
+- finding class -> pivot: `scripts/chains.json` (ingested by `next_move.py`, keyed by finding class; candidates never auto-fire, suggestions only)
 - hook logic: `skills/hooks/*.py`
 - hook registration (per device): `setup/install-hooks.sh` -> `~/.claude/settings.json`
 

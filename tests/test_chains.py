@@ -178,3 +178,13 @@ def test_tested_classes_honors_explicit_class(tmp_path):
     per_asset, _glob = _engagement.tested_classes(str(eng), "bugbounty",
                                                   ["ssrf", "rce", "idor"])
     assert "ssrf" in per_asset.get("web09", set())
+
+
+def test_killchain_templates_document_phase_keys():
+    for etype in ("pentest", "bugbounty", "ctf"):
+        # use _engagement.VAULT (repo-root self-location); _engagement.py is in skills/hooks/,
+        # so dirname(dirname(__file__)) would wrongly land in skills/.
+        txt = open(os.path.join(_engagement.VAULT, "setup", "templates", etype, "killchain.md"),
+                   encoding="utf-8").read()
+        assert "current_phase" in txt, f"{etype} killchain missing current_phase key"
+        assert "entered_because" in txt, f"{etype} killchain missing entered_because key"

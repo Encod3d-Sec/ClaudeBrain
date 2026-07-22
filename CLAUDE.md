@@ -132,6 +132,7 @@ Framework subsystems (each is a script + an on-demand skill; detail in `docs/aut
 | Ingest | `ingest` skill | Drop raw output in `targets/<eng>/ingest/`; the skill synthesizes -> state/loot/paths then archives. |
 | Next-move | `scripts/next_move.py` / `next-move` | Ranks moves (type + scope aware). Update tables after acting so the next run re-ranks. |
 | Fingerprint testing | `scripts/playbook.json` | Maps tech -> targeted tests + hunt skill + the `wiki/payloads/` arsenal. Extend both as you learn new tech. |
+| Chaining | `scripts/chains.json` / `next_move` | Data-driven `finding -> pivot` edges (horizontal complement to playbook's vertical fingerprint->test). A CONFIRMED/PARTIAL finding surfaces ranked pivot candidates; suggestions only, `gate:oob` edges need an operator callback first. Add edges, no code. |
 | Coverage | `killchain.md` 4a table / `coverage` skill | Per-asset untested classes live in the kill-chain board's `### 4a` table. Add a row with status `[x]` + a `poc/` image when you test a class, or the gap recurs (`next_move.py` surfaces `[gap]` moves). |
 | Finding quality | `scripts/find-lint.py` | Findings scaffold from `setup/templates/_find.md`; run find-lint before /evidence and before a report. |
 

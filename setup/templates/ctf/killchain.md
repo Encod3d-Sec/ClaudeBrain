@@ -6,6 +6,12 @@ tags: [engagement, killchain, board]
 date_created: "{{DATE}}"
 date_updated: "{{DATE}}"
 sources: []
+# current_phase / entered_because: OPTIONAL. Set current_phase to the display label the
+# board uses (e.g. "Phase 4 Exploit") and entered_because to the finding/edge that justified
+# the transition. When set, status.py + SessionStart report this instead of the heuristic;
+# a citation naming an out-of-scope asset is ignored. Leave unset to use the auto-heuristic.
+current_phase: ""
+entered_because: ""
 ---
 # Kill-Chain Board - {{ENGAGEMENT}}
 
