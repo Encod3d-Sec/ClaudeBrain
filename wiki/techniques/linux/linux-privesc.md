@@ -1612,3 +1612,49 @@ privesc path:
 - [[splunk-lpe-persistence]] — Splunk forwarder/app-deployment local privesc and persistence.
 - [[node-cef-debugger-abuse]] — Node.js `--inspect` and CEF/Chromium (Electron) debugger-port abuse for RCE/privesc.
 - [[freeipa-pentesting]] — FreeIPA (Kerberos+LDAP identity management, the AD-equivalent on Linux) enumeration and lateral movement/privesc.
+
+## SUID TOCTOU file-race (check-then-use)
+
+A SUID/SGID binary that VALIDATES a path (a symlink check, an `access()` permission check, or a
+name check) and then OPENS or reads it in a SEPARATE later step has a time-of-check/time-of-use
+race: swap the path to a symlink pointing at the protected target between the check and the use, so
+the check passes on a benign file but the privileged `open()` follows the symlink and reads the
+target as the binary's euid. Read the SUID binary's source (if available) to find the check-then-use
+gap; the window is the code between the check and the `open()`/`read()`.
+
+**Pattern A - symlink / name check bypass.** Binary does `lstat`+`S_ISLNK` (or `strstr(path,"secret")`)
+then, later, `open(path)`. Pass a plain file (or a name without the banned substring) that passes the
+check, then swap it to a symlink pointing at the target before the open:
+```sh
+mkdir /tmp/w && cd /tmp/w && touch x               # plain file: passes lstat / name checks
+( sleep 1; rm -f x; ln -sf /target/secret x ) &    # swap to symlink during the window
+<suid-binary> /tmp/w/x                             # open() follows the symlink as euid
+```
+If the binary blocks on input (a `getchar`/prompt) between check and use, the window is
+human-timed: swap the file, then send the input. A tight window needs a fast flip loop instead.
+
+**Pattern B - `access()` / `open()` TOCTOU.** `access(path, R_OK)` checks against the caller's REAL
+uid, but `open()` runs with the euid (the SUID owner). Flip the path between a file the real user can
+read (passes `access`) and a symlink to a file only the euid can read, racing many runs so `access`
+sees the readable file and `open` (a moment later) sees the target:
+```sh
+cd /tmp/r && touch reg
+( while true; do rm -f x; ln -f reg x; rm -f x; ln -sf /target/secret x; done ) &   # flip loop
+while true; do <suid-binary> /tmp/r/x | grep -q FOUND && break; done                # race it
+```
+A `sleep`/`usleep` between the `access` and the `open` widens the window and makes it easy to win.
+
+**Gotcha - `fs.protected_symlinks`.** The sysctl (default `1`) refuses to follow a symlink inside a
+world-writable STICKY dir (`/tmp`, `/dev/shm`) when the follower's euid differs from the symlink's
+owner, so a classic `/tmp` symlink race fails with EACCES (`open` returns -1) even when the swap
+timing is correct. Put the symlink in a race-owned, NON-world-writable subdir (`mkdir /tmp/sub`,
+mode 755): the protection only applies to sticky world-writable dirs, so the privileged binary
+follows it.
+
+**Concurrency variant - unsynchronized shared state.** A threaded service that checks a gate
+(`if (counter >= N)`) against a global mutated by other requests WITHOUT a lock is racy: flood
+concurrent requests that raise the counter so it stacks past the gate before any per-request reset,
+then race the gated action in the same window. Drive it with a THREADED client (e.g. Python
+threads); a bash `/dev/tcp` connection flood fork-bombs your own session.
+
+<!-- promoted-slug: suid-toctou-file-race -->

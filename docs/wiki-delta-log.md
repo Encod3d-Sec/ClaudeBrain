@@ -5,3 +5,4 @@ only: date, engagement_type, count. No client codename or specifics (tracked fil
 sustained zero means either wiki saturation (good) or a skipped harvest (investigate).
 
 <!-- date  engagement_type  count -->
+2026-07-22  ctf  1
