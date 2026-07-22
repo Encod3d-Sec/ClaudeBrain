@@ -70,7 +70,7 @@ def board_status():
                 dead_n += 1
         if open_n == 0 and dead_n == 0:
             return None
-        where = ("Phase %d %s" % cur) if cur else "complete"
+        where = _engagement.phase_explicit(d) or (("Phase %d %s" % cur) if cur else "complete")
         return "Board: %s, %d open, %d deadends" % (where, open_n, dead_n)
     except Exception:
         return None

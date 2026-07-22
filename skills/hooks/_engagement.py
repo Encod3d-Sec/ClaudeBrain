@@ -533,6 +533,28 @@ def scope(d=None):
     return res
 
 
+def phase_explicit(d):
+    """The killchain frontmatter `current_phase`, IFF present and its `entered_because`
+    names no out-of-scope asset; else None (caller falls back to the heuristic phase scan).
+    The citation-scope check keeps a phase transition in scope. Deterministic, no network."""
+    try:
+        raw = open(os.path.join(d, "killchain.md"), encoding="utf-8", errors="ignore").read()
+    except OSError:
+        return None
+    fm = _frontmatter(raw)
+    cp = (fm.get("current_phase") or "").strip()
+    if not cp:
+        return None
+    cited = fm.get("entered_because") or ""
+    if isinstance(cited, list):
+        cited = " ".join(cited)
+    sc = scope(d)
+    for tok in re.findall(r"[A-Za-z0-9._:/-]+", cited):
+        if out_of_scope_match(tok.lower(), sc):
+            return None                    # citation names an out-of-scope asset -> ignore field
+    return cp
+
+
 def _host_of(s):
     """Reduce a URL / authority string to its bare host: drop scheme, userinfo, any
     path/query/fragment, and a trailing :port. A plain host or IP passes through. A

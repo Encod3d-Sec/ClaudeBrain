@@ -48,8 +48,11 @@ def deadend_lines(d, limit=3):
 
 
 def board_phase(d):
-    """(where, open_n, dead_n) from killchain.md: highest-numbered phase with an open item.
-    Mirrors engagement-init.board_status; kept here so status.py has no hook dependency."""
+    """(where, open_n, dead_n) from killchain.md: highest-numbered phase with an open item,
+    or the explicit `current_phase` frontmatter field when set and in-scope (see
+    _engagement.phase_explicit). Mirrors engagement-init.board_status; kept here so
+    status.py has no hook dependency."""
+    import _engagement
     p = os.path.join(d, "killchain.md")
     if not os.path.isfile(p):
         return None
@@ -67,7 +70,7 @@ def board_phase(d):
                 cur = phase
         elif "[!]" in s:
             dead_n += 1
-    where = ("Phase %d %s" % cur) if cur else "complete"
+    where = _engagement.phase_explicit(d) or (("Phase %d %s" % cur) if cur else "complete")
     return where, open_n, dead_n
 
 

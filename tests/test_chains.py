@@ -129,3 +129,40 @@ def test_chains_json_schema_valid():
             assert c["gate"] in (None, "oob")
             assert c["skill"] is None or isinstance(c["skill"], str)
             assert isinstance(c["move"], str) and c["move"]
+
+
+KILLCHAIN = """---
+type: engagement-killchain
+current_phase: "Phase 5 Post-Ex"
+entered_because: "FIND-001 RCE on web01 (CONFIRMED) -> post-ex edge"
+---
+
+## 1. Recon
+- [ ] rustscan
+"""
+
+
+def test_phase_explicit_prefers_field(tmp_path, monkeypatch):
+    eng = tmp_path / "eng"
+    eng.mkdir()
+    (eng / "killchain.md").write_text(KILLCHAIN, encoding="utf-8")
+    monkeypatch.setattr(_engagement, "scope",
+                        lambda d=None: {"in_scope": [], "out_of_scope": []})
+    assert _engagement.phase_explicit(str(eng)) == "Phase 5 Post-Ex"
+
+
+def test_phase_explicit_ignores_out_of_scope_citation(tmp_path, monkeypatch):
+    eng = tmp_path / "eng"
+    eng.mkdir()
+    (eng / "killchain.md").write_text(KILLCHAIN, encoding="utf-8")
+    monkeypatch.setattr(_engagement, "scope",
+                        lambda d=None: {"in_scope": [], "out_of_scope": ["web01"]})
+    assert _engagement.phase_explicit(str(eng)) is None   # citation names an out-of-scope host
+
+
+def test_phase_explicit_absent_field(tmp_path):
+    eng = tmp_path / "eng"
+    eng.mkdir()
+    (eng / "killchain.md").write_text("---\ntype: engagement-killchain\n---\n\n## 1. Recon\n",
+                                      encoding="utf-8")
+    assert _engagement.phase_explicit(str(eng)) is None
