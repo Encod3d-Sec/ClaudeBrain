@@ -5,6 +5,7 @@ Everything here is best-effort and never raises to the caller: callers wrap use
 in try/except, but these helpers also degrade to empty/None on any problem.
 """
 import ipaddress
+import json
 import os
 import re
 from datetime import date
@@ -326,6 +327,108 @@ def tested_classes(d, etype, classes):
             pass
 
     return per_asset, glob
+
+
+def _class_vocab():
+    """Full vuln-class vocabulary: every coverage-classes.json value + CLASS_ALIASES key.
+    Lowercased. The canonical set confirmed_findings / chains.json validate against."""
+    vocab = set(CLASS_ALIASES.keys())
+    try:
+        cc = json.load(open(os.path.join(VAULT, "scripts", "coverage-classes.json"),
+                            encoding="utf-8"))
+        for v in cc.values():
+            if isinstance(v, list):
+                vocab.update(c.lower() for c in v)
+    except Exception:
+        pass
+    return {c.lower() for c in vocab}
+
+
+def _vuln_index_confirmed_ids(d):
+    """{FIND-NNN: host} for Vuln-index.md rows whose Status starts CONFIRMED or PARTIAL.
+    Multi-table aware (_parse_table only reads the first table): rows are credited only
+    under an `id | title | host | status` header, so the Severity-Count table is ignored.
+    'VERSION CONFIRMED / PoC pending' (starts VERSION) and 'CLOSED' are excluded. -> {} on
+    any problem."""
+    ids = {}
+    try:
+        lines = open(os.path.join(d, "Vuln-index.md"), encoding="utf-8",
+                     errors="ignore").read().splitlines()
+    except OSError:
+        return ids
+    header = None
+    for line in lines:
+        s = line.strip()
+        if not s.startswith("|"):
+            continue
+        cells = [c.strip() for c in s.strip("|").split("|")]
+        if set("".join(cells)) <= set("-: "):
+            continue                       # separator row
+        low = [c.lower() for c in cells]
+        if low[:4] == ["id", "title", "host", "status"]:
+            header = "finding"
+            continue
+        if low and low[0] == "severity":   # Severity-Count table header
+            header = "other"
+            continue
+        if header != "finding" or len(cells) < 4:
+            continue
+        m = re.match(r"(FIND-\d+)", cells[0])
+        status = cells[3].strip().upper()
+        if m and (status.startswith("CONFIRMED") or status.startswith("PARTIAL")):
+            ids[m.group(1)] = cells[2].strip()
+    return ids
+
+
+def confirmed_findings(d):
+    """CONFIRMED/PARTIAL findings as typed records: [{class, asset, severity, status}].
+    The Vuln-index Status column is the authoritative gate (a FIND file's own frontmatter
+    `status:` stays Research in practice). One record per `affected` asset. Class = explicit
+    frontmatter `class:` (when a known class) else fuzzy _match_classes(title+filename).
+    Error-safe -> []."""
+    out = []
+    if not d:
+        return out
+    ok = _vuln_index_confirmed_ids(d)
+    if not ok:
+        return out
+    vocab = _class_vocab()
+    vroot = os.path.join(d, "Vulns")
+    if not os.path.isdir(vroot):
+        return out
+    for root, _dirs, files in os.walk(vroot):
+        if os.path.basename(root).lower().startswith(("skip", "false")):
+            continue
+        for f in files:
+            if not (f.startswith("FIND-") and f.endswith(".md")):
+                continue
+            m = re.match(r"(FIND-\d+)", f)
+            if not m or m.group(1) not in ok:
+                continue
+            try:
+                text = open(os.path.join(root, f), encoding="utf-8", errors="ignore").read()
+            except OSError:
+                continue
+            fm = _frontmatter(text)
+            title = fm.get("title", "")
+            if isinstance(title, list):
+                title = " ".join(title)
+            explicit = (fm.get("class") or "").strip().lower()
+            if explicit in vocab:
+                cls = explicit
+            else:
+                hits = _match_classes(f + " " + title, vocab)
+                cls = sorted(hits)[0] if hits else ""
+            if not cls:
+                continue
+            sev_m = re.match(r"FIND-\d+-([A-Za-z]+)-", f)
+            sev = (sev_m.group(1).upper() if sev_m else str(fm.get("severity", "")).upper())
+            aff = fm.get("affected", "")
+            assets = aff if isinstance(aff, list) else [aff]
+            assets = [a for a in assets if a] or [ok[m.group(1)]]
+            for a in assets:
+                out.append({"class": cls, "asset": a, "severity": sev, "status": "confirmed"})
+    return out
 
 
 def summary():
