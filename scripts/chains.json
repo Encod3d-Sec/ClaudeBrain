@@ -1,0 +1,11 @@
+{
+  "_comment": "Horizontal attack-path edges: a CONFIRMED/PARTIAL finding of class X -> ranked pivot candidates. Complements playbook.json (vertical: fingerprint->test). next_move.py ingests both. Candidates are SUGGESTIONS ONLY - nothing auto-executes; gate:'oob' marks blind/impactful edges needing an operator OOB callback before exploit. Score = 80 + 6*gain + round(8*likelihood) - {cheap:0,medium:3,expensive:6}[cost]. Class names must be in coverage-classes.json + CLASS_ALIASES vocab. Add edges, no code.",
+  "edges": {
+    "ssrf":          {"then": [{"move": "pivot SSRF on {asset} -> cloud metadata (169.254.169.254) + internal-only services", "to_class": "rce",     "to_phase": 4, "gain": 2, "cost": "cheap",  "likelihood": 0.5, "gate": "oob", "skill": "hunt-ssrf"}]},
+    "idor":          {"then": [{"move": "escalate IDOR on {asset} -> ATO: swap victim id on auth/profile/reset endpoints", "to_class": "auth",    "to_phase": 4, "gain": 1, "cost": "cheap",  "likelihood": 0.6, "gate": null,  "skill": "hunt-idor"}]},
+    "sqli":          {"then": [{"move": "SQLi on {asset} -> RCE: stacked queries / xp_cmdshell / INTO OUTFILE webshell",   "to_class": "rce",     "to_phase": 4, "gain": 2, "cost": "medium", "likelihood": 0.4, "gate": "oob", "skill": "hunt-sqli"}]},
+    "file-upload":   {"then": [{"move": "upload webshell on {asset} -> RCE (bypass ext/mime filter)",                       "to_class": "rce",     "to_phase": 4, "gain": 2, "cost": "cheap",  "likelihood": 0.5, "gate": null,  "skill": "hunt-rce"}]},
+    "default-creds": {"then": [{"move": "reuse {asset} default cred against other in-scope auth surfaces",                  "to_class": "lateral", "to_phase": 5, "gain": 1, "cost": "cheap",  "likelihood": 0.6, "gate": null,  "skill": null}]},
+    "rce":           {"then": [{"move": "post-ex from RCE on {asset}: loot creds, enum internal, pivot",                    "to_class": "lateral", "to_phase": 5, "gain": 1, "cost": "medium", "likelihood": 0.8, "gate": null,  "skill": null}]}
+  }
+}

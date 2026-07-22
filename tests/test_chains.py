@@ -1,4 +1,5 @@
 """Tests for chains.json + its _engagement readers + phase_explicit."""
+import json
 import os
 
 import _engagement
@@ -109,3 +110,23 @@ def test_confirmed_findings_comma_split_affected(tmp_path):
              "status": "Research"})
     got = _engagement.confirmed_findings(str(eng))
     assert sorted(f["asset"] for f in got) == ["web08a", "web08b"]
+
+
+def test_chains_json_schema_valid():
+    vocab = _engagement._class_vocab()
+    root = os.path.dirname(os.path.dirname(os.path.abspath(_engagement.__file__)))
+    chains = json.load(open(os.path.join(root, "scripts", "chains.json"), encoding="utf-8"))
+    edges = chains["edges"]
+    assert edges, "chains.json must define at least one edge"
+    for src, spec in edges.items():
+        assert src.lower() in vocab, f"edge source class {src} not in vocab"
+        assert spec["then"], f"edge {src} has no candidates"
+        for c in spec["then"]:
+            assert c["to_class"].lower() in vocab, f"{src}->{c['to_class']} to_class not in vocab"
+            assert isinstance(c["to_phase"], int)
+            assert isinstance(c["gain"], int) and 0 <= c["gain"] <= 3
+            assert c["cost"] in ("cheap", "medium", "expensive")
+            assert isinstance(c["likelihood"], (int, float)) and 0.0 <= c["likelihood"] <= 1.0
+            assert c["gate"] in (None, "oob")
+            assert c["skill"] is None or isinstance(c["skill"], str)
+            assert isinstance(c["move"], str) and c["move"]
