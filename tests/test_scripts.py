@@ -208,6 +208,26 @@ def test_find_lint_no_warning_when_score_matches_label(tmp_path):
     assert warnings == []
 
 
+def test_find_lint_class_advisory_blank_vs_set(tmp_path):
+    fl = _load("scripts/find-lint.py", "find_lint_class_advisory")
+    body = ("affected: api.x\n---\n# t\n## Description\nA real description with enough text here.\n"
+            "## Proof of Concept\nstep 1 do the thing exactly like so.\n"
+            "## Impact\nAttacker reads all the data, full account takeover.\n"
+            "## Remediation\nValidate input and patch the library now.\n")
+    blank = ('---\nseverity: MEDIUM\ncvss: ""\n'
+             'class: ""            # optional: canonical vuln class\n' + body)
+    bf = tmp_path / "FIND-001-MEDIUM-blank.md"
+    bf.write_text(blank)
+    _issues, warnings = fl.lint_file(str(bf))
+    assert any("no `class:` set" in w for w in warnings)
+
+    setcls = ('---\nseverity: MEDIUM\ncvss: ""\nclass: ssrf\n' + body)
+    sf = tmp_path / "FIND-002-MEDIUM-set.md"
+    sf.write_text(setcls)
+    _issues, warnings = fl.lint_file(str(sf))
+    assert not any("no `class:` set" in w for w in warnings)
+
+
 def test_build_moc_group_key_and_labels():
     bm = _load("scripts/build_moc.py", "build_moc")
     assert bm.group_key("active-directory-certificate-esc1") == "active-directory-certificate"
