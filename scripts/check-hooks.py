@@ -35,6 +35,7 @@ EXPECTED_HOOKS = [
     ("PostToolUse", "recon-capture.py"),
     ("PostToolUse", "tool-telemetry.py"),
     ("PostToolUse", "wiki-reindex.py"),
+    ("PostToolUse", "web-recon.py"),
     ("PreToolUse", "scope-guard.py"),
     ("PreToolUse", "session-guard.py"),
     ("PreCompact", "pre-compact.sh"),

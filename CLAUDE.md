@@ -123,6 +123,7 @@ Engagement-state hooks (live via `~/.claude/vault-hooks` symlink -> `skills/hook
 | `engagement-init.py` | SessionStart | Self-heals the engagement file set; injects state summary + top next-moves + session cache + OOB HITs + drift warnings. |
 | `hunt-trigger.py` | UserPromptSubmit | Routes to hunt skills from `triggers.json` (surfaces the relevant Skill; the skill carries the mandate); leak-safe telemetry to `.trigger-fire.jsonl`. Skips injected/non-prompt content. |
 | `recon-capture.py` | PostToolUse/Bash | Routes detected tech -> the hunt Skill (`playbook.json`), auto-correlates OOB callbacks (waiting -> HIT), and fires a once-per-engagement GATE-1 wiki-first nudge when an exploit-shaped command runs while `killchain.md` Weaponize is undone. Framework-meta guard suppresses false fires. Advisory. |
+| `web-recon.py` | PostToolUse/Bash | Auto-launches the parallel web-recon suite (`recon-web.sh`: feroxbuster/nuclei/whatweb + render) on a NEW in-scope web surface. Scope-gated (never out-of-scope), idempotent, RoE-honored, fail-open. |
 | `scope-guard.py` | PreToolUse/Bash | ENFORCES (denies the command) on out-of-scope host/IP (CIDR-aware) or RoE-forbidden tooling. Fail-open; `.enforce-off` marker downgrades to advisory. |
 | `session-guard.py` | PreToolUse/Write | Warns when a write would put a client marker into a generic `session/*` file. Advisory, never blocks. |
 

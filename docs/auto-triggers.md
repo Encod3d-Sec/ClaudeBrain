@@ -26,10 +26,11 @@ This page is a snapshot; regenerate the tables from those files if they change.
 | **PostToolUse (Bash)** | `recon-capture.py` | Fingerprint auto-route (to the hunt Skill) + OOB callback correlation + a once-per-engagement GATE-1 wiki-first nudge (exploit-shaped command while `killchain.md` Weaponize is undone). A framework-meta guard suppresses false fires. Advisory. |
 | **PostToolUse (all)** | `tool-telemetry.py` | Per-box telemetry: appends every tool/skill call to `targets/<eng>/.events.jsonl`, stamps `started_at`, records the transcript path; feeds `eval_metrics.py`. Silent, fail-open. |
 | **PostToolUse (Write/Edit)** | `wiki-reindex.py` | Auto-reindex: a Write/Edit to `wiki/**/*.md` fires a debounced background `qmd update`, so the change is searchable without a manual reindex. Off the blocking path, fail-open. |
+| **PostToolUse (Bash)** | `web-recon.py` | Auto-launches the parallel web-recon suite (`recon-web.sh`: feroxbuster/nuclei/whatweb + page render) on a newly-discovered IN-SCOPE web surface. Idempotent, scope-gated (never out-of-scope), RoE-honored, fail-open. |
 | **PreCompact** | `pre-compact.sh` | Reminds to persist state (`gsd:pause-work`) before context compacts. |
 | **Stop** | `close-out.py` | Close-out reflex: when the engagement is SOLVED but its walkthrough is unassembled (or the learn harvest is due), nudges Skill(walkthrough) then Skill(learn). Advisory, self-clearing. |
 
-All 10 hooks (across 6 events) inject context, route to a skill, capture telemetry, or fire a deterministic safety guard; none prescribes methodology or silently runs a tool, and all fail open. Only the deterministic guard (`scope-guard`) can deny a command; the rest inject context. Canonical set: `scripts/check-hooks.py` `EXPECTED_HOOKS`.
+All 11 hooks (across 6 events) inject context, route to a skill, capture telemetry, fire a deterministic safety guard, or (`web-recon`) auto-launch scope-gated recon; none prescribes methodology, and all fail open. `scope-guard` denies an out-of-scope/RoE-forbidden command and `web-recon` auto-launches `recon-web.sh` on a NEW in-scope web surface (announced in-line, never an out-of-scope host); the rest only inject context. Canonical set: `scripts/check-hooks.py` `EXPECTED_HOOKS`.
 
 ---
 

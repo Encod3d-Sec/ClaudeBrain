@@ -83,6 +83,10 @@ if not has("PostToolUse", "wiki-reindex.py"):
     add("PostToolUse", {"matcher": "Write|Edit", "hooks": [{"type": "command",
         "command": "python3 ~/.claude/vault-hooks/wiki-reindex.py", "timeout": 10}]})
     print("added PostToolUse wiki-reindex")
+if not has("PostToolUse", "web-recon.py"):
+    add("PostToolUse", {"matcher": "Bash", "hooks": [{"type": "command",
+        "command": "python3 ~/.claude/vault-hooks/web-recon.py", "timeout": 30}]})
+    print("added PostToolUse web-recon")
 if not has("PreToolUse", "scope-guard.py"):
     add("PreToolUse", {"matcher": "Bash", "hooks": [{"type": "command",
         "command": "python3 ~/.claude/vault-hooks/scope-guard.py", "timeout": 10}]})
