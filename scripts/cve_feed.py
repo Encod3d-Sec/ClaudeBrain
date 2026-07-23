@@ -10,7 +10,7 @@ Never edits playbook.json. See the 2026-06-17 catchup spec (amended) for why thi
 a permitted signal and not "mining the corpus as a knowledge source".
 
   python3 scripts/cve_feed.py            # full report (stdout)
-  python3 scripts/cve_feed.py -q         # one-line drift count (SessionStart)
+  python3 scripts/cve_feed.py -q         # one-line drift count (manual; not auto-wired)
   python3 scripts/cve_feed.py --write    # (re)write docs/playbook-cve-queue.md
 
 Corpus path: $NUCLEI_TEMPLATES, else ~/nuclei-templates, else /root/nuclei-templates.

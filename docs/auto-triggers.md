@@ -21,13 +21,15 @@ This page is a snapshot; regenerate the tables from those files if they change.
 |---|---|---|
 | **SessionStart** | `session-start.sh`, `engagement-init.py` | Loads `session/hot.md`; injects the active-engagement summary + top next-moves + recent log + wiki-health line (only if broken) + active research status (`research_status.py`); regenerates `index.md` if stale; self-heals the engagement file set. |
 | **UserPromptSubmit** | `hunt-trigger.py` | Keyword-matches the prompt against `triggers.json` (code-stripped, intent-gated): a hard hit surfaces the relevant **Skill(x)** to load (routing; the skill carries the mandate), a surface hit a softer "consider Skill(x)". Leak-safe telemetry to `.trigger-fire.jsonl`. |
-| **PreToolUse (Bash)** | `scope-guard.py` | scope / RoE advisory (deterministic safety guard). |
+| **PreToolUse (Bash)** | `scope-guard.py` | ENFORCES: denies an out-of-scope host/IP (CIDR-aware) or RoE-forbidden tooling; fail-open, `.enforce-off` downgrades to advisory (deterministic safety guard). |
 | **PreToolUse (Write)** | `session-guard.py` | Warns when a write would put a client marker into a generic `session/*` file OR a git-tracked framework tree (`wiki/`, `scripts/`, `skills/`, `docs/`, `tests/`, `setup/`); `targets/` and `docs/superpowers/` are exempt. Catches the codename-in-a-tracked-file leak at write-time. |
 | **PostToolUse (Bash)** | `recon-capture.py` | Fingerprint auto-route (to the hunt Skill) + OOB callback correlation + a once-per-engagement GATE-1 wiki-first nudge (exploit-shaped command while `killchain.md` Weaponize is undone). A framework-meta guard suppresses false fires. Advisory. |
+| **PostToolUse (all)** | `tool-telemetry.py` | Per-box telemetry: appends every tool/skill call to `targets/<eng>/.events.jsonl`, stamps `started_at`, records the transcript path; feeds `eval_metrics.py`. Silent, fail-open. |
+| **PostToolUse (Write/Edit)** | `wiki-reindex.py` | Auto-reindex: a Write/Edit to `wiki/**/*.md` fires a debounced background `qmd update`, so the change is searchable without a manual reindex. Off the blocking path, fail-open. |
 | **PreCompact** | `pre-compact.sh` | Reminds to persist state (`gsd:pause-work`) before context compacts. |
 | **Stop** | `close-out.py` | Close-out reflex: when the engagement is SOLVED but its walkthrough is unassembled (or the learn harvest is due), nudges Skill(walkthrough) then Skill(learn). Advisory, self-clearing. |
 
-All 8 hooks inject context, route to a skill, or fire a deterministic safety guard; none prescribes methodology, blocks the model, or silently runs a tool, and all fail open. Canonical set: `scripts/check-hooks.py` `EXPECTED_HOOKS`.
+All 10 hooks (across 6 events) inject context, route to a skill, capture telemetry, or fire a deterministic safety guard; none prescribes methodology or silently runs a tool, and all fail open. Only the deterministic guard (`scope-guard`) can deny a command; the rest inject context. Canonical set: `scripts/check-hooks.py` `EXPECTED_HOOKS`.
 
 ---
 
@@ -73,12 +75,12 @@ Prompt contains the keyword (case-insensitive) -> that skill is suggested. Multi
 
 ## 3. What you RUN -> command-time triggers
 
-### Before the command: scope/RoE advisory (`scope-guard.py`, PreToolUse)
-**Advisory only - never blocks.** Injects `SCOPE/RoE ADVISORY ...` when the command:
+### Before the command: scope/RoE enforcement (`scope-guard.py`, PreToolUse)
+**ENFORCES: denies the command** (`.enforce-off` marker downgrades it to an advisory warning) when the command:
 - targets an out-of-scope host/IP (CIDR-aware: `10.0.3.9` caught by out-of-scope `10.0.3.0/24`), or
 - uses RoE-forbidden tooling given `scope.md` flags: `no_bruteforce` (hydra/medusa/kerbrute/...), `no_dos` (slowloris/--min-rate huge/nmap -T5/...), `passive_only` (any active scanner).
 
-Fails open: a missing scope entry = no warning, never a block. No active engagement = silent.
+Fails open: a missing scope entry = no denial. No active engagement = silent.
 
 ### After a bash command: fingerprint router + OOB correlation + GATE-1 nudge (`recon-capture.py`, PostToolUse)
 
@@ -108,8 +110,8 @@ Tools whose output is fingerprinted (matched at command position, including insi
 |---|---|
 | type "test login.x.com for sql injection" | hunt-sqli (wiki query + payloads) |
 | run `nmap -sV host` -> output shows Jenkins + GraphQL | router: jenkins + graphql detected -> load hunt-rce / hunt-injection |
-| run `hydra ...` with `no_bruteforce: true` in scope | scope-guard advisory warning (before run) |
-| run `nmap 10.0.3.9` where `10.0.3.0/24` is out of scope | scope-guard advisory warning |
+| run `hydra ...` with `no_bruteforce: true` in scope | scope-guard denies the command (before run) |
+| run `nmap 10.0.3.9` where `10.0.3.0/24` is out of scope | scope-guard denies the command |
 | type "solve this crackme" | ctf-category -> reverse-engineering page + radare2/pwntools |
 | type "what next" | next-move (ranked moves) |
 | start a session on an engagement | engagement-init: state + top-3 next moves + wiki health |
@@ -121,7 +123,7 @@ Tools whose output is fingerprinted (matched at command position, including insi
 Every trigger prints a visible line the model then acts on:
 - `MANDATORY ... load Skill(<skill>)` (hard keyword hit) / `consider Skill(<skill>)` (surface hit)
 - `Fingerprint auto-route (playbook.json) ...` (a recon command found tech)
-- `SCOPE/RoE ADVISORY ...` (command hit scope/RoE)
+- a `scope-guard` block with the scope/RoE reason (deterministic deny; a `SCOPE/RoE ADVISORY` line instead when `.enforce-off` is set)
 - `=== Engagement state ===` (session start)
 
 Nothing runs a command on its own. To change what fires: edit `triggers.json` (keywords), `playbook.json` (fingerprints + tests), or the hook `.py` files; re-run `bash setup/install-hooks.sh` only when adding a new hook event.

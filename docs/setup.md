@@ -1,8 +1,10 @@
 # Vault Setup
 
-**New machine:** run `bash setup/bootstrap.sh` from the vault root. This creates the `~/.claude/CLAUDE.md` include, copies obsidian skills, installs bun + qmd, installs the four official Claude plugins (code-review, frontend-design, skill-creator, claude-md-management), installs caveman, and registers the `wiki-search` and `caveman-shrink` MCP servers. After setup, restart Claude Code and run `qmd update` to build the local search index.
+**New machine:** run `bash setup/bootstrap.sh` from the vault root. This creates the `~/.claude/CLAUDE.md` include, copies obsidian skills, installs bun + qmd, installs the four official Claude plugins (code-review, frontend-design, skill-creator, claude-md-management), installs caveman and ponytail, and registers the `wiki-search` and `caveman-shrink` MCP servers. After setup, restart Claude Code and run `qmd update` to build the local search index.
 
 **Caveman (both machines):** Output compression skill -- cuts ~65% of Claude output tokens with no accuracy loss. Requires Node >=18. Bootstrap handles install automatically; to install manually: `curl -fsSL https://raw.githubusercontent.com/JuliusBrussee/caveman/main/install.sh | bash`. Trigger per session with `/caveman`, or say "talk like caveman". Source: https://github.com/JuliusBrussee/caveman
+
+**Ponytail (both machines):** "lazy senior dev" engineering-discipline plugin -- pushes for the simplest working solution (YAGNI, stdlib/native before dependencies, shortest diff). Governs what you build, not prose (pairs with caveman for terse output). Auto-activates at SessionStart (level `full`); switch with `/ponytail lite|full|ultra`. Install: `claude plugins marketplace add DietrichGebert/ponytail && claude plugins install ponytail@ponytail`. Source: https://github.com/DietrichGebert/ponytail
 
 **caveman-shrink MCP (both machines):** MCP proxy that wraps `wiki-search` (qmd.mcp_server) and compresses tool descriptions before Claude reads them, reducing context token usage. Bootstrap registers it automatically at user scope with the correct `QMD_VAULT` for each machine. To register manually: `claude mcp add caveman-shrink -s user -e QMD_VAULT=<vault-path> -- npx -y caveman-shrink qmd mcp`. Both `wiki-search` (raw) and `caveman-shrink` (compressed descriptions) run as separate MCP entries; they share the same underlying data.
 
@@ -17,7 +19,7 @@ VAULT="<vault-root>"   # e.g. /mnt/c/Users/<you>/Documents/ObsidianVaults/Claude
 ln -sf "$VAULT/skills/hooks" ~/.claude/vault-hooks
 ```
 
-Then register the vault hook set in `~/.claude/settings.json` (`bash setup/install-hooks.sh` does this for you; the canonical set spans 5 events -- see below). On a new machine, re-running `bash setup/bootstrap.sh` handles both steps automatically.
+Then register the vault hook set in `~/.claude/settings.json` (`bash setup/install-hooks.sh` does this for you; the canonical set spans 6 events -- see below). On a new machine, re-running `bash setup/bootstrap.sh` handles both steps automatically.
 
 ## Engagement-state automation (both machines)
 

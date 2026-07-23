@@ -66,6 +66,18 @@ else
   echo "  claude plugins install claude-md-management@claude-plugins-official"
 fi
 
+# 5b. Install ponytail (lazy-code discipline plugin -- separate marketplace)
+if command -v claude >/dev/null 2>&1; then
+  echo "Installing ponytail..."
+  claude plugins marketplace add DietrichGebert/ponytail 2>/dev/null || true
+  claude plugins install ponytail@ponytail 2>/dev/null && \
+    echo "  [ok] ponytail" || echo "  [ok] ponytail (already installed)"
+else
+  echo "[warn] claude CLI not found -- install ponytail manually:"
+  echo "  claude plugins marketplace add DietrichGebert/ponytail"
+  echo "  claude plugins install ponytail@ponytail"
+fi
+
 # 6. Install caveman (output compression skill -- required on all machines)
 NODE_MAJOR=$(node -e "process.stdout.write(process.version.split('.')[0].replace('v',''))" 2>/dev/null || echo "0")
 if [ "$NODE_MAJOR" -ge 18 ]; then

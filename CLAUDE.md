@@ -38,7 +38,7 @@
 | Validating / moving finding to Completed      | triage then evidence skills                                                            |
 | Vuln/CVE research on a target (binary/repo/app/firmware) | `research` skill (scaffolds `raw/research/<project>/`)                       |
 
-Vault-local skills (read file directly from `skills/`): `code-review/`, `obsidian/`, `wiki/`, `research/` (CVE-discovery loop), `disclosure/` (finding -> CVE). Workflow + hunt skills live under `skills/hunt/`: all `hunt-*` plus `wiki-arsenal` (fast PARALLEL wiki lookup engine over techniques/payloads/tools/cheatsheets; `arsenal` delegates to it, though the `hunt-*` skills inline their own `qmd_query` rather than routing through it), `triage`, `evidence`, `coverage`, `ingest`, `next-move`, `wiki-recon`, `nday`, `research-ingest`, `ctf-box`, `ctf-category`, `screenshot` (visual PoC capture via `scripts/shot.py`/`capture.sh`, chromium on Kali -> `targets/<eng>/poc/`), `screenshot-burp` (Burp Repeater request/response PoC via `scripts/capture.sh burp`), and `learn` (post-engagement knowledge harvest: diff a completed engagement against the wiki, promote the delta via the leak-gated stage->promote pipeline). The `claude-md-improver/` local copy is an offline fallback (auto-invocation disabled); prefer the `claude-md-management:claude-md-improver` plugin. For MCP setup, hooks, and plugin troubleshooting: read `skills/skills-setup.md`.
+Vault-local skills (read file directly from `skills/`): `obsidian/`, `wiki/`, `research/` (CVE-discovery loop), `disclosure/` (finding -> CVE). Workflow + hunt skills live under `skills/hunt/`: all `hunt-*` plus `wiki-arsenal` (fast PARALLEL wiki lookup engine over techniques/payloads/tools/cheatsheets; `arsenal` delegates to it, though the `hunt-*` skills inline their own `qmd_query` rather than routing through it), `triage`, `evidence`, `coverage`, `ingest`, `next-move`, `wiki-recon`, `nday`, `research-ingest`, `ctf-box`, `ctf-category`, `screenshot` (visual PoC capture via `scripts/shot.py`/`capture.sh`, chromium on Kali -> `targets/<eng>/poc/`), `screenshot-burp` (Burp Repeater request/response PoC via `scripts/capture.sh burp`), and `learn` (post-engagement knowledge harvest: diff a completed engagement against the wiki, promote the delta via the leak-gated stage->promote pipeline). The `claude-md-improver/` local copy is an offline fallback (auto-invocation disabled); prefer the `claude-md-management:claude-md-improver` plugin. For MCP setup, hooks, and plugin troubleshooting: read `skills/skills-setup.md`.
 
 Search rule: never read `wiki/index.md` to find pages - always search first. MCP tool names: `mcp__wiki-search__qmd_query` (semantic), `mcp__wiki-search__qmd_search` (keyword).
 
@@ -112,18 +112,18 @@ Token control and real findings come from the same rule: do not repeat work.
 
 ## Behavior hooks
 
-Caveman plugin installed. SessionStart hook activates full mode automatically - respond terse, drop articles/filler, fragments OK. If hooks fail, activate manually: `/caveman`.
+Output/mode plugins installed: **ponytail** (lazy-code discipline - YAGNI, stdlib/native first, shortest working diff) auto-activates at SessionStart via its own hook (level `full`; switch with `/ponytail lite|full|ultra`), and governs what you build, not prose. **caveman** (prose compression - terse output, drop articles/filler, fragments OK) is manual per session via `/caveman`.
 
 SessionStart also auto-loads `session/hot.md`. No manual reads needed.
 
-Engagement-state hooks (live via `~/.claude/vault-hooks` symlink -> `skills/hooks/`). All fail open (any error -> allow, never trap). Policy: **deterministic guards ENFORCE (deny the tool call); semantic reflexes ADVISE (inject a suggestion).** Enforcement is reserved for no-judgement checks (scope/RoE/output-hygiene) where blocking the wrong action costs zero tokens; judgement calls (wiki-first, tools-not-manual, intended-path) stay advisory because a false block wastes more time than it saves. Escape hatch for a bad block: `touch skills/hooks/.enforce-off`. Full mechanics in `docs/auto-triggers.md`; the behaviorally-relevant summary:
+Engagement-state hooks (live via `~/.claude/vault-hooks` symlink -> `skills/hooks/`). All fail open (any error -> allow, never trap). Policy: **deterministic guards ENFORCE (deny the tool call); semantic reflexes ADVISE (inject a suggestion).** Enforcement is reserved for no-judgement checks (scope/RoE) where blocking the wrong action costs zero tokens; judgement calls (wiki-first, tools-not-manual, intended-path) stay advisory because a false block wastes more time than it saves. Escape hatch for a bad block: `touch skills/hooks/.enforce-off`. Full mechanics in `docs/auto-triggers.md`; the behaviorally-relevant summary:
 
 | Hook | Event | Effect |
 |------|-------|--------|
-| `engagement-init.py` | SessionStart | Self-heals the engagement file set; injects state summary + top next-moves + session cache + OOB HITs + drift/CVE warnings. |
+| `engagement-init.py` | SessionStart | Self-heals the engagement file set; injects state summary + top next-moves + session cache + OOB HITs + drift warnings. |
 | `hunt-trigger.py` | UserPromptSubmit | Routes to hunt skills from `triggers.json` (surfaces the relevant Skill; the skill carries the mandate); leak-safe telemetry to `.trigger-fire.jsonl`. Skips injected/non-prompt content. |
 | `recon-capture.py` | PostToolUse/Bash | Routes detected tech -> the hunt Skill (`playbook.json`), auto-correlates OOB callbacks (waiting -> HIT), and fires a once-per-engagement GATE-1 wiki-first nudge when an exploit-shaped command runs while `killchain.md` Weaponize is undone. Framework-meta guard suppresses false fires. Advisory. |
-| `scope-guard.py` | PreToolUse/Bash | ENFORCES (denies the command) on out-of-scope host/IP (CIDR-aware), RoE-forbidden tooling, or an `echo "=== ==="` output-banner. Fail-open; `.enforce-off` marker downgrades to advisory. |
+| `scope-guard.py` | PreToolUse/Bash | ENFORCES (denies the command) on out-of-scope host/IP (CIDR-aware) or RoE-forbidden tooling. Fail-open; `.enforce-off` marker downgrades to advisory. |
 | `session-guard.py` | PreToolUse/Write | Warns when a write would put a client marker into a generic `session/*` file. Advisory, never blocks. |
 
 Register/repair the set per-device with `bash setup/install-hooks.sh`; `engagement-init` warns at SessionStart if a hook is unregistered (canonical set in `scripts/check-hooks.py`).
@@ -196,10 +196,10 @@ ClaudeBrain/
 │                                   shot.py, capture.sh (one entrypoint, modes: ev=live cmd+url card / req=curl
 │                                   request-response / tmux=real tmux-session card / burp=Burp Repeater PoC), vm-scan.sh, burp-mcp-cli.py,
 │                                   build-walkthrough.py (scaffold + auto-populate the walkthrough Evidence gallery),
-│                                   playbook.json; archive/ = old migrations
+│                                   playbook.json
 ├── setup/                       <- bootstrap.sh, install-hooks.sh (per-device hook reg), install-skills.sh, new-engagement.sh, new-research.sh, templates/<type>/ + templates/research/
-├── tests/                       <- pytest suite for engagement + wiki automation (445 tests)
-├── skills/                      <- code-review/ obsidian/ wiki/ research/ disclosure/
+├── tests/                       <- pytest suite for engagement + wiki automation
+├── skills/                      <- obsidian/ wiki/ research/ disclosure/
 │   │                               claude-md-improver/ (offline fallback) + hooks/ (hook scripts)
 │   └── hunt/                    <- all hunt-* + triage/evidence/coverage/ingest/next-move/
 │                                   wiki-recon/nday/research-ingest/ctf-box/ctf-category/screenshot/screenshot-burp/learn + triggers.json
