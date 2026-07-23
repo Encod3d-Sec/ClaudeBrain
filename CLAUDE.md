@@ -78,10 +78,14 @@ in context. On every engagement, run each step in order, do not skip under momen
    MCP-independent: if the MCP is down (it has dropped mid-session on multiple engagements), run
    `bash scripts/wiki-query.sh "<tech> exploit"` (semantic; `-k` for an exact CVE/tool string) - it
    wraps the SAME qmd index. If one path is down, use another; NEVER degrade to ad-hoc grep or skip it.
-2. **Tools, not hand-rolls.** Reach for the installed tool (nmap/ffuf/nuclei/httpx/nxc/sqlmap/borg/...),
-   never a hand-rolled `curl`/`/dev/tcp` loop; if none fits, say why in one line. Enumerate NON-STANDARD
-   installed tools (borg/borgmatic/restic/duplicity, backup + secret managers) as a loot/privesc lead -
-   a leaked backup passphrase + a reused key beats grinding a hardened-container escape.
+2. **Tools, not hand-rolls; then READ the output whole.** Reach for the installed tool
+   (nmap/ffuf/nuclei/httpx/nxc/sqlmap/borg/...), never a hand-rolled `curl`/`/dev/tcp` loop; if none
+   fits, say why in one line. Enumerate NON-STANDARD installed tools (borg/borgmatic/restic/duplicity,
+   backup + secret managers) as a loot/privesc lead - a leaked backup passphrase + a reused key beats
+   grinding a hardened-container escape. Then READ what it returns END-TO-END - the full scan output,
+   every fetched source / `.js` / inline `<script>` / button `onclick` / `href`, each response - never
+   let a keyword grep BE the read (just as step 1 never degrades wiki-lookup to grep). The initial
+   attack vector repeatedly hides in an AJAX handler / commented route a narrow `grep` skips.
 3. **Capture the request AND each landing, live.** `capture.sh req` the real request+response for every
    exploit/lead request, and screenshot each success to `poc/` the moment
    it lands (`capture.sh ev` / `capture.sh tmux` / `shot.py`), never at the end. Evidence is captured
@@ -99,6 +103,7 @@ Token control and real findings come from the same rule: do not repeat work.
 - **Stop condition.** A vector is exhausted after a bounded effort (e.g. OOB sink: ~30-40 payloads zero callbacks; spray: full user x pass matrix once). On exhaustion: append one line to `Deadends.md` + update `paths.md` status, then switch vector. Do not grind, do not re-loop.
 - **Capture as you go.** After a recon/cred tool runs, extract results into `state.md`/`loot.md` immediately (state-first discipline: capture the moment a tool returns). Prose in chat is lost; tables persist across sessions and devices.
 - **Tooling-first.** Use the installed tool (nmap/ffuf/nuclei/nxc/linpeas), not a hand-rolled bash reimplementation - better output, fires the fingerprint router, and `recon-capture.py` snaps it to evidence. Hand-rolled bash only when no tool fits (say why). Enforced by the `ctf-box` + `hunt-*` skills, not a runtime hook.
+- **Read-first (recon), not grep.** Before declaring any page/endpoint/file enumerated, READ its full source end-to-end: every `.js` bundle + inline `<script>`, every button `onclick`/`href`, every returned response/config. A keyword grep is NOT a read: the initial attack vector repeatedly hides in an AJAX handler / commented route / alternate endpoint that a narrow `grep <keyword>` skips (THM Buzz: the `/fetch` pickle sink lived in an unopened `dropdown.js`). Use grep to LOCATE inside a huge file, then read the surrounding block; never let grep BE the read. Enforced by the `ctf-box` + `wiki-recon` skills, not a runtime hook.
 - **OOB-gate blind bugs.** Blind SSRF/SSTI/SQLi claims need an out-of-band callback, never inference. Enforced per hunt skill.
 - **Reuse loot.** Reuse captured creds across `state.md` hosts before researching new ones. Default/known creds first (look up vendor defaults via context7, see [[default-credentials]]); broad spraying of captured creds is a last resort, not an early or auto move.
 - **Distill reusable knowledge.** When an engagement yields a default cred or a reusable API request pattern, add the **generic** form (product + cred / endpoint + impact, no client specifics) to `wiki/cheatsheets/default-credentials.md` or `api-request-findings.md`. Next engagement, check these first. Client specifics stay in `targets/<eng>/`. At close-out, `Skill(learn)` sweeps the whole completed engagement for any generic lesson still missing from `wiki/` and promotes the delta through the leak-gated stage (`wiki-stage.py`) -> promote (`wiki-promote.py`) pipeline; run it once the engagement is `SOLVED` and its walkthrough is assembled.

@@ -377,6 +377,28 @@ app-logic bugs, not a memory CVE. Load `Skill(hunt-idor)`/`Skill(hunt-ssrf)`/`Sk
   `sg docker -c '<cmd>'` (or `newgrp docker`) to pick up the group -> docker socket -> root file
   access (`docker run -v /:/host ...` / `docker exec` the target container). See [[linux-privesc]].
 
+## Lesson: a "static template" is often a dynamic app - READ the JS end-to-end, don't grep (THM Buzz)
+
+A bootstrap game-template landing page looked like a pure static decoy; the whole box hinged on one
+thing I skipped by GREPPING instead of reading (rules a2 + d above exist for exactly this and I ignored
+them - the miss cost the entire box until a writeup showed the path).
+- **`/static/` paths + `onclick=` handlers = a Python/Flask app in disguise, not a static site.** The
+  "Game Ratings" buttons had `onclick="sendRequest('1')"`; `dropdown.js` (never opened - I read
+  custom.js, saw UI code, moved on) defined `sendRequest` as an AJAX `POST /fetch` with body
+  `{"object":"/var/upload/games/object.pkl"}`. `/static/` -> Flask -> `.pkl` -> pickle.
+- **A file-PATH-taking loader + a separate arbitrary-upload = deserialization RCE.** `/fetch` does
+  `pickle.load(open(<object>))` on the CLIENT-supplied path. The `/secret/upload/` form stores files
+  OUTSIDE the webroot (unreachable by URL - a rabbit hole if you treat it as a webshell upload); it is
+  only a DELIVERY mechanism. Upload a malicious `__reduce__` pickle, then POST `/fetch` at its path ->
+  RCE. See [[insecure-deserialization]].
+- **A grep of a page/JS is NOT a read.** Keyword greps filtered out the exact `sendRequest`/`/fetch`
+  lines. When an upload's files vanish, or a site "has no dynamic surface", the answer is usually in a
+  JS handler or a response you skimmed - open the file and read it top to bottom before concluding.
+- **Egress was L7/port-filtered:** bash `/dev/tcp` and shells to arbitrary high ports (9001) died while
+  `curl` and a python reverse shell to **443** worked. Confirm egress with a curl-callback loop over
+  candidate ports, then use an http-ish port. Root was PwnKit once the intended knockd->SSH path was
+  dead (knockd service not running on the redeploy). See [[privesc-exploit-arsenal]].
+
 ## Context tools
 
 <!-- auto-wired: documented tools to reach for; do not hand-roll -->

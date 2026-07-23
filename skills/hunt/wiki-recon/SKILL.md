@@ -74,6 +74,12 @@ cat $RECON_DIR/urls.txt | grep "\.js$" | \
   > $RECON_DIR/js_secrets.txt
 ```
 
+**READ each app `.js` / inline `<script>` / button `onclick` / `href` END-TO-END, do not stop at the grep.**
+The secret-scan above only surfaces hardcoded keys; the *initial attack vector* (an AJAX handler POSTing to
+an undocumented endpoint, a commented route, a hidden param) hides in code the grep filters out. Open every
+first-party bundle and read it top to bottom, grep only to LOCATE inside a large file, then read the block.
+A page that looks like a static template is often a dynamic app whose whole endpoint map lives in one JS file.
+
 Run each scan in its own tmux tab on the VM (root, persistent), one tab per target: `bash scripts/vm-scan.sh <eng> <target> '<scan>'` (multi-web target -> `<target>-web-<ip-or-domain>`). Capture a live/finished tab with Skill(screenshot) `--tmux <eng>:<tab>` (use the `@NN` id or sanitized tab name it prints). Capture standalone tool output (nmap service surface, ffuf/feroxbuster hits, nuclei findings) as terminal-card PNGs via Skill(screenshot) `--term` for the Attack-surface evidence.
 
 ## Output to Attack-surface.md

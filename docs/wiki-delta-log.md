@@ -6,3 +6,4 @@ sustained zero means either wiki saturation (good) or a skipped harvest (investi
 
 <!-- date  engagement_type  count -->
 2026-07-22  ctf  1
+2026-07-23  ctf  1

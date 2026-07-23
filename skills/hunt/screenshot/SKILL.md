@@ -193,7 +193,9 @@ flag/cred) never clips, and every card carries BOTH the command and the request 
 **Preserve the exploit code too, not just the screenshot.** When you write an exploit script (a
 payload HTML, an escape/forge script, a webshell) or read a target's source, copy it into
 `targets/<eng>/poc/scripts/` alongside its card, so the reviewer has the code and the state together,
-not just a screenshot.
+not just a screenshot. **Save it as `<name>.md` with the code in a ```` ```py ````/```` ```sh ````/```` ```js ````/```` ```html ```` fence, NOT a bare
+`.py`/`.sh`/`.js`/`.html`** - Obsidian only previews `.md`/images in the GUI, so a raw-extension file
+is invisible to the operator (same reason `capture.sh log` writes `.md` and saved source is `-source.md`).
 
 ## Redaction (real engagements only)
 Before a client report, run `Skill(evidence)`: black-bar session cookies / PII, strip

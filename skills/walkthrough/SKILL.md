@@ -59,7 +59,11 @@ diagnostic from log.md becomes 2-3 clean single commands here. Interactive sub-s
 ### (d) Preserve exploit scripts
 Copy any exploit script (payload, escape/forge script, webshell) into
 `targets/<eng>/poc/scripts/`, the same exploit-script-preservation discipline `ctf-box` and `screenshot` use --
-the reviewer needs the code and the state together, not just a screenshot.
+the reviewer needs the code and the state together, not just a screenshot. **Save it as `<name>.md`
+with the code in a ```` ```py ````/```` ```sh ````/```` ```js ```` fence, NOT a bare `.py`/`.sh`/`.js`** -
+Obsidian only previews `.md`/images in the GUI, so a raw-extension script is invisible to the operator
+reading the walkthrough. Reference the `.md` from the matching step; inline the actual payload as a
+fenced block in the step itself so the walkthrough is self-contained.
 
 ### (e) Verify complete
 Before finishing, confirm:

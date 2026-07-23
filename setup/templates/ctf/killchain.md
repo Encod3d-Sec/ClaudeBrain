@@ -32,7 +32,7 @@ GATE 3 (loop): a vector exhausted -> mark `[!]`, one Deadends line, move to the 
 - [ ] arjun param mining                 -> [[arjun]]
 - [ ] nuclei                             -> [[nuclei]] [[nuclei-arsenal]]
 - [ ] nikto ; wpscan (if WordPress)      -> [[nikto]] [[wpscan]]
-- [ ] katana/gau crawl -> review links, `<script>`, .js  -> [[katana]] [[gau]] [[javascript-source-map-exploitation]]
+- [ ] katana/gau crawl, then READ each .js / inline `<script>` / button `onclick` / `href` END-TO-END (open the file, do not grep - the initial vector hides in a handler grep skips)  -> [[katana]] [[gau]] [[javascript-source-map-exploitation]]
 - [ ] trufflehog / .git exposure         -> [[trufflehog]] [[git-exposure]]
   (recon, multi-host / subdomains:)
 - [ ] subfinder + dnsx + gowitness       -> [[subfinder]] [[dnsx]] [[gowitness]]
