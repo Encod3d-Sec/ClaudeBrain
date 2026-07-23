@@ -38,7 +38,7 @@
 | Validating / moving finding to Completed      | triage then evidence skills                                                            |
 | Vuln/CVE research on a target (binary/repo/app/firmware) | `research` skill (scaffolds `raw/research/<project>/`)                       |
 
-Vault-local skills (read file directly from `skills/`): `obsidian/`, `wiki/`, `research/` (CVE-discovery loop), `disclosure/` (finding -> CVE). Workflow + hunt skills live under `skills/hunt/`: all `hunt-*` plus `wiki-arsenal` (fast PARALLEL wiki lookup engine over techniques/payloads/tools/cheatsheets; `arsenal` delegates to it, though the `hunt-*` skills inline their own `qmd_query` rather than routing through it), `triage`, `evidence`, `coverage`, `ingest`, `next-move`, `wiki-recon`, `nday`, `research-ingest`, `ctf-box`, `ctf-category`, `screenshot` (visual PoC capture via `scripts/shot.py`/`capture.sh`, chromium on Kali -> `targets/<eng>/poc/`), `screenshot-burp` (Burp Repeater request/response PoC via `scripts/capture.sh burp`), and `learn` (post-engagement knowledge harvest: diff a completed engagement against the wiki, promote the delta via the leak-gated stage->promote pipeline). The `claude-md-improver/` local copy is an offline fallback (auto-invocation disabled); prefer the `claude-md-management:claude-md-improver` plugin. For MCP setup, hooks, and plugin troubleshooting: read `skills/skills-setup.md`.
+Vault-local skills live under `skills/` (`obsidian/`, `wiki/`, `research/`, `disclosure/`) and `skills/hunt/` (all `hunt-*` plus workflow skills: `arsenal`/`wiki-arsenal`, `triage`, `evidence`, `coverage`, `ingest`, `next-move`, `wiki-recon`, `nday`, `research-ingest`, `ctf-box`, `ctf-category`, `screenshot`, `screenshot-burp`, `learn`); they load on demand via the Skill tool (descriptions in the `/skills` picker). `arsenal` delegates to `wiki-arsenal`; the `hunt-*` skills inline their own `qmd_query`. `claude-md-improver/` is an offline fallback for the `claude-md-management` plugin. MCP/hook/plugin troubleshooting: `skills/skills-setup.md`.
 
 Search rule: never read `wiki/index.md` to find pages - always search first. MCP tool names: `mcp__wiki-search__qmd_query` (semantic), `mcp__wiki-search__qmd_search` (keyword).
 
@@ -48,7 +48,7 @@ Search rule: never read `wiki/index.md` to find pages - always search first. MCP
 
 ## Hunt Skill Auto-Triggers
 
-Vuln-type triggers are fired deterministically by the `hunt-trigger.py` UserPromptSubmit hook, which matches the prompt against `skills/hunt/triggers.json` (single source of truth) in two tiers: `triggers` (explicit vuln-type terms -> a **MANDATORY** `Skill(<hunt>)` load-first directive) and `surface_triggers` (natural attack-surface terms like "login form"/"upload field"/"api endpoint" -> a softer "consider `Skill(...)`" line). When a hard trigger fires, treat the directive as a real instruction: load the named hunt skill before responding, unless it is genuinely irrelevant (then say why in one line). Edit `triggers.json` to change mappings, not this table. Every prompt (fire or miss) is logged leak-safe to `.trigger-fire.jsonl` (no prompt text); run `python3 scripts/trigger-stats.py` to see match rate and tune the surface tier. The table below is the human reference plus the non-keyword rows (triage/evidence) that stay model-judged.
+The `hunt-trigger.py` UserPromptSubmit hook matches your prompt against `skills/hunt/triggers.json` (single source of truth): an explicit vuln-type term injects a **MANDATORY** `Skill(<hunt>)` directive, a surface term (e.g. "login form", "upload field") a softer "consider `Skill(...)`". Treat a hard directive as a real instruction unless genuinely irrelevant (say why in one line). Edit `triggers.json` to change mappings, not this table; full mechanics (incl. leak-safe telemetry) in `docs/auto-triggers.md`.
 
 Vuln-type rows (SSRF/XSS/SQLi/IDOR/RCE/auth/federation/injection/m365/vpn -> matching hunt skill) live in `triggers.json`, fired by the hook. Only the model-judged rows remain here:
 
@@ -160,54 +160,18 @@ The path resolvers (`setup/vault-path.sh`) and hooks self-locate or read
 
 ```
 ClaudeBrain/
-├── CLAUDE.md                    <- this file  (+ README.md, LICENSE)
-├── targets/                     <- engagements (PRIVATE; client data only here, git-ignored)
-│   ├── active.md                <- pointer: current engagement dir name
-│   ├── scrub-terms.txt          <- private leak-check extras (not shipped)
-│   └── <eng>/                   <- self-healed set (state,loot,paths,killchain,log,scope,walkthrough,eval,oob,hot,Vuln-index,Deadends) + ingest/ + poc/ (curated PoC shots) + Vulns/ (pentest)
-├── wiki/
-│   ├── index.md                 <- catalog of all wiki pages
-│   ├── moc.md                   <- graph map-of-content (domain hubs; navigate here)
-│   ├── overview.md              <- methodology map and coverage status
-│   ├── techniques/              <- active-directory, cloud, web, osint, cracking, network,
-│   │                              red-team, linux, exploit-dev, methodology, mobile-iot
-│   ├── payloads/                <- per-vuln-class payload arsenal (hunt skills pull from here)
-│   ├── tools/                   <- per-tool reference pages
-│   ├── cheatsheets/             <- quick-reference command sheets
-│   └── courses/  CTF/           <- course notes; challenge writeups
-├── session/
-│   ├── hot.md                   <- rolling 3-entry summary (auto-loaded at startup)
-│   ├── log.md                   <- append-only audit trail
-│   └── memory.md                <- long-term editorial patterns
-├── docs/
-│   ├── workflows.md             <- step-by-step workflow guide
-│   ├── page-types.md            <- required sections per page type
-│   ├── setup.md                 <- machine setup and path config
-│   ├── virtual-machine.md       <- Kali attack VM + vm.sh SSH bridge; when/how to run tooling vs. targets
-│   ├── sharing.md               <- client-data boundary; how to share safely
-│   ├── conventions.md           <- cross-referencing, log format, style guide
-│   └── auto-triggers.md         <- what auto-fires (hooks, triggers.json, playbook) and when
-├── scripts/                     <- automation (self-documenting via docstrings): next_move,
-│                                   status.py (on-demand engagement dashboard: phase/counts/evidence/deadends/moves),
-│                                   wiki-query.sh (qmd CLI wiki-first fallback when the MCP drops),
-│                                   wiki-eval.py (retrieval eval + regression gate over scripts/wiki-eval-gold.json: hit@3/hit@5/MRR; run --check before/after any qmd chunker/index change),
-│                                   find-lint, lint-wiki, lint-md-tables.py (GFM table integrity), gen_index, build_moc, cve_feed, freshness,
-│                                   check-hooks, check-leaks.sh, trigger-stats, wordlist-* (+wordlists/),
-│                                   shot.py, capture.sh (one entrypoint, modes: ev=live cmd+url card / req=curl
-│                                   request-response / tmux=real tmux-session card / burp=Burp Repeater PoC), vm-scan.sh, burp-mcp-cli.py,
-│                                   build-walkthrough.py (scaffold + auto-populate the walkthrough Evidence gallery),
-│                                   playbook.json
-├── setup/                       <- bootstrap.sh, install-hooks.sh (per-device hook reg), install-skills.sh, new-engagement.sh, new-research.sh, templates/<type>/ + templates/research/
-├── tests/                       <- pytest suite for engagement + wiki automation
-├── skills/                      <- obsidian/ wiki/ research/ disclosure/
-│   │                               claude-md-improver/ (offline fallback) + hooks/ (hook scripts)
-│   └── hunt/                    <- all hunt-* + triage/evidence/coverage/ingest/next-move/
-│                                   wiki-recon/nday/research-ingest/ctf-box/ctf-category/screenshot/screenshot-burp/learn + triggers.json
-└── raw/
-    ├── research/                <- CVE writeups/blogs/advisories + active research projects (<project>/ from new-research.sh; the research skill writes loop state here)
-    ├── assets/                  <- screenshots and other non-text files (read-only)
-    └── git/                     <- cloned repos (WSL path, not Windows mount)
+├── CLAUDE.md   <- this file (+ README.md, LICENSE)
+├── targets/    <- engagements (PRIVATE, git-ignored; ALL client data lives here)
+├── wiki/       <- knowledge base: techniques/ payloads/ tools/ cheatsheets/ (+ index, moc)
+├── session/    <- hot.md (startup cache) · log.md (audit) · memory.md (editorial)
+├── docs/       <- workflows, page-types, auto-triggers, virtual-machine, setup, sharing, conventions, layout
+├── scripts/    <- automation (next_move, status, capture.sh, shot.py, lint-*, wiki-*, vm-*, ...)
+├── setup/      <- bootstrap.sh, install-hooks.sh, install-skills.sh, new-engagement.sh, templates/
+├── skills/     <- obsidian/ wiki/ research/ disclosure/ + hooks/ + hunt/ (hunt-* + workflow skills)
+└── raw/        <- research/ · assets/ (read-only) · git/ (clones)
 ```
+
+Full annotated tree + per-file notes: `docs/layout.md`.
 
 **Rules:**
 - `raw/` is read-only. Exceptions: populate `raw/git/` via git clone (WSL only), and `raw/research/<project>/` research workspaces created by `setup/new-research.sh` (the `research` skill writes loop state there). Research on public targets is not client data; client/engagement work still lives only under `targets/`.
