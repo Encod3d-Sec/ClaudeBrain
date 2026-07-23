@@ -1071,3 +1071,36 @@ def test_all_hooks_fail_open(vault, hook, payload):
                        input=payload, capture_output=True, text=True, env=_env(vault), timeout=25)
     assert p.returncode == 0, (hook, payload, p.stderr)
     assert "permissionDecision" not in p.stdout, (hook, payload, p.stdout)
+
+
+def test_playbook_cognito_not_off_incognito():
+    # word-boundary fix: "incognito" must NOT route hunt-cloud; a real cognito surface still does
+    rc = _import_recon_capture()
+    recs = rc.fingerprint_records("browse http://dev.incognito.com/login")
+    assert "hunt-cloud" not in [s for _l, sp in recs for s in (sp.get("skills") or [])]
+    recs2 = rc.fingerprint_records("AWS cognito user pool idp")
+    assert "hunt-cloud" in [s for _l, sp in recs2 for s in (sp.get("skills") or [])]
+
+
+def test_playbook_xss_not_off_generic_name_field():
+    # a generic name="name" form field must NOT route hunt-xss; a search field still does
+    rc = _import_recon_capture()
+    recs = rc.fingerprint_records('<input name="name" type="text" required>')
+    assert "hunt-xss" not in [s for _l, sp in recs for s in (sp.get("skills") or [])]
+    recs2 = rc.fingerprint_records('<input name="search" placeholder="Search">')
+    assert "hunt-xss" in [s for _l, sp in recs2 for s in (sp.get("skills") or [])]
+
+
+def test_close_out_fires_eval_metrics_when_solved(vault):
+    import shutil
+    eng = vault / "targets" / "acme"
+    (eng / "state.md").write_text(
+        (eng / "state.md").read_text() + "\n## STATUS: SOLVED\n", encoding="utf-8")
+    (eng / ".events.jsonl").write_text(
+        '{"ts":"2026-07-17T02:00:00+00:00","kind":"tool","tool":"Bash"}\n', encoding="utf-8")
+    (vault / "scripts").mkdir(exist_ok=True)
+    shutil.copy(os.path.join(REPO, "scripts", "eval_metrics.py"),
+                str(vault / "scripts" / "eval_metrics.py"))
+    run_hook("close-out.py", {}, _env(vault))
+    assert (eng / ".eval-written").exists()
+    assert "## Metrics (auto)" in (eng / "eval.md").read_text()

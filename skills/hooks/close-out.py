@@ -78,6 +78,20 @@ def main():
         _telemetry.stamp_once("finished_at", _telemetry.now_iso(), d=d)
     except Exception:
         pass
+    # fire the auto eval-metrics block once at close-out. Previously ONLY Skill(learn) Phase 0d ran
+    # eval_metrics, so a light close-out that skipped learn produced no eval (observed live). Bounded
+    # subprocess, fail-open, once per engagement (.eval-written marker); learn still re-runs it later.
+    try:
+        import subprocess
+        em_marker = os.path.join(d, ".eval-written")
+        em = os.path.join(_engagement.VAULT, "scripts", "eval_metrics.py")
+        if not os.path.exists(em_marker) and os.path.isfile(em):
+            subprocess.run(["python3", em, os.path.basename(d), "--write"],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                           stdin=subprocess.DEVNULL, timeout=15)
+            open(em_marker, "w").close()
+    except Exception:
+        pass
     gaps = _engagement.web_evidence_gaps(d)
     if gaps:
         print("Close-out INCOMPLETE (web box marked SOLVED but evidence missing): "
