@@ -484,6 +484,16 @@ def main():
                     "carries the wiki-first, tooling-first, tests, and payload steps:\n"
                     + "\n".join(lines)
                 )
+                # log routed hunt skills so eval_metrics can flag any never invoked (drift signal)
+                if d:
+                    try:
+                        import _telemetry
+                        for _lbl, _spec in fingerprint_records(blob):
+                            for _s in (_spec.get("skills") or []):
+                                if str(_s).startswith("hunt-"):
+                                    _telemetry.log_event("route", d=d, routed=_s)
+                    except Exception:
+                        pass
 
     _emit(blocks)
 

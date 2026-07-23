@@ -118,3 +118,32 @@ def test_tool_telemetry_hook_end_to_end(tmp_path, monkeypatch):
     assert '"skill": "ctf-box"' in ev
     m = json.loads((vault / "targets" / "boxx" / ".metrics.json").read_text())
     assert m.get("started_at") and m.get("transcripts") == ["/t/abc.jsonl"]
+
+
+def _events_only(d, rows):
+    import json as _j
+    with open(os.path.join(d, ".events.jsonl"), "w", encoding="utf-8") as fh:
+        for r in rows:
+            fh.write(_j.dumps(r) + "\n")
+
+
+def test_hunt_routed_but_not_fired_is_drift(tmp_path):
+    d = str(tmp_path)
+    _events_only(d, [
+        {"ts": "2026-07-17T02:00:00+00:00", "kind": "route", "routed": "hunt-xss"},
+        {"ts": "2026-07-17T02:00:01+00:00", "kind": "tool", "tool": "Bash"},
+    ])
+    c = EM.collect(d)
+    assert any(x.get("source") == "hunt-not-fired" and "hunt-xss" in x.get("reason", "")
+               for x in c["drifts"])
+    assert c["drift_count"] >= 1
+
+
+def test_hunt_routed_and_fired_is_not_drift(tmp_path):
+    d = str(tmp_path)
+    _events_only(d, [
+        {"ts": "2026-07-17T02:00:00+00:00", "kind": "route", "routed": "hunt-xss"},
+        {"ts": "2026-07-17T02:00:02+00:00", "kind": "tool", "tool": "Skill", "skill": "hunt-xss"},
+    ])
+    c = EM.collect(d)
+    assert not any(x.get("source") == "hunt-not-fired" for x in c["drifts"])

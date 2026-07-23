@@ -112,6 +112,15 @@ def collect(d, extra_transcript=None):
     skills = Counter(e.get("skill") for e in events if e.get("kind") == "tool" and e.get("skill"))
     hooks = Counter(e.get("hook") for e in events if e.get("kind") == "hook" and e.get("hook"))
     drifts = [e for e in events if e.get("kind") == "drift"]
+    # hunt-firing drift: a fingerprint routed a hunt-* skill that was never invoked this session
+    # (recon-capture logs kind="route"; tool-telemetry logs kind="tool" skill=<name> on invocation).
+    _routed = {e.get("routed") for e in events
+               if e.get("kind") == "route" and str(e.get("routed", "")).startswith("hunt-")}
+    _invoked = {e.get("skill") for e in events if e.get("kind") == "tool" and e.get("skill")}
+    for _h in sorted(h for h in _routed if h and h not in _invoked):
+        drifts.append({"kind": "drift", "source": "hunt-not-fired",
+                       "reason": "fingerprint routed %s but it was never invoked "
+                                 "(worked from memory / hand-rolled)" % _h})
     return {
         "start": start, "end": end,
         "wall": (end - start) if (start and end) else None,
