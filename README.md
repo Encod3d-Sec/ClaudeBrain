@@ -13,10 +13,7 @@ Pentest & bug-bounty knowledge base + AI automation harness
 
 **An AI-powered penetration testing and bug-bounty knowledge base and automation harness for [Claude Code](https://claude.com/claude-code).** It turns an Obsidian vault into an opinionated offensive-security workflow: a searchable wiki of 500+ hacking technique pages, per-vulnerability "hunt" skills, deterministic hooks that fire the right skill at the right moment, and a state-first engagement model that stops you (and the model) from repeating work.
 
-[![Version](https://img.shields.io/badge/version-1.0.3-blue.svg)](#)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Built for Claude Code](https://img.shields.io/badge/built%20for-Claude%20Code-blueviolet.svg)](https://claude.com/claude-code)
-[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
 [![Wiki pages](https://img.shields.io/badge/wiki-500%2B%20pages-brightgreen.svg)](wiki/)
 [![LinkedIn](https://img.shields.io/badge/LinkedIn-Tomas%20Zabukas-0A66C2.svg?logo=linkedin&logoColor=white)](https://www.linkedin.com/in/tomas-zabukas/)
 
@@ -53,7 +50,7 @@ If ClaudeBrain saves you time on an engagement, a [star](https://github.com/Enco
   - `hunt-trigger.py` (UserPromptSubmit) matches your prompt against `skills/hunt/triggers.json` and loads the matching hunt skill.
   - `recon-capture.py` (PostToolUse) fingerprints discovered tech against `scripts/playbook.json`, routes to targeted tests, and auto-captures results into engagement state and PoC evidence.
   - `engagement-init.py` (SessionStart) self-heals the engagement file set and injects a ranked next-move summary.
-  - `scope-guard.py` (PreToolUse) warns when a command targets an out-of-scope host or uses rules-of-engagement-forbidden tooling.
+  - `scope-guard.py` (PreToolUse) denies a command that targets an out-of-scope host or uses rules-of-engagement-forbidden tooling (deterministic enforcement; a `.enforce-off` marker downgrades it to advisory).
 - **State-first engagement model.** Each engagement lives under `targets/<name>/` (`state`, `loot`, `paths`, `scope`, `coverage`). Analyzers (`next_move.py`, `coverage.py`) rank what to do next and surface untested vulnerability classes so nothing in scope is skipped.
 - **Research loop** (`skills/research`) for CVE discovery on binaries, libraries, and repos, with its own persistent state under `raw/research/`.
 - **Hard client-data boundary.** Every client specific stays under `targets/` (git-ignored); `scripts/check-leaks.sh` gates tracked files before you ever push.
@@ -135,13 +132,13 @@ installs the core set for you; the rest are referenced by the workflow and insta
 **Installed by `bootstrap.sh`:**
 
 - **qmd** - the semantic + keyword search engine over `wiki/` (`bun install -g @qmd/cli`); registers the `wiki-search` MCP (`qmd mcp`).
-- **caveman** - terse-output mode; also registers the `caveman-shrink` MCP (a token-compressed `wiki-search`).
+- **caveman** - terse-output / prose-compression mode; also registers the `caveman-shrink` MCP (a token-compressed `wiki-search`).
+- **ponytail** - "lazy senior dev" engineering-discipline mode (pushes for the simplest working solution; governs code, not prose), from marketplace `DietrichGebert/ponytail`.
 - Official Claude Code plugins: **code-review**, **claude-md-management**, **skill-creator**, **frontend-design** (`claude plugins install <name>@claude-plugins-official`).
 
 **Install separately (referenced by the harness):**
 
 - **superpowers** (recommended) - the planning / execution / debugging workflow the CLAUDE.md loop routes to: `brainstorming` -> `writing-plans` -> `subagent-driven-development`, plus `systematic-debugging`, `dispatching-parallel-agents`, and `verification-before-completion`.
-- **ponytail** (optional) - "lazy senior dev" mode that pushes for the simplest working solution.
 - **context7** (optional MCP) - up-to-date library / API docs, used for vendor-default and dependency lookups.
 - **gsd** (optional) - the `pause-work` session-end helper.
 - **burp-mcp** (optional MCP) - drives Burp Suite for the `hunt-burp` workflow.
@@ -163,7 +160,7 @@ tests/            pytest suite for the automation
 targets/          engagements (git-ignored; client data lives ONLY here)
 ```
 
-Start with [`docs/workflows.md`](docs/workflows.md) for the day-to-day flow and [`docs/sharing.md`](docs/sharing.md) for the client-data boundary rules.
+Full annotated tree in [`docs/layout.md`](docs/layout.md). Start with [`docs/workflows.md`](docs/workflows.md) for the day-to-day flow and [`docs/sharing.md`](docs/sharing.md) for the client-data boundary rules.
 
 ---
 
