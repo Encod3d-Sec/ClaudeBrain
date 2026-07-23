@@ -48,6 +48,12 @@ Privilege escalation -> root/flag), using the EXACT commands, creds, and per-ste
 captured in those files. If a fact needed for a section is not present in the state files, do NOT
 invent it -- leave a clearly marked `_TODO: <what is missing>_` for the operator instead.
 
+**Record HOW each vuln was DISCOVERED, not only the exploit.** Every Foothold/Privesc step carries a
+short "found via:" note - the probe/test/observation that revealed the bug (e.g. "found via:
+registered a tag-marker username, saw it reflected unescaped in the users table"), so the reader can
+re-FIND it, not just re-fire the payload. The discovery step IS part of the reproduction; a
+walkthrough that only shows the working exploit hides how you got there.
+
 **Rewrite each command to the HUMAN form for the reader (technical team / client).** `log.md` holds
 the messy automation that actually ran (base64/pty wrappers, `export`s, `;`-merged diagnostic
 pipelines) - the walkthrough must NOT. Each step is ONE standalone command a person would type:

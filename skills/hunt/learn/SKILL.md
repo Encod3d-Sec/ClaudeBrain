@@ -121,6 +121,12 @@ impact. Drop every client host, IP, domain, and client-set credential value. Cli
 specifics stay under `targets/<eng>/`. (The leak gate will refuse anything that slips
 through, but strip up front - do not lean on the gate.)
 
+**Compact to the DELTA, not a re-explanation.** A staged candidate is the MINIMAL new reusable
+primitive + its one gotcha (a technique delta is typically < ~15 lines), NOT a re-teach of what the
+target page already covers. Before promote, re-read the target section (Phase 4) and cut every line
+already there -- keep ONLY what the wiki did not have. A verbose dump that repeats known material is
+a failed harvest even if it promotes.
+
 ### 4. Dedup against the wiki (the skip rule)
 For each generic candidate, search the wiki first:
 ```
