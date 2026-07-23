@@ -294,22 +294,6 @@ def test_ensure_creates_vuln_index_and_deadends(vault, monkeypatch):
     assert deadends.read_text() == "SENTINEL custom dead-end\n"
 
 
-def test_cheatsheet_rows_slices_by_anchor(tmp_path, monkeypatch):
-    cs = tmp_path / "wiki" / "cheatsheets"
-    os.makedirs(cs)
-    (cs / "default-credentials.md").write_text(
-        "| product | version | username | password | source | notes |\n"
-        "|---|---|---|---|---|---|\n"
-        "| Tomcat Manager | any | tomcat | tomcat | vendor | /manager/html |\n"
-        "| Jenkins | any | admin | admin | vendor | x |\n", encoding="utf-8")
-    monkeypatch.setattr(_engagement, "VAULT", str(tmp_path))
-    rows = _engagement.cheatsheet_rows("default-credentials", "tomcat")
-    assert len(rows) == 1 and "Tomcat Manager" in rows[0]
-    assert _engagement.cheatsheet_rows("default-credentials", "nomatch") == []
-    assert _engagement.cheatsheet_rows("not-a-cheatsheet", "tomcat") == []   # only known cheatsheets
-    assert _engagement.cheatsheet_rows("default-credentials", "") == []       # no anchor -> nothing
-
-
 def test_ensure_does_not_create_engagement_hot_cache(vault, monkeypatch):
     # per-engagement hot.md was removed; log.md is the continuity cache now.
     eng = vault / "targets" / "hotfix"

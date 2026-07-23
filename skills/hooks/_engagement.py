@@ -661,45 +661,6 @@ def recent_log(maxlines=12):
     return "\n".join(body[:maxlines])
 
 
-# row-structured wiki cheatsheets a fingerprint can pull concrete rows from
-CHEATSHEETS = {"default-credentials", "api-request-findings", "cve-arsenal"}
-_CS_HEADERS = {"product", "cve", "product/tech"}
-
-
-def cheatsheet_rows(slug, anchor, maxrows=3):
-    """Up to `maxrows` markdown table rows from wiki/cheatsheets/<slug>.md whose cells
-    contain `anchor` (str or list, case-insensitive). [] if the file/rows are absent
-    (e.g. the wiki is not present on this device) -> caller falls back to the slug.
-    Lets a tech fingerprint surface the actual reuse rows, not just a page name."""
-    if slug not in CHEATSHEETS or not anchor:
-        return []
-    anchors = [a.lower() for a in (anchor if isinstance(anchor, (list, tuple)) else [anchor]) if a]
-    if not anchors:
-        return []
-    p = os.path.join(VAULT, "wiki", "cheatsheets", slug + ".md")
-    try:
-        lines = open(p, encoding="utf-8", errors="ignore").read().splitlines()
-    except OSError:
-        return []
-    out = []
-    for line in lines:
-        s = line.strip()
-        if not s.startswith("|"):
-            continue
-        cells = s.split("|")
-        if set("".join(cells)) <= set("-: "):
-            continue  # separator row
-        first = cells[1].strip().lower() if len(cells) > 1 else ""
-        if first in _CS_HEADERS:
-            continue  # header row
-        low = s.lower()
-        if any(a in low for a in anchors):
-            out.append(s)
-            if len(out) >= maxrows:
-                break
-    return out
-
-
 def oob_rows(d=None):
     """Rows of the active engagement's oob.md ledger (list of dicts), or []."""
     d = d or active_dir()
