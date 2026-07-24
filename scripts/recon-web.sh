@@ -42,6 +42,10 @@ _launch whatweb "whatweb -a3 '$URL'"
 if [ "$PASSIVE" -eq 0 ] && [ "$NODOS" -eq 0 ]; then
   _launch ferox "W=$WL; [ -f \"\$W\" ] || W=/usr/share/wordlists/dirb/common.txt; feroxbuster -u '$URL' -w \"\$W\" -x php,txt,html,bak --no-state"
   _launch nuclei "nuclei -u '$URL'"
+  # backup-sweep: appends backup SUFFIXES to full source filenames (login.php.bak) -- feroxbuster's -x
+  # cannot (it appends one ext to a base word). Pushed to the VM then run in its own tab.
+  BS_B64="$(base64 -w0 scripts/backup-sweep.sh 2>/dev/null)"
+  _launch bak "echo $BS_B64 | base64 -d > /tmp/backup-sweep.sh; bash /tmp/backup-sweep.sh '$URL'"
 fi
 
 echo "recon-web: launched for $URL (passive=$PASSIVE no_dos=$NODOS)"

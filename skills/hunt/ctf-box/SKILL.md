@@ -107,6 +107,10 @@ smbclient -N //$T/<share> -c 'recurse;ls'       # then use smbclient ONLY to pul
 # PRIMARY dir/file discovery = feroxbuster (recursive; run FIRST, with backup/log exts). base64-push harness-paths.txt to the VM first.
 feroxbuster -u http://$T -w /tmp/harness-paths.txt -x php,txt,log,sql,bak,zip,env,old,conf -d 2 --no-state -o ferox.txt   # OUR high-signal list, recursive
 feroxbuster -u http://$T -w /usr/share/seclists/Discovery/Web-Content/raft-large-words.txt -x php,txt,log,bak -d 2 --no-state   # then the BIG list (raft-large; fallback raft-medium-words or /usr/share/wordlists/dirb/big.txt)
+# SOURCE-BACKUP sweep -- feroxbuster's -x appends ONE ext to a base word (login->login.bak) so it NEVER
+# finds login.php.bak (a backup SUFFIX on a full filename); source-leak backups are the whole app +
+# creds. Always run this too (auto-fired by recon-web.sh; run by hand against any web surface):
+bash scripts/backup-sweep.sh http://$T ferox.txt    # appends .bak/.back/~/.old/.save/.swp/.zip... to full source filenames; reads ferox.txt for discovered files; BURP_PROXY=127.0.0.1:8080 to route via Burp
 # ffuf for what feroxbuster does NOT do -- param mining + vhosts:
 ffuf -c -u "http://$T/?FUZZ=x" -w scripts/wordlists/harness-params.txt -fs <baseline>          # param mining (SSRF/LFI/cmdi names); -c = colored output (readable recon card)
 ffuf -c -u http://$T/ -H "Host: FUZZ.$T" -w <vhost-wordlist> -ac                                # vhosts
@@ -137,6 +141,14 @@ Fingerprint the exact app + version. **On any fingerprinted surface/service, `Sk
 - **Cred-reuse FIRST.** Capture creds to `targets/<eng>/loot.md` immediately; try reuse (su / ssh / other services) BEFORE hunting new ones. DB/web creds are very often **reused for SSH**.
 
 ## Phase 4 Exploit: finish the foothold, then privesc
+
+**Web foothold = STAY in Burp (anti-drift).** If the foothold is an HTTP primitive (RCE/LFI/SSRF/authed
+API), the recurring failure is abandoning Burp the instant it lands and scripting the ENTIRE
+post-exploitation over raw `curl`/`vm.sh`/urllib - so the operator, who is watching Burp, loses all
+visual on the exploitation. Keep the load-bearing follow-ups (the injection that reads user.txt, the
+authed call that leaks config, each privesc-relevant fetch) in **Burp Repeater** (native `mcp__burp__*`
+first, CLI bridge fallback; `Skill(hunt-burp)`). Quick throwaway enumeration loops over the bridge are
+fine; the requests you'd screenshot are not throwaway. See CLAUDE.md "Burp-first does NOT stop at foothold".
 
 **STOP-and-think the moment ANY shell lands (before reaching for a shortcut).** The recurring
 failure is following the FASTEST path instead of the INTENDED one, then going off the rails. Pause and:

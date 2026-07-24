@@ -61,6 +61,29 @@ real forged request, so the PoC is Burp-native and reproducible.
   grab that instead - no MCP needed. So: **`capture.sh burp` gets ONE clean run per MCP-server session**;
   batch the requests you need, or expect a human toggle between them. (Bank recurring quirks in [[burp-mcp]].)
 
+## KNOWN-BROKEN: selecting a specific Repeater sub-tab (empirically confirmed, Burp 2026.3.x)
+`create_repeater_tab` appends a tab at the RIGHT but does NOT focus it, and the grab captures whatever
+tab is currently active (the last MANUALLY-clicked one) -- so a burpshot of a fresh tab shows the WRONG
+tab unless it happens to be active (this is why poc shots caught stale tabs). Every programmatic
+selection was tested and FAILED on this seat:
+- synthetic `xdotool` MOUSE click on the tab bar -> Swing ignores it (silent no-op), confirmed twice;
+- `ctrl+w` -> does NOT close Repeater tabs;
+- creating a tab -> does NOT auto-activate it, even when newest/rightmost.
+Window maps cleanly (`getwindowgeometry` -> Position 0,35 -> screen = image + (0,35)); the blocker is
+Swing swallowing synthetic input, not coordinates. **Reliable fix (deferred to the Burp-first overhaul
+spec `docs/superpowers/specs/2026-07-24-burp-first-driver-design.md`):** SELECT the tab by KEYBOARD --
+Burp already binds `go_to_next_tab`=`Ctrl+Equals` / `go_to_previous_tab`=`Ctrl+Minus` (no need to bind
+one), but a raw `xdotool key ctrl+equal` did NOT move the sub-tab because focus sits on the request
+EDITOR (its own Pretty/Raw/Hex tabs) not the request-tab bar -- the open problem is moving focus to that
+bar by keyboard (try F6/Ctrl+F6/Shift+Tab), then Ctrl+Equals to the last (=newest) tab. CAPTURE is NOT
+the problem: `import -window` works; flameshot was tested on this seat and FAILS ("Unable to capture
+screen" -- no DBus/portal in the minimal X session), so for a tighter crop use `import -window $WID -crop
+WxH+X+Y +repage` or `maim`/`scrot -a` (pure X11), never flameshot here. Until SELECT is solved, burpshot
+is only trustworthy when the target tab is already active: after the grab READ the PNG, confirm the shown
+tab-name / top request-line is the intended finding; if not, one operator click on the named tab, re-grab. **Until then, burpshot is only trustworthy when the target tab is already active:** after the
+grab, READ the PNG and confirm the shown tab-name / top request-line is the intended finding; if not,
+have the operator click that named tab once, then re-grab. Do NOT present a burpshot without this check.
+
 ## Manual fallback (what the script automates)
 ```bash
 # 1) stage the request as a Repeater tab (root, via MCP)

@@ -18,16 +18,26 @@ Core pages: [[burp-mcp]] (setup + tool inventory + workflow), [[burp-suite]] (GU
 
 ## On the box (prereqs)
 - Kali runs Burp + the "MCP Server" BApp; SSE at `127.0.0.1:9876`. Community works (loses Collaborator + Scanner). Full setup + BApp loadout: [[burp-mcp]].
-- Two drive modes:
-  - **Bridge (default here):** Burp on Kali, Claude on host. Run the CLI on Kali over the SSH bridge:
+- Two drive modes -- **PREFER NATIVE; the CLI bridge is the fallback:**
+  - **Native (PREFERRED):** the `burp` MCP server is registered on the host (`/root/vm-mcp-burp.sh` -> SSH -> `mcp-proxy.jar --sse-url :9876`), so the real `mcp__burp__*` tools appear natively. **Check first:** `ToolSearch("select:mcp__burp__create_repeater_tab,mcp__burp__send_http1_request")` (or any keyword search for "burp repeater"). If they load -> USE THEM (cleanest; no double-base64 quoting). **If absent, it is almost always because the VM was DOWN at session start** (the native server only attaches at startup and does not auto-reconnect) -- the recovery is a **session restart** once the VM is up; only fall back to the bridge if a restart is not acceptable.
+  - **Bridge (FALLBACK):** run the CLI on Kali over the SSH bridge:
 ```
 bash /root/vm.sh 'python3 ~/burp-mcp-cli.py list'                          # tools up? empty = server/port down
 bash /root/vm.sh 'python3 ~/burp-mcp-cli.py schema get_proxy_http_history' # a tool's input schema
 bash /root/vm.sh 'python3 ~/burp-mcp-cli.py call get_proxy_http_history "{\"count\":50}"'
 ```
     (push `scripts/burp-mcp-cli.py` to `~/` on Kali once, or forward 9876 and run it locally with `BURP_MCP_URL` set; see [[burp-mcp]].)
-  - **Native:** Claude Code on Kali with `.mcp.json` -> tools appear natively (e.g. `get_proxy_http_history`).
-- **Verify before hunting:** `list` returns tools -> server up. Empty -> Burp/BApp not running or 9876 not reachable.
+- **Verify before hunting:** native tool-search returns tools, or CLI `list` returns tools -> server up. Empty -> Burp/BApp not running or 9876 not reachable.
+
+## Anti-drift: DRIVE Burp, don't just proxy through it (and don't stop at foothold)
+`curl -x 127.0.0.1:8080` lands in Proxy history but is NOT "using Burp" -- the operator gets no
+per-request visual. Every LOAD-BEARING request -> a **Repeater** tab (`create_repeater_tab`); every
+brute/fuzz -> **Intruder** (`send_to_intruder`, sniper/battering-ram), never a hand-rolled loop -- so the
+operator watches it fire live. **Burp-first does NOT end at RCE/shell:** the recurring drift is landing a
+foothold then scripting the entire post-exploitation over raw `curl`/`vm.sh`/urllib, so the operator
+loses sight of it. Keep the requests that matter (the authed API call, the injection that reads the flag,
+each privesc fetch) in Repeater to the end of the box. Quick throwaway loops over the bridge are fine; the
+requests you'd screenshot are not throwaway -> Repeater.
 
 ## MCP toolset (what to reach for)
 - **Triage:** `get_proxy_http_history`(`_regex`), `get_proxy_websocket_history`(`_regex`), `get_organizer_items`(`_regex`), `get_scanner_issues` (Pro)
