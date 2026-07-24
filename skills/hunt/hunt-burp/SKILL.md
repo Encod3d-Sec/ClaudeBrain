@@ -27,7 +27,8 @@ bash /root/vm.sh 'python3 ~/burp-mcp-cli.py list'                          # too
 bash /root/vm.sh 'python3 ~/burp-mcp-cli.py schema get_proxy_http_history' # a tool's input schema
 bash /root/vm.sh 'python3 ~/burp-mcp-cli.py call get_proxy_http_history "{\"count\":50}"'
 ```
-    (push `scripts/burp-mcp-cli.py` to `~/` on Kali once, or forward 9876 and run it locally with `BURP_MCP_URL` set; see [[burp-mcp]].) The bridge wedges after ~1 `call` per SSE session (new session per call) -> batch requests, expect a restart between them.
+    (push `scripts/burp-mcp-cli.py` to `~/` on Kali once, or forward 9876 and run it locally with `BURP_MCP_URL` set; see [[burp-mcp]].) Each `call` opens a fresh SSE session, which is fine -- the old "wedges after ~1 call" was really the approval gate on `send_http1_request` (see the scope bullet).
+- **Sync scope ONCE (makes in-scope MCP sends auto-approve):** `python3 scripts/burp-scope-sync.py` pushes `targets/<eng>/scope.md` into Burp's project scope. The MCP extension AUTO-APPROVES in-scope targets, so native `mcp__burp__send_*` to in-scope hosts then flow headless; out-of-scope sends stay gated on the GUI approval prompt a headless seat cannot answer (a `send_http1_request` that "hangs" IS that gate, not a wedge). This is also the scope gate for native MCP calls, which `scope-guard.py` (PreToolUse/Bash) never sees.
 
 ## Anti-drift: DRIVE Burp, don't just proxy through it (and don't stop at foothold)
 `curl -x 127.0.0.1:8080` lands in Proxy history but is NOT "using Burp" -- the operator gets no

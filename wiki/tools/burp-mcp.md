@@ -131,9 +131,10 @@ names with `burp-mcp-cli.py schema <tool>`).
 
 Same order the `hunt-burp` skill enforces:
 
-1. **Scope first.** Confirm the target is in-engagement (`targets/<eng>/scope.md`)
-   and set/verify Burp scope (`output_project_options` / `set_project_options`).
-   Never `send_http*` out of scope; respect `no_bruteforce` / `passive_only`.
+1. **Scope first.** Confirm the target is in-engagement (`targets/<eng>/scope.md`) and push scope into Burp:
+   `python3 scripts/burp-scope-sync.py` (scope.md -> Burp project scope). This ALSO makes in-scope native
+   `mcp__burp__send_*` calls auto-approve (the extension auto-approves in-scope targets), so headless sends
+   stop hanging on the approval prompt. Never `send_http*` out of scope; respect `no_bruteforce` / `passive_only`.
 2. **Passive triage.** Read already-captured history (`get_proxy_http_history` and
    the `_regex` variants) for auth flows, tokens, object IDs (IDOR), reflected
    params (XSS), SQL/stack errors, GraphQL, secrets, privileged verbs (BFLA) before
@@ -240,8 +241,9 @@ wrong tab. To stop it recurring, disable the locker permanently: xfconf `xfce4-s
 A `send_http1_request` to a non-approved target raises a GUI approval prompt (the extension's "target approval
 system"); a headless/unattended seat cannot answer it, so the call times out (~15s). This was long mis-read as
 an "SSE wedge": in fact `list`, `create_repeater_tab`, `get_active_editor_contents`, `url_encode`,
-`set_proxy_intercept_state` all serve fine across many back-to-back per-call sessions. Fixes: approve in the
-MCP tab / add the target to auto-approve (ideally = Burp scope), or just Send in the GUI via `Ctrl+Space`
-(human-equivalent, bypasses the gate) -- which is why `capture.sh burp` (create-tab + GUI Send) is unaffected.
+`set_proxy_intercept_state` all serve fine across many back-to-back per-call sessions. Fixes: run
+`scripts/burp-scope-sync.py` (pushes scope.md -> Burp scope; in-scope == auto-approve, verified 2026-07-24),
+or just Send in the GUI via `Ctrl+Space` (human-equivalent, bypasses the gate) -- which is why
+`capture.sh burp` (create-tab + GUI Send) is unaffected.
 
 <!-- promoted-slug: burp-mcp-gui-driving -->
