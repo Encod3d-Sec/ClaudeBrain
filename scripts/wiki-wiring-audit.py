@@ -23,7 +23,7 @@ import argparse, json, os, re, sys, glob
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 WIKI = os.path.join(ROOT, "wiki")
 PLAYBOOK = os.path.join(ROOT, "scripts", "playbook.json")
-SKILLS_GLOB = os.path.join(ROOT, "skills", "hunt", "**", "*.md")
+SKILLS_GLOB = os.path.join(ROOT, "skills", "**", "*.md")  # all skills (hunt/, burp/, ...) wire pages via [[links]]
 EXEMPT_FILE = os.path.join(ROOT, "scripts", "wiring-exempt.txt")
 
 # Only these subtrees carry "should surface during an engagement" pages (gated by the CI test).

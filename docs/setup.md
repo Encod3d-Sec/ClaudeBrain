@@ -54,3 +54,24 @@ bash setup/install-hooks.sh    # symlinks ~/.claude/vault-hooks + registers the 
 **Active engagement pointer:** `targets/active.md` (one line: engagement dir name). It is markdown, so it syncs via Obsidian to both devices. Engagement files: `targets/<eng>/{state,loot,paths,log}.md` + `ingest/`, scaffolded from `setup/templates/<type>/` via `bash setup/new-engagement.sh <name> <pentest|bugbounty|ctf>`.
 
 **`settings.json` and the symlink never sync** (machine-local by design). Always run `install-hooks.sh` once per device after the first git pull.
+
+## Burp GUI automation: the Kali seat must stay UNLOCKED (gotcha)
+
+`capture.sh burp` (burpshot) and any xdotool driving of Burp inject **synthetic input** into the Kali
+desktop. A screen LOCK (xfce4-screensaver on seat0) or a blanked display routes that input to the locker,
+not to Burp: `import -window` still grabs the window pixmap, but keys/clicks never land, so a grab silently
+shows the WRONG Repeater tab. Symptom: `capture.sh burp` prints `GRAB_FAIL ... not interactive` even though
+Burp is clearly on screen, and `getmouselocation` over Burp reports `window:0`.
+
+- **Per-run (automatic):** `capture.sh burp` self-heals, it runs `loginctl unlock-session <seat0-sid>` +
+  `xset` wake before the precheck, so a transient lock no longer blocks it.
+- **Permanent (once per Kali box):** `sudo bash setup/burp/disable-lock.sh` disables the xfce4-screensaver
+  saver + lock, removes its autostart, and kills DPMS/blanking (xfconf + `~/.xprofile` + an autostart
+  override). Re-run after a box rebuild. Detail: `setup/burp/README.md`.
+- **`wmctrl -lG` is NOT a reliable interactivity check** here, it reports "no managed windows" on this
+  no-WM seat even when input lands (false negative). Use the pointer test (`getmouselocation` == the app
+  WID), which is what `capture.sh burp` uses.
+
+Burp MCP install (the "MCP Server" BApp, native vs `scripts/burp/burp-mcp-cli.py` bridge,
+`burp-transport.sh`, the BApp loadout) lives in `wiki/tools/burp-mcp.md`. Driver scripts are in
+`scripts/burp/`, skills in `skills/burp/` (`hunt-burp`, `screenshot-burp`), host setup in `setup/burp/`.

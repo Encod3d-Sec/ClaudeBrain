@@ -2,7 +2,7 @@
 import pathlib
 
 SKILL = (pathlib.Path(__file__).resolve().parents[1]
-         / "skills" / "hunt" / "hunt-burp" / "SKILL.md").read_text()
+         / "skills" / "burp" / "hunt-burp" / "SKILL.md").read_text()
 
 
 def test_drives_each_burp_tool_by_name():

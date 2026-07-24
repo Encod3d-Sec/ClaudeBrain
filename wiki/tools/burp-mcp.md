@@ -76,12 +76,12 @@ Claude Desktop config for you.
 
 Default for this vault, because Claude runs on the Windows/WSL host and reaches
 Kali over the `vm.sh` SSH bridge; nothing to register per device (obsidian-resident
-rule). Use `scripts/burp-mcp-cli.py`, a dependency-free SSE client that speaks the
+rule). Use `scripts/burp/burp-mcp-cli.py`, a dependency-free SSE client that speaks the
 JSON-RPC handshake and calls a single tool:
 
 ```bash
 # push the CLI to Kali once (stdin is not forwarded through vm.sh; base64 it in):
-base64 -w0 scripts/burp-mcp-cli.py | \
+base64 -w0 scripts/burp/burp-mcp-cli.py | \
   xargs -I{} bash /root/vm.sh 'echo {} | base64 -d > ~/burp-mcp-cli.py'
 
 bash /root/vm.sh 'python3 ~/burp-mcp-cli.py list'                              # list every tool + description
@@ -93,7 +93,7 @@ Alternative: SSH local-forward the port to the host (`ssh -L 9876:127.0.0.1:9876
 and run the CLI locally with the SSE URL overridden:
 
 ```bash
-BURP_MCP_URL=http://127.0.0.1:9876 python3 scripts/burp-mcp-cli.py list
+BURP_MCP_URL=http://127.0.0.1:9876 python3 scripts/burp/burp-mcp-cli.py list
 ```
 
 `burp-mcp-cli.py` reads `BURP_MCP_URL` (default `http://127.0.0.1:9876`).
@@ -132,7 +132,7 @@ names with `burp-mcp-cli.py schema <tool>`).
 Same order the `hunt-burp` skill enforces:
 
 1. **Scope first.** Confirm the target is in-engagement (`targets/<eng>/scope.md`) and push scope into Burp:
-   `python3 scripts/burp-scope-sync.py` (scope.md -> Burp project scope). This ALSO makes in-scope native
+   `python3 scripts/burp/burp-scope-sync.py` (scope.md -> Burp project scope). This ALSO makes in-scope native
    `mcp__burp__send_*` calls auto-approve (the extension auto-approves in-scope targets), so headless sends
    stop hanging on the approval prompt. Never `send_http*` out of scope; respect `no_bruteforce` / `passive_only`.
 2. **Passive triage.** Read already-captured history (`get_proxy_http_history` and
@@ -242,7 +242,7 @@ A `send_http1_request` to a non-approved target raises a GUI approval prompt (th
 system"); a headless/unattended seat cannot answer it, so the call times out (~15s). This was long mis-read as
 an "SSE wedge": in fact `list`, `create_repeater_tab`, `get_active_editor_contents`, `url_encode`,
 `set_proxy_intercept_state` all serve fine across many back-to-back per-call sessions. Fixes: run
-`scripts/burp-scope-sync.py` (pushes scope.md -> Burp scope; in-scope == auto-approve, verified 2026-07-24),
+`scripts/burp/burp-scope-sync.py` (pushes scope.md -> Burp scope; in-scope == auto-approve, verified 2026-07-24),
 or just Send in the GUI via `Ctrl+Space` (human-equivalent, bypasses the gate) -- which is why
 `capture.sh burp` (create-tab + GUI Send) is unaffected.
 

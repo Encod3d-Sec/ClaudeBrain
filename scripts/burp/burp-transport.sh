@@ -15,7 +15,7 @@
 #   burp-transport.sh            # resolve + print the mode word (guidance on stderr)
 #   burp-transport.sh --dry-run  # offline: never dial the bridge (native-or-down only)
 set -uo pipefail
-VAULT="${VAULT:-$(cd "$(dirname "$0")/.." && pwd)}"
+VAULT="${VAULT:-$(cd "$(dirname "$0")/../.." && pwd)}"
 VM_SH="${VM_SH:-/root/vm.sh}"
 DRY=0; [ "${1:-}" = "--dry-run" ] && DRY=1
 
@@ -33,13 +33,13 @@ fi
 
 # bridge probe: push the CLI (idempotent) then ask it to list tools. A non-empty list
 # means the VM + Burp + MCP Server BApp are all up.
-cli_b64=$(base64 -w0 "$VAULT/scripts/burp-mcp-cli.py" 2>/dev/null || true)
+cli_b64=$(base64 -w0 "$VAULT/scripts/burp/burp-mcp-cli.py" 2>/dev/null || true)
 tools=$(bash "$VM_SH" "echo '$cli_b64' | base64 -d > ~/burp-mcp-cli.py 2>/dev/null
 python3 ~/burp-mcp-cli.py list 2>/dev/null" 2>/dev/null | grep -c . || true)
 
 if [ "${tools:-0}" -gt 0 ] 2>/dev/null; then
   echo bridge
-  echo "burp-transport: native absent but the SSH bridge answers ($tools tools) -- use scripts/burp-mcp-cli.py (per-call; batch requests, it wedges after ~1 call/session)." >&2
+  echo "burp-transport: native absent but the SSH bridge answers ($tools tools) -- use scripts/burp/burp-mcp-cli.py (per-call; batch requests, it wedges after ~1 call/session)." >&2
   exit 0
 fi
 
@@ -50,6 +50,6 @@ Most likely the Kali VM was DOWN at session start, so the native mcp__burp__ ser
 (it only connects at startup and does not auto-reconnect). Recovery:
   1) bring the VM up and start Burp with the MCP Server BApp (SSE on 127.0.0.1:9876), then
   2) RESTART this session so the native server re-attaches.
-Use the bridge (scripts/burp-mcp-cli.py) only if a session restart is unacceptable.
+Use the bridge (scripts/burp/burp-mcp-cli.py) only if a session restart is unacceptable.
 MSG
 exit 3

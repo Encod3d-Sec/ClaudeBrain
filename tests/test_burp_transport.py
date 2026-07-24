@@ -4,7 +4,7 @@ import os
 import pathlib
 import subprocess
 
-RESOLVER = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "burp-transport.sh"
+RESOLVER = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "burp" / "burp-transport.sh"
 
 
 def _run(env_extra=None, args=()):

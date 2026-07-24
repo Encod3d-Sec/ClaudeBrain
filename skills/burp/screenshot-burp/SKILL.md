@@ -47,7 +47,7 @@ real forged request, so the PoC is Burp-native and reproducible.
   `get_active_editor_contents`, `url_encode`, `set_proxy_intercept_state` all run fine across many back-to-back
   per-call sessions. `capture.sh burp` never calls `send_http1_request` (it Sends in the GUI via `Ctrl+Space`,
   human-equivalent, which bypasses the approval gate), so it is unaffected. If `create_repeater_tab` itself
-  fails, the server is down/unreachable -> check `scripts/burp-transport.sh` (see [[burp-mcp]]).
+  fails, the server is down/unreachable -> check `scripts/burp/burp-transport.sh` (see [[burp-mcp]]).
 
 ## Selecting the finding's tab (SOLVED 2026-07-24, Burp 2026.3.x, verified end-to-end)
 `create_repeater_tab` appends the tab RIGHTMOST but does NOT focus it, so a naive grab caught whatever tab was

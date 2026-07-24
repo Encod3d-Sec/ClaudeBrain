@@ -26,7 +26,7 @@ import subprocess
 import sys
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-REPO = os.path.dirname(SCRIPT_DIR)
+REPO = os.path.dirname(os.path.dirname(SCRIPT_DIR))  # scripts/burp/ -> repo root
 VAULT = os.environ.get("VAULT") or REPO
 VM_SH = os.environ.get("VM_SH", "/root/vm.sh")
 sys.path.insert(0, os.path.join(REPO, "skills", "hooks"))

@@ -305,7 +305,7 @@ for i in \$(seq 1 16); do
   if printf '%s' "\$CUR" | grep -Fq "\$MARKER"; then SELECTED=1; break; fi
   r xdotool key ctrl+equal; sleep 0.5                                  # go_to_next_tab (wraps)
 done
-[ "\$SELECTED" = 1 ] || { echo "GRAB_FAIL could not select the tab for '\$MARKER' after 16 steps (MCP up? scripts/burp-transport.sh)"; exit 0; }
+[ "\$SELECTED" = 1 ] || { echo "GRAB_FAIL could not select the tab for '\$MARKER' after 16 steps (MCP up? scripts/burp/burp-transport.sh)"; exit 0; }
 r xdotool key --clearmodifiers ctrl+space; sleep 4                      # Burp Repeater "Send"
 r import -window "\$WID" "$RPNG"; chmod 644 "$RPNG" 2>/dev/null || true
 echo "GRAB_OK \$WID (verified tab: \$MARKER)"
@@ -314,7 +314,7 @@ PY
   local TABPY_B64 GRABSH_B64 CLI_B64
   TABPY_B64=$(printf '%s' "$TABPY" | base64 -w0)
   GRABSH_B64=$(printf '%s' "$GRABSH" | base64 -w0)
-  CLI_B64=$(base64 -w0 "$VAULT/scripts/burp-mcp-cli.py")
+  CLI_B64=$(base64 -w0 "$VAULT/scripts/burp/burp-mcp-cli.py")
 
   # 1) create the Repeater tab
   local RES
@@ -323,7 +323,7 @@ echo '$TABPY_B64' | base64 -d > /tmp/burpshot_tab.py
 python3 /tmp/burpshot_tab.py '$HOST' '$PORT' '$HTTPS' '$METHOD' '$RPATH' '$TABNAME' '${BODYFILE}'" 2>&1 || true)
   if ! echo "$RES" | grep -q TAB_OK; then
     echo "capture(burp): create_repeater_tab failed -> $RES" >&2
-    echo "  The Burp MCP server did not accept create_repeater_tab. Confirm it is up: scripts/burp-transport.sh" >&2
+    echo "  The Burp MCP server did not accept create_repeater_tab. Confirm it is up: scripts/burp/burp-transport.sh" >&2
     echo "  (expect 'bridge' or 'native'; 'down' -> start Burp + the MCP Server BApp on the VM), or route the" >&2
     echo "  request via the proxy (curl -x 127.0.0.1:8080 ...) and grab Proxy history instead." >&2
     exit 1

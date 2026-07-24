@@ -38,7 +38,7 @@
 | Validating / moving finding to Completed      | triage then evidence skills                                                            |
 | Vuln/CVE research on a target (binary/repo/app/firmware) | `research` skill (scaffolds `raw/research/<project>/`)                       |
 
-Vault-local skills live under `skills/` (`obsidian/`, `wiki/`, `research/`, `disclosure/`) and `skills/hunt/` (all `hunt-*` plus workflow skills: `arsenal`/`wiki-arsenal`, `triage`, `evidence`, `coverage`, `ingest`, `next-move`, `wiki-recon`, `nday`, `research-ingest`, `ctf-box`, `ctf-category`, `screenshot`, `screenshot-burp`, `learn`); they load on demand via the Skill tool (descriptions in the `/skills` picker). `arsenal` delegates to `wiki-arsenal`; the `hunt-*` skills inline their own `qmd_query`. `claude-md-improver/` is an offline fallback for the `claude-md-management` plugin. MCP/hook/plugin troubleshooting: `skills/skills-setup.md`.
+Vault-local skills live under `skills/` (`obsidian/`, `wiki/`, `research/`, `disclosure/`), `skills/hunt/` (all `hunt-*` except `hunt-burp`, plus workflow skills: `arsenal`/`wiki-arsenal`, `triage`, `evidence`, `coverage`, `ingest`, `next-move`, `wiki-recon`, `nday`, `research-ingest`, `ctf-box`, `ctf-category`, `screenshot`, `learn`), and `skills/burp/` (`hunt-burp` + `screenshot-burp`, the Burp MCP driver + Repeater-PoC capture; driver scripts in `scripts/burp/`, host setup in `setup/burp/`); they load on demand via the Skill tool (descriptions in the `/skills` picker). `arsenal` delegates to `wiki-arsenal`; the `hunt-*` skills inline their own `qmd_query`. `claude-md-improver/` is an offline fallback for the `claude-md-management` plugin. MCP/hook/plugin troubleshooting: `skills/skills-setup.md`.
 
 Search rule: never read `wiki/index.md` to find pages - always search first. MCP tool names: `mcp__wiki-search__qmd_query` (semantic), `mcp__wiki-search__qmd_search` (keyword).
 
@@ -166,9 +166,9 @@ ClaudeBrain/
 ├── wiki/       <- knowledge base: techniques/ payloads/ tools/ cheatsheets/ (+ index, moc)
 ├── session/    <- hot.md (startup cache) · log.md (audit) · memory.md (editorial)
 ├── docs/       <- workflows, page-types, auto-triggers, virtual-machine, setup, sharing, conventions, layout
-├── scripts/    <- automation (next_move, status, capture.sh, shot.py, lint-*, wiki-*, vm-*, ...)
-├── setup/      <- bootstrap.sh, install-hooks.sh, install-skills.sh, new-engagement.sh, templates/
-├── skills/     <- obsidian/ wiki/ research/ disclosure/ + hooks/ + hunt/ (hunt-* + workflow skills)
+├── scripts/    <- automation (next_move, status, capture.sh, shot.py, lint-*, wiki-*, vm-*, burp/, ...)
+├── setup/      <- bootstrap.sh, install-hooks.sh, install-skills.sh, new-engagement.sh, templates/, burp/
+├── skills/     <- obsidian/ wiki/ research/ disclosure/ burp/ + hooks/ + hunt/ (hunt-* + workflow skills)
 └── raw/        <- research/ · assets/ (read-only) · git/ (clones)
 ```
 

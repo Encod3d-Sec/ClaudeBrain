@@ -5,7 +5,7 @@ import os
 import pathlib
 import subprocess
 
-SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "burp-scope-sync.py"
+SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "burp" / "burp-scope-sync.py"
 
 
 def _mk(tmp, eng, in_lines, out_lines=()):

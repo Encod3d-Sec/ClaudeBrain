@@ -3,9 +3,9 @@
 
 Drives authenticated/proxied HTTP through Burp from the shell (used when Burp MCP is
 not directly reachable as a tool). Usage:
-  python3 scripts/burp-mcp-cli.py list                       # list every tool + one-line description
-  python3 scripts/burp-mcp-cli.py schema <toolName>          # print a tool's input schema
-  python3 scripts/burp-mcp-cli.py call   <toolName> '<json>' # call a tool with JSON args
+  python3 scripts/burp/burp-mcp-cli.py list                       # list every tool + one-line description
+  python3 scripts/burp/burp-mcp-cli.py schema <toolName>          # print a tool's input schema
+  python3 scripts/burp/burp-mcp-cli.py call   <toolName> '<json>' # call a tool with JSON args
 
 Override the endpoint with BURP_MCP_URL (default http://127.0.0.1:9876) when the
 SSE port is SSH-forwarded from the Kali host (e.g. ssh -L 9876:127.0.0.1:9876).
