@@ -25,8 +25,17 @@ _launch(){ # <window> <scan-cmd>
   fi
 }
 
-# render + fingerprint are passive-safe -> always fire
-_launch render "command -v gowitness >/dev/null 2>&1 && gowitness single --screenshot-path /tmp '$URL' || python3 /opt/arsenal/shot.py --web '$URL'"
+# Render the LIVE page into poc/ via the harness chromium render (capture.sh web) -- NOT a scan tab.
+# A tmux-tab "render" only cards terminal text, not the rendered page; and `shot.py --web` was wrong
+# (shot.py takes the URL positionally, there is no --web flag). capture.sh web renders via chromium on
+# the VM and PULLS the PNG into targets/<eng>/poc/ (+ saves page source). Passive-safe -> always fire.
+RENDER_SLUG="web-$(printf '%s' "$HOST" | tr './: ' '----')"
+if [ "${RECON_WEB_DRYRUN:-0}" = "1" ]; then
+  printf 'recon-web: render -> capture.sh web %s %s %s\n' "$ENG" "$RENDER_SLUG" "$URL"
+else
+  bash scripts/capture.sh web "$ENG" "$RENDER_SLUG" "$URL" >/dev/null 2>&1 &
+fi
+# whatweb fingerprint (passive-safe) -> its own tmux tab (carded by autocard)
 _launch whatweb "whatweb -a3 '$URL'"
 
 # active content/vuln discovery -> gated by RoE

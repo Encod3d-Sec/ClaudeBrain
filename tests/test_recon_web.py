@@ -29,12 +29,12 @@ def test_dryrun_lists_all_tools(tmp_path):
     assert "feroxbuster" in out
     assert "nuclei" in out
     assert "whatweb" in out
-    assert ("gowitness" in out or "shot.py" in out)
+    assert "capture.sh web" in out          # render goes through the chromium render-into-poc path
 
 
 def test_passive_only_drops_active(tmp_path):
     out = _run(tmp_path, "passive_only: true\n").stdout
-    assert "whatweb" in out and ("gowitness" in out or "shot.py" in out)
+    assert "whatweb" in out and "capture.sh web" in out
     assert "feroxbuster" not in out and "nuclei" not in out
 
 
