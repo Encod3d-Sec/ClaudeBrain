@@ -49,9 +49,11 @@ real forged request, so the PoC is Burp-native and reproducible.
   the POST). **The right model, and the answer to "drive Burp via MCP, then just screenshot":** open ONE SSE
   session and issue EVERY `create_repeater_tab` you need in it (stage all the request tabs at once), THEN do
   the GUI part - which is KEYBOARD-ONLY and reliable: for each tab, `Ctrl+Shift+R` (Repeater) + `Ctrl+Tab`
-  to the tab + `Ctrl+Space` (send) + `import`-grab. No mouse anywhere. A single-session multi-tab client is
-  in scratch `burp_multi.py`; fold it into the burp mode as a batch mode. Once a server is ALREADY wedged
-  (from earlier per-call sessions) even a one-session client times out -> it needs a BApp restart to reset.
+  to the tab + `Ctrl+Space` (send) + `import`-grab. No mouse anywhere. A single-session multi-tab client
+  (every `create_repeater_tab` on ONE SSE connection) is the batch fix IF you ever need to stage several
+  PoC tabs at once; a single burpshot's first call already works, so it stays unbuilt (YAGNI). Once a
+  server is ALREADY wedged (from earlier per-call sessions) even a one-session client times out -> it
+  needs a BApp restart to reset.
 - **Legacy note (single-call CLI).** `create_repeater_tab` / `send_http1_request` via the per-call CLI work
   on the FIRST call of the Burp session, then wedge. `capture.sh burp` (single-call CLI) surfaces this; the
   fix is to **restart the MCP Server BApp** (Burp's `MCP` tab -> toggle the server off/on) - but that is a
@@ -80,9 +82,8 @@ the problem: `import -window` works; flameshot was tested on this seat and FAILS
 screen" -- no DBus/portal in the minimal X session), so for a tighter crop use `import -window $WID -crop
 WxH+X+Y +repage` or `maim`/`scrot -a` (pure X11), never flameshot here. Until SELECT is solved, burpshot
 is only trustworthy when the target tab is already active: after the grab READ the PNG, confirm the shown
-tab-name / top request-line is the intended finding; if not, one operator click on the named tab, re-grab. **Until then, burpshot is only trustworthy when the target tab is already active:** after the
-grab, READ the PNG and confirm the shown tab-name / top request-line is the intended finding; if not,
-have the operator click that named tab once, then re-grab. Do NOT present a burpshot without this check.
+tab-name / top request-line is the intended finding; if not, have the operator click the named tab once,
+then re-grab. Do NOT present a burpshot without this check.
 
 ## Manual fallback (what the script automates)
 ```bash
