@@ -279,6 +279,12 @@ XA=/home/\$U/.Xauthority
 r(){ sudo -u "\$U" env DISPLAY="\$D" XAUTHORITY="\$XA" "\$@"; }
 WID=\$(r xdotool search --name "Burp Suite Professional" | head -1)
 [ -n "\$WID" ] || { echo "GRAB_FAIL no Burp window on \$D"; exit 0; }
+# unlock + wake the seat FIRST: a screen LOCK on seat0 routes synthetic input to the locker (getmouselocation
+# reports window:0) so keys never reach Burp. loginctl unlock-session (root) dismisses the lock; xset wakes the
+# display + disables the blanker. Without this a locked/idle VM silently fails the interactivity precheck below.
+SID=\$(loginctl list-sessions --no-legend 2>/dev/null | awk '/seat0/{print \$1; exit}')
+[ -n "\$SID" ] && loginctl unlock-session "\$SID" 2>/dev/null || true
+r xset dpms force on 2>/dev/null || true; r xset s off 2>/dev/null || true; sleep 0.4
 r xdotool windowactivate --sync "\$WID"; r xdotool windowraise "\$WID"; sleep 0.7
 # window client origin, for coord mapping (screen = window + origin)
 GEO=\$(r xdotool getwindowgeometry "\$WID"); WX=\$(echo "\$GEO" | awk -F'[ ,]+' '/Position/{print \$3}'); WY=\$(echo "\$GEO" | awk -F'[ ,]+' '/Position/{print \$4}'); WX=\${WX:-0}; WY=\${WY:-0}
@@ -286,15 +292,23 @@ GEO=\$(r xdotool getwindowgeometry "\$WID"); WX=\$(echo "\$GEO" | awk -F'[ ,]+' 
 # INPUT to root, so clicks/keys never reach Burp (getmouselocation over Burp reports window:0). Fail loud.
 UW=\$(r xdotool mousemove \$((WX+600)) \$((WY+300)) getmouselocation 2>/dev/null | grep -oE 'window:[0-9]+' | cut -d: -f2)
 if [ "\${UW:-0}" = "0" ]; then echo "GRAB_FAIL Burp window not interactive (input routes to root - headless/unmapped display). Foreground Burp on the VM desktop or restart the X session, then retry."; exit 0; fi
-# Java/Swing IGNORES synthetic --window (XSendEvent) input -> use XTEST (no --window). create_repeater_tab
-# appends a tab but does NOT bring the Repeater tool to front, so a grab without this switch shows the last
-# active tool (often the MCP tab). Caveat: it also does not auto-select the NEW sub-tab; run against a clean
-# Repeater (or select the target tab first) so the active tab is the one just created.
+# Java/Swing IGNORES synthetic --window (XSendEvent) input -> drive via XTEST (no --window flag). Keys reach
+# Burp once the window is activated (synthetic mouse clicks are still swallowed by Swing, so never rely on them).
 r xdotool key ctrl+shift+r; sleep 1.2                                   # -> Repeater tool
-r xdotool mousemove \$((WX+350)) \$((WY+400)) click 1; sleep 0.4         # focus the request editor
+# SELECT the just-created tab. create_repeater_tab appends it RIGHTMOST but does NOT focus it, and Ctrl+=
+# (go_to_next_tab) WRAPS, so step tab-by-tab until get_active_editor_contents shows OUR request line. A
+# built-in VERIFY: Send/grab happens ONLY after the intended tab is confirmed focused (retires stale-tab PoCs).
+MARKER="$METHOD $RPATH"
+SELECTED=0
+for i in \$(seq 1 16); do
+  CUR=\$(timeout 10 python3 ~/burp-mcp-cli.py call get_active_editor_contents "{}" 2>/dev/null | head -1)
+  if printf '%s' "\$CUR" | grep -Fq "\$MARKER"; then SELECTED=1; break; fi
+  r xdotool key ctrl+equal; sleep 0.5                                  # go_to_next_tab (wraps)
+done
+[ "\$SELECTED" = 1 ] || { echo "GRAB_FAIL could not select the tab for '\$MARKER' after 16 steps (MCP up? scripts/burp-transport.sh)"; exit 0; }
 r xdotool key --clearmodifiers ctrl+space; sleep 4                      # Burp Repeater "Send"
 r import -window "\$WID" "$RPNG"; chmod 644 "$RPNG" 2>/dev/null || true
-echo "GRAB_OK \$WID"
+echo "GRAB_OK \$WID (verified tab: \$MARKER)"
 PY
 
   local TABPY_B64 GRABSH_B64 CLI_B64
@@ -309,8 +323,9 @@ echo '$TABPY_B64' | base64 -d > /tmp/burpshot_tab.py
 python3 /tmp/burpshot_tab.py '$HOST' '$PORT' '$HTTPS' '$METHOD' '$RPATH' '$TABNAME' '${BODYFILE}'" 2>&1 || true)
   if ! echo "$RES" | grep -q TAB_OK; then
     echo "capture(burp): create_repeater_tab failed -> $RES" >&2
-    echo "  The Burp MCP SSE server wedges after the first call in a session. Restart the MCP Server" >&2
-    echo "  BApp in Burp (the 'MCP' tab -> toggle the server off/on) and retry, or route via the proxy." >&2
+    echo "  The Burp MCP server did not accept create_repeater_tab. Confirm it is up: scripts/burp-transport.sh" >&2
+    echo "  (expect 'bridge' or 'native'; 'down' -> start Burp + the MCP Server BApp on the VM), or route the" >&2
+    echo "  request via the proxy (curl -x 127.0.0.1:8080 ...) and grab Proxy history instead." >&2
     exit 1
   fi
 

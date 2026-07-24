@@ -32,58 +32,47 @@ real forged request, so the PoC is Burp-native and reproducible.
 - **Grab as the SEAT user, not root.** Burp may be root-owned but it DRAWS on the desktop user's X
   session (the desktop login on `:0`). `who` -> the line with a `(:N)` display gives the user + display; use their
   `~/.Xauthority`. A root-over-SSH grab has no X display.
-- **Send = Ctrl+Space (KEYBOARD only).** On the Kali WM, synthetic `xdotool` MOUSE clicks do NOT register
-  in Burp (Java Swing) - button/tab clicks are silent no-ops - but KEYBOARD events DO (Ctrl+Shift+R switches
-  tabs, Ctrl+Space sends). the burp mode's `mousemove;click` before Ctrl+Space is a harmless no-op; the send
-  works because `create_repeater_tab` leaves the request editor focused. Corollary: **you cannot click the
-  Send button, a top tab, or a BApp tab by pixel** - drive everything by keyboard, and anything with no
-  hotkey (e.g. the BApp `MCP` tab) is NOT automatable - it needs a human mouse action.
+- **Send = Ctrl+Space (KEYBOARD only); mouse is dead.** Java Swing IGNORES synthetic `xdotool` MOUSE clicks
+  (button/tab/pixel clicks are silent no-ops), but KEYBOARD events land once the window is activated
+  (`windowactivate --sync`): `Ctrl+Shift+R` (focus Repeater), `Ctrl+=` (next sub-tab), `Ctrl+Space` (Send).
+  Drive everything by keyboard; anything with no hotkey (e.g. the BApp `MCP` tab) needs a human mouse action.
 - **Window offset:** `getwindowgeometry` -> the client area sits at screen (0, ~35); the `import -window`
   grab starts at the client top, so screen_y = image_y + 35 (only matters if you ever DO need a click on a
   WM that accepts synthetic clicks; this one does not).
 - **Write the grab to a WORLD-WRITABLE path** (`/tmp/capture_burp_*.png`), never a root-owned `-o` dir: the
   sudo-as-seat-user `import` can't write into `/tmp/poc` if root created it (silent EACCES = "no PNG").
-- **MCP SSE wedges on MULTIPLE SESSIONS - so do ALL calls in ONE session.** The root cause of the wedge
-  is opening a NEW SSE session per call (which `burp-mcp-cli.py call ...` does - one process = one session):
-  the first session works, then the server stops serving new ones (hands out an endpoint but never answers
-  the POST). **The right model, and the answer to "drive Burp via MCP, then just screenshot":** open ONE SSE
-  session and issue EVERY `create_repeater_tab` you need in it (stage all the request tabs at once), THEN do
-  the GUI part - which is KEYBOARD-ONLY and reliable: for each tab, `Ctrl+Shift+R` (Repeater) + `Ctrl+Tab`
-  to the tab + `Ctrl+Space` (send) + `import`-grab. No mouse anywhere. A single-session multi-tab client
-  (every `create_repeater_tab` on ONE SSE connection) is the batch fix IF you ever need to stage several
-  PoC tabs at once; a single burpshot's first call already works, so it stays unbuilt (YAGNI). Once a
-  server is ALREADY wedged (from earlier per-call sessions) even a one-session client times out -> it
-  needs a BApp restart to reset.
-- **Legacy note (single-call CLI).** `create_repeater_tab` / `send_http1_request` via the per-call CLI work
-  on the FIRST call of the Burp session, then wedge. `capture.sh burp` (single-call CLI) surfaces this; the
-  fix is to **restart the MCP Server BApp** (Burp's `MCP` tab -> toggle the server off/on) - but that is a
-  mouse action the model CANNOT automate here (synthetic clicks don't register), so it is a **HUMAN step**:
-  ask the operator to toggle it, then run `capture.sh burp` again. If waiting on a human isn't acceptable,
-  route the request through Burp's proxy (`curl -x 127.0.0.1:8080 ...`) so it lands in Proxy history and
-  grab that instead - no MCP needed. So: **`capture.sh burp` gets ONE clean run per MCP-server session**;
-  batch the requests you need, or expect a human toggle between them. (Bank recurring quirks in [[burp-mcp]].)
+- **The "SSE wedge" was a MISDIAGNOSIS (corrected 2026-07-24).** The only MCP call that ever hung is
+  `send_http1_request`, and that is the extension's **target-approval gate** (a non-approved target raises a
+  GUI approval prompt a headless seat cannot answer -> 15s timeout), NOT a per-session wedge. `create_repeater_tab`,
+  `get_active_editor_contents`, `url_encode`, `set_proxy_intercept_state` all run fine across many back-to-back
+  per-call sessions. `capture.sh burp` never calls `send_http1_request` (it Sends in the GUI via `Ctrl+Space`,
+  human-equivalent, which bypasses the approval gate), so it is unaffected. If `create_repeater_tab` itself
+  fails, the server is down/unreachable -> check `scripts/burp-transport.sh` (see [[burp-mcp]]).
 
-## KNOWN-BROKEN: selecting a specific Repeater sub-tab (empirically confirmed, Burp 2026.3.x)
-`create_repeater_tab` appends a tab at the RIGHT but does NOT focus it, and the grab captures whatever
-tab is currently active (the last MANUALLY-clicked one) -- so a burpshot of a fresh tab shows the WRONG
-tab unless it happens to be active (this is why poc shots caught stale tabs). Every programmatic
-selection was tested and FAILED on this seat:
-- synthetic `xdotool` MOUSE click on the tab bar -> Swing ignores it (silent no-op), confirmed twice;
-- `ctrl+w` -> does NOT close Repeater tabs;
-- creating a tab -> does NOT auto-activate it, even when newest/rightmost.
-Window maps cleanly (`getwindowgeometry` -> Position 0,35 -> screen = image + (0,35)); the blocker is
-Swing swallowing synthetic input, not coordinates. **Reliable fix (deferred to the Burp-first overhaul
-spec `docs/superpowers/specs/2026-07-24-burp-first-driver-design.md`):** SELECT the tab by KEYBOARD --
-Burp already binds `go_to_next_tab`=`Ctrl+Equals` / `go_to_previous_tab`=`Ctrl+Minus` (no need to bind
-one), but a raw `xdotool key ctrl+equal` did NOT move the sub-tab because focus sits on the request
-EDITOR (its own Pretty/Raw/Hex tabs) not the request-tab bar -- the open problem is moving focus to that
-bar by keyboard (try F6/Ctrl+F6/Shift+Tab), then Ctrl+Equals to the last (=newest) tab. CAPTURE is NOT
-the problem: `import -window` works; flameshot was tested on this seat and FAILS ("Unable to capture
-screen" -- no DBus/portal in the minimal X session), so for a tighter crop use `import -window $WID -crop
-WxH+X+Y +repage` or `maim`/`scrot -a` (pure X11), never flameshot here. Until SELECT is solved, burpshot
-is only trustworthy when the target tab is already active: after the grab READ the PNG, confirm the shown
-tab-name / top request-line is the intended finding; if not, have the operator click the named tab once,
-then re-grab. Do NOT present a burpshot without this check.
+## Selecting the finding's tab (SOLVED 2026-07-24, Burp 2026.3.x, verified end-to-end)
+`create_repeater_tab` appends the tab RIGHTMOST but does NOT focus it, so a naive grab caught whatever tab was
+last active (the old stale-tab PoCs). `capture.sh burp` now SELECTS the intended tab deterministically and
+VERIFIES it before Send/grab, so a wrong-tab PoC is impossible. The sequence (all baked into the burp mode):
+1. **Unlock + wake the seat FIRST.** A Kali screen LOCK (seat0) routes synthetic input to the locker, so
+   `getmouselocation` over Burp reports `window:0` and NO key/click lands -- burpshot then silently caught the
+   wrong tab. `loginctl unlock-session <seat0-sid>` (root) dismisses the lock; `xset dpms force on` + `xset s off`
+   (seat user) wake the display. Without this a locked/idle VM fails the precheck. (`shot.py` already did this;
+   `capture.sh burp` now does too.)
+2. **Interactivity precheck** = mouse `getmouselocation` over Burp returns the Burp WID (not `window:0`). This is
+   the RELIABLE check; `wmctrl -lG` is NOT -- it reports "no managed windows" on this no-WM seat even when input
+   lands, a false negative.
+3. **SELECT by keyboard + oracle.** `Ctrl+=` (`go_to_next_tab`, it WRAPS) steps sub-tabs; after each step read
+   `get_active_editor_contents` and stop when it shows the created request's `METHOD PATH` line (cap 16, fail loud
+   if never confirmed). The old "Ctrl+= does not move the tab" finding was from the LOCKED-seat era when no input
+   landed at all -- once unlocked, `Ctrl+=` selects the tab AND focuses its editor, which the oracle reads. (Marker
+   = the request line; a distinctive path keeps it unambiguous -- identical request-lines across tabs match the
+   first found.)
+4. **Send + grab.** `Ctrl+Space` sends the now-confirmed tab; `import -window $WID` grabs it. The run prints
+   `GRAB_OK ... (verified tab: <marker>)`; a `GRAB_FAIL` tells you why (locked seat the unlock did not clear, or
+   MCP down -> `burp-transport.sh`).
+CAPTURE was never the problem: `import -window` works headless; **flameshot FAILS on this seat** ("Unable to
+capture screen" -- no DBus/portal in the minimal X), so for a tighter crop use `import -window $WID -crop
+WxH+X+Y +repage` or `maim`/`scrot -a` (pure X11), never flameshot here.
 
 ## Manual fallback (what the script automates)
 ```bash

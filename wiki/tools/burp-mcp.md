@@ -209,9 +209,10 @@ below are the ones it already handles; they are documented here so a hand-rolled
 - **Burp runs as root but draws on the seat user's X.** Grab and inject as the desktop user with their
   `$XAUTHORITY`: `sudo -u <seatuser> env DISPLAY=:0 XAUTHORITY=/home/<seatuser>/.Xauthority xdotool ...`.
 - **`create_repeater_tab` does NOT bring the Repeater tool to front**, and does NOT auto-select its new
-  sub-tab. A grab taken right after shows whatever tool was last active (often the MCP config tab). Switch
-  to Repeater first with `Ctrl+Shift+R` (XTEST), then click the target sub-tab, then focus the request
-  editor and `Ctrl+Space` (Send), then grab with `import -window <id>`.
+  sub-tab. Switch to Repeater first with `Ctrl+Shift+R` (XTEST). You CANNOT click the target sub-tab (Swing
+  ignores synthetic mouse); SELECT it by keyboard: `Ctrl+=` (`go_to_next_tab`, WRAPS) steps sub-tabs, and
+  `get_active_editor_contents` reports which tab is focused, so loop `Ctrl+=` until it shows your request
+  line, then `Ctrl+Space` (Send) + `import -window <id>`. `capture.sh burp` automates this oracle loop.
 - **Coordinate mapping.** `import -window <id>` grabs window-relative pixels, but xdotool input uses
   SCREEN coords. Read the client origin from `xdotool getwindowgeometry` (`Position: X,Y`) and add it: a
   UI element at window `(wx,wy)` is clicked at screen `(X+wx, Y+wy)`.
@@ -219,22 +220,28 @@ below are the ones it already handles; they are documented here so a hand-rolled
   Repeater request carrying only `Host`/`Connection`; add `Accept: */*` (curl sends this by default, which
   is why the same request "worked" from curl but 406'd in Repeater).
 
-### Headless-display trap (verify BEFORE driving)
-A VMware/virtual `:0` with no compositor can leave app windows with a grabbable backing PIXMAP but no
-presentation for INPUT: `import -window` still returns the window image, but clicks/keys route to the ROOT
-window and never reach Burp, so every grab silently shows the same (wrong) tab. Detect it first:
+### Locked/headless seat trap (UNLOCK before driving)
+When the seat is LOCKED (xfce4-screensaver, after idle) or a bare `:0` has no input presentation, `import
+-window` still returns the window PIXMAP but keys/clicks route to the locker/ROOT and never reach Burp, so
+every grab silently shows the same (wrong) tab. On this kit the usual cause is the **Kali screen LOCK**. Fix
+it, do not just detect it: `loginctl unlock-session <seat0-sid>` (root) dismisses the lock; `xset dpms force
+on` + `xset s off` (seat user) wake the display. Then confirm with the POINTER test (NOT `wmctrl`, which
+reports "no managed windows" on this no-WM seat even when input lands -- a false negative):
 ```bash
-# over Burp's own area: window:<id> is good; window:0 (root) == headless/unmapped, input will not land
+# over Burp's own area: window:<id> == input lands; window:0 (root) == still locked/headless
 xdotool mousemove $((X+600)) $((Y+300)) getmouselocation
-wmctrl -lG          # empty list == no managed windows presented
 ```
-If dead, foreground Burp on the real desktop or restart the X session; xdotool cannot fix it. (`capture.sh burp`
-now prechecks this and fails loud instead of grabbing the wrong tab.)
+`capture.sh burp` now unlock+wakes the seat first, then prechecks this and fails loud rather than grabbing a
+wrong tab. To stop it recurring, disable the locker permanently: xfconf `xfce4-screensaver` `/saver/enabled`
++ `/lock/enabled` = false, drop its `/etc/xdg/autostart` entry (user Hidden override), `xset s off -dpms` in
+`~/.xprofile`.
 
-### MCP SSE server wedge
-The Burp MCP SSE server can wedge after a call: `burp-mcp-cli.py list` still returns the tool inventory, but
-a real tool call (`send_http1_request`) hangs/times out. Recovery is a GUI action - toggle the MCP Server
-BApp off/on in the MCP tab, or restart Burp (a fresh Burp also clears it). `create_repeater_tab` often
-survives when `send_http1_request` does not, so prefer create-tab + a GUI Send for capture.
+### `send_http1_request` hangs = the target-APPROVAL gate, not a wedge (corrected 2026-07-24)
+A `send_http1_request` to a non-approved target raises a GUI approval prompt (the extension's "target approval
+system"); a headless/unattended seat cannot answer it, so the call times out (~15s). This was long mis-read as
+an "SSE wedge": in fact `list`, `create_repeater_tab`, `get_active_editor_contents`, `url_encode`,
+`set_proxy_intercept_state` all serve fine across many back-to-back per-call sessions. Fixes: approve in the
+MCP tab / add the target to auto-approve (ideally = Burp scope), or just Send in the GUI via `Ctrl+Space`
+(human-equivalent, bypasses the gate) -- which is why `capture.sh burp` (create-tab + GUI Send) is unaffected.
 
 <!-- promoted-slug: burp-mcp-gui-driving -->

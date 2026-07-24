@@ -100,3 +100,13 @@ def test_unknown_mode_still_rejected():
     r = _run("bogus")
     assert r.returncode == 2
     assert "unknown mode" in r.stderr
+
+
+def test_burp_mode_selects_created_tab_by_oracle():
+    # burpshot must SELECT the tab it created (create_repeater_tab appends but does not focus it) and
+    # VERIFY via the active-editor oracle before Send/grab -- never a stale-tab PoC. Source-level check
+    # because the live Burp GUI path cannot run in CI.
+    src = CAP.read_text()
+    assert "get_active_editor_contents" in src   # the oracle that confirms which tab is focused
+    assert "ctrl+equal" in src                    # go_to_next_tab navigation to reach the created tab
+    assert "could not select" in src              # fail-loud when the intended tab cannot be confirmed
