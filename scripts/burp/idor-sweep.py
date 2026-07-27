@@ -174,9 +174,8 @@ print(json.dumps(res))
     print("\nVERDICT: %s  (baseline %s; %d/%d enum neighbors accessible)" % (
         v["idor"], v["owner_status"], v["enum_accessible"], v["enum_total"]))
     if v["idor"] == "LIKELY IDOR":
-        sch = "https" if meta["https"] else "http"
         print("PoC it:  scripts/capture.sh burp %s idor-%s %s %s %s %s %s" % (
-            "<eng>", meta["host"], meta["host"], meta["port"], str(meta["https"]).lower(),
+            meta["eng"], meta["host"], meta["host"], meta["port"], str(meta["https"]).lower(),
             meta["method"], meta["requests"][0]["path"]))
         print("Then scaffold a FIND per hunt-idor (never auto-written).")
     return 0
@@ -220,7 +219,7 @@ def main():
     https = a.https if a.https is not None else True
     port = a.port if a.port else (443 if https else 80)
     meta = {"host": req["host"], "port": port, "https": https, "method": req["method"],
-            "no_bruteforce": bool(sc.get("no_bruteforce")), "requests": reqset}
+            "no_bruteforce": bool(sc.get("no_bruteforce")), "requests": reqset, "eng": a.eng}
     if a.dry_run:
         print(json.dumps(meta, indent=2))
         return 0
