@@ -51,6 +51,18 @@ Every load-bearing action has a tool; reach for it instead of a raw request so t
 - **Comparer:** no MCP tool -- diff two responses in Repeater or by hand.
 - **match-replace + scope + intercept + task-engine:** config via `set_user_options` / `set_project_options` (JSON merge; export the schema first with `output_user_options` / `output_project_options`). Intercept on/off: `set_proxy_intercept_state`; scanner/engine pause: `set_task_execution_engine_state`.
 
+## Passive-first candidate sweep (do this BEFORE active testing)
+Pull `get_proxy_http_history`(`_regex`) and route each signal to its hunt, do not attack blind:
+| Signal in proxy history | Route to |
+|---|---|
+| numeric-ID endpoints (`/\d+`, `id=\d+`) | **IDOR** -> `scripts/burp/idor-sweep.py <eng> <reqfile> --attacker-auth "<B>"` |
+| a param value reflected in the response | **XSS** -> `Skill(hunt-xss)` |
+| SQL / stack-trace errors in a response | **SQLi** -> `Skill(hunt-sqli)` |
+| tokens / secrets / high-entropy strings | note in `loot.md` (do not echo into wiki/session) |
+| admin paths / privileged verbs (PUT/DELETE) | **BFLA** -> `Skill(hunt-idor)` / [[access-control]] |
+This is the highest-signal, lowest-noise use of the server: triage history first, then drive the
+matching hunt THROUGH Burp.
+
 ## MCP toolset (what to reach for)
 - **Triage:** `get_proxy_http_history`(`_regex`), `get_proxy_websocket_history`(`_regex`), `get_organizer_items`(`_regex`), `get_scanner_issues` (Pro)
 - **Replay/probe:** `send_http1_request`, `send_http2_request`, `create_repeater_tab`(`_http2`), `send_to_intruder`

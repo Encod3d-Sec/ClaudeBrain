@@ -19,3 +19,8 @@ def test_intruder_attack_types_named():
 
 def test_wires_transport_resolver():
     assert "burp-transport.sh" in SKILL
+
+
+def test_carries_passive_first_candidate_sweep():
+    assert "Passive-first candidate sweep" in SKILL
+    assert "idor-sweep.py" in SKILL       # routes numeric-ID endpoints to the tool
