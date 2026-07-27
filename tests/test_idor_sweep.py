@@ -159,3 +159,15 @@ def test_parse_send_response_extracts_status_and_len():
 
 def test_parse_send_response_degrades_on_unknown_shape():
     assert idor.parse_send_response("garbage no markers") == (0, 0, "")
+
+
+def test_tab_specs_are_owner_and_attacker_only():
+    meta = {"method": "GET", "requests": [
+        {"label": "owner-baseline", "id": 5, "path": "/o/5", "headers": [("Host", "h"), ("Cookie", "A")]},
+        {"label": "idor-test", "id": 5, "path": "/o/5", "headers": [("Host", "h"), ("Cookie", "B")]},
+        {"label": "enum", "id": 6, "path": "/o/6", "headers": [("Host", "h"), ("Cookie", "B")]},
+    ]}
+    specs = idor.tab_specs(meta)
+    assert [t["name"] for t in specs] == ["idor-owner", "idor-attacker"]   # enum NOT staged (no clutter)
+    assert "GET /o/5 HTTP/1.1" in specs[0]["raw"] and "Cookie: A" in specs[0]["raw"]
+    assert "Cookie: B" in specs[1]["raw"]

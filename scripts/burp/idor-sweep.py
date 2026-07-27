@@ -143,6 +143,37 @@ def parse_send_response(out):
     return (status, len(body), hashlib.sha256(body.encode("utf-8", "ignore")).hexdigest()[:16])
 
 
+def tab_specs(meta):
+    """Repeater tabs to stage on a confirmed finding: the owner-baseline and idor-test as a labeled
+    A/B pair (operator visibility). Enum variants are deliberately NOT staged (avoids tab clutter)."""
+    names = {"owner-baseline": "idor-owner", "idor-test": "idor-attacker"}
+    return [{"name": names[r["label"]], "raw": _raw(r, meta)}
+            for r in meta["requests"] if r["label"] in names]
+
+
+def _stage_repeater_tabs(meta):
+    """Create the owner/attacker Repeater tabs over the bridge (live, best-effort). Returns tab names."""
+    specs = tab_specs(meta)
+    payload = {"host": meta["host"], "port": meta["port"], "https": meta["https"], "tabs": specs}
+    b64 = base64.b64encode(json.dumps(payload).encode()).decode()
+    vm_py = r'''
+import base64, json, os, subprocess
+cli = os.path.expanduser("~/burp-mcp-cli.py")
+P = json.loads(base64.b64decode("%s").decode())
+for t in P["tabs"]:
+    args = json.dumps({"content": t["raw"], "targetHostname": P["host"], "targetPort": P["port"],
+                       "usesHttps": P["https"], "tabName": t["name"]})
+    subprocess.run(["python3", cli, "call", "create_repeater_tab", args], capture_output=True, text=True, timeout=30)
+''' % b64
+    py_b64 = base64.b64encode(vm_py.encode()).decode()
+    cmd = "echo '%s' | base64 -d > /tmp/idor_tabs.py; python3 /tmp/idor_tabs.py; rm -f /tmp/idor_tabs.py" % py_b64
+    try:
+        subprocess.run(["bash", VM_SH, cmd], capture_output=True, text=True, timeout=60)
+    except Exception:
+        return []
+    return [t["name"] for t in specs]
+
+
 def run_live(meta):
     payload = {"host": meta["host"], "port": meta["port"], "https": meta["https"],
                "reqs": [{"label": r["label"], "id": r["id"], "raw": _raw(r, meta)} for r in meta["requests"]]}
@@ -184,6 +215,9 @@ print(json.dumps([{"label": r["label"], "id": r["id"], "raw": send(r["raw"])} fo
     print("\nVERDICT: %s  (baseline %s; %d/%d enum neighbors accessible)" % (
         v["idor"], v["owner_status"], v["enum_accessible"], v["enum_total"]))
     if v["idor"] == "LIKELY IDOR":
+        names = _stage_repeater_tabs(meta)
+        if names:
+            print("Staged Repeater tabs %s (owner vs attacker A/B, for replay + PoC)." % " + ".join(names))
         print("PoC it:  scripts/capture.sh burp %s idor-%s %s %s %s %s %s" % (
             meta["eng"], meta["host"], meta["host"], meta["port"], str(meta["https"]).lower(),
             meta["method"], meta["requests"][0]["path"]))
