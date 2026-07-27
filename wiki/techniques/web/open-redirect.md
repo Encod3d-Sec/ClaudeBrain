@@ -96,6 +96,6 @@ Exploitation — often chained with phishing, OAuth token theft, or SSRF.
 
 ## Related
 
-- [[ssrf]] (an allowlisted open redirect chains past SSRF host filters)
+- [[wiki/techniques/web/ssrf]] (an allowlisted open redirect chains past SSRF host filters)
 - [[xss]] (javascript: or data: redirect targets execute script)
 - [[oauth-attacks]] (an open redirect on redirect_uri steals OAuth codes and tokens)

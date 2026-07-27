@@ -777,6 +777,6 @@ Other known overridable entities in system DTDs:
 
 ## Related
 
-- [[ssrf]] (external entities turn the XML parser into an SSRF client)
+- [[wiki/techniques/web/ssrf]] (external entities turn the XML parser into an SSRF client)
 - [[file-upload]] (SVG, DOCX, and XML uploads are prime XXE entry points)
 - [[path-traversal-lfi]] (XXE file:// entities read arbitrary local files)

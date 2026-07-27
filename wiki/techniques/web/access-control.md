@@ -620,6 +620,6 @@ Test methodology: capture the manifest an *authorized* stream returns, note the 
 the path scheme (`/hls/<id>/...`, `/vod/<id>/...`), then re-request the **restricted** id's manifest
 and segments straight from the origin with no token. Same idea for any resource where a gateway/API
 authorizes but a static/object store (S3-style bucket, image CDN, download host) serves the bytes.
-Reassemble segments with `ffmpeg -i all.ts ...` to review the content. Related: [[idor]], [[ssrf]].
+Reassemble segments with `ffmpeg -i all.ts ...` to review the content. Related: [[idor]], [[wiki/techniques/web/ssrf]].
 
 <!-- promoted-slug: media-origin-bfla -->

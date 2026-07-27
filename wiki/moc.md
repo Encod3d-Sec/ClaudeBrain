@@ -69,7 +69,7 @@ Top-level hub. Each domain has its own MOC linking every page.
 - [[session]]
 - [[smuggling]]
 - [[sqli]]
-- [[ssrf]]
+- [[wiki/payloads/ssrf]]
 - [[ssti]]
 - [[web-cache]]
 - [[webauthn-passkey]]

@@ -67,6 +67,6 @@ GET /console?__debugger__=yes&cmd=<python>&frm=0&s=<SECRET>        # with the co
 ```
 
 Defence: never ship `debug=True`/`use_reloader` to anything reachable; set `WERKZEUG_DEBUG_PIN=off` only
-for throwaway labs. Related: [[ssrf]] (the file-read that feeds the PIN), [[insecure-randomness]].
+for throwaway labs. Related: [[wiki/techniques/web/ssrf]] (the file-read that feeds the PIN), [[insecure-randomness]].
 
 <!-- promoted-slug: werkzeug-pin-rce-body -->
