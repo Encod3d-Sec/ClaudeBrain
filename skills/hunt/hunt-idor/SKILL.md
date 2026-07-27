@@ -26,6 +26,14 @@ GraphQL: any query/mutation taking an `id` argument. Check for `node(id: "...")`
 ## Methodology
 **Setup:** Create two accounts (User A = resource owner, User B = attacker).
 
+**Drive it through Burp (preferred over raw curl for operator visibility).** Once you have User A's
+request captured (Repeater / proxy history), the two-account + ID-sweep is one command:
+`scripts/burp/idor-sweep.py <eng> <reqfile> --attacker-auth "Cookie: session=USER_B" --range 5`
+(sends owner-baseline / idor-test / id+-N through Burp `send_http1_request`, diffs status+body,
+prints a verdict + a ready `capture.sh burp` PoC line; honors `no_bruteforce` -> range 0). For a
+GUI-visible replay instead, `create_repeater_tab` a User-A and a User-B tab, or `send_to_intruder`
+with a number payload for the sweep. The curl/ffuf blocks below are the no-Burp fallback.
+
 1. Log in as User A - browse every feature - note all IDs (object IDs, UUIDs, org IDs, invoice IDs)
 2. Log in as User B - replace session token
 3. Replay User A's resource IDs using User B's session:
