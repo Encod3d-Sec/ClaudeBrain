@@ -41,6 +41,7 @@ wiki/courses/
 .loop-budget
 .cve-stamp
 .wiki-stamp
+.wiki-reindex-stamp
 
 # --- Python / pytest --------------------------------------------------------
 __pycache__/
