@@ -5,25 +5,31 @@ description: Active Directory attack hunting - enumeration to domain dominance. 
 
 # Hunt: Active Directory
 
-## Pre-Attack: Wiki Query (MANDATORY)
-```
-qmd_query "<technique: kerberoasting | ADCS ESC | RBCD delegation | DCSync | dacl abuse>" via wiki-search MCP -> read matching page.
-```
-Core pages: [[ad-enumeration]], [[kerberos-attacks]], [[adcs]], [[ad-lateral-movement]], [[pass-the-hash]], [[ad-persistence]]. Cheatsheet: [[ad-cheatsheet]].
+**Assumes `hunt-core`** for the scope gate, two-account rule, confirmation gate, enumeration limits, stop conditions, wiki protocol, FIND output, and Deadends. Do not re-derive any of that here.
 
-**Self-heal:** If the wiki query returns nothing, create a stub `wiki/techniques/active-directory/<slug>.md` (frontmatter + a `## Observed during <engagement>` section built from your findings) before proceeding, so the gap fills instead of silently recurring.
+## Wiki
 
-## Scope + Safety Gate (READ FIRST)
-- Confirm DC / domain in scope. Read `Deadends.md` + `loot.md` - **reuse captured creds first** before researching new ones (see [[default-credentials]]).
-- **Lockout gate before ANY spray:** read the policy - `nxc smb <dc> -u <user> -p <pass> --pass-pol`. RoE `no_bruteforce` / `passive_only` -> enumerate only, NO spray. Never exceed `(threshold - 1)` attempts per account per window.
+```
+qmd_query "Active Directory kerberoast AS-REP ADCS ESC delegation DCSync lateral movement BloodHound" via wiki-search MCP
+```
+
+Hub: [[active-directory-moc]] (live index). Primary page: [[active-directory]].
+Anchors: [[adcs]] (ESC1-16 matrix, the highest-value escalation edge), [[kerberos-attacks]] (AS-REP/Kerberoast plus the delegation paths).
+
+## Attack surface signals
+Ports: SMB 445, LDAP 389/636, Kerberos 88, ADWS 9389, WinRM 5985/5986, RPC 135, MSSQL 1433, ADCS web enroll 80/443 (`/certsrv`).
+Footholds: null/guest SMB, anonymous LDAP bind, AS-REP-roastable users (no preauth), SMB signing OFF (relay), `ms-DS-MachineAccountQuota > 0`, pre-Win2000 computers, LAPS readable.
+
+## Spray-safe + AD safety gate (READ FIRST)
+- **Spray-safe lockout gate - the AD analog of the `hunt-core` enumeration limits.** Read the domain lockout policy BEFORE any spray: `nxc smb <dc> -u <user> -p <pass> --pass-pol`. Spray at most **1 attempt per account per observation window**, and never exceed `(lockoutThreshold - 1)` attempts per account per window. RoE `no_bruteforce` / `passive_only` -> enumerate only, NO spray. Locking real accounts is a client-impacting incident, not a finding.
+- **Reuse captured creds first** (from `loot.md`) before researching new ones; default/known creds before any spray (see [[default-credentials]]).
 - **Clock skew:** sync to DC (`ntpdate <dc>` or `faketime`) or Kerberos TGT requests fail with `KRB_AP_ERR_SKEW`.
 - **Stale `/etc/hosts` realm entry silently breaks Kerberos.** A prior box's `<realm> -> <old-ip>` line makes impacket resolve the KDC to a dead host and hang with `[Errno 110] Connection timed out (REALM:88)`, even though certipy (which forces `-dc-ip`) worked seconds earlier. When you add the DC to `/etc/hosts`, REMOVE any existing line for the same realm, and ALWAYS pass `-dc-ip <dc>` (and `-target-ip <dc>`) on impacket Kerberos ops so KDC/target resolution never depends on DNS/hosts. Same fix if `certipy req` throws `The NETBIOS connection ... timed out`: add `-target-ip <dc>`.
 - **Hash recovered but the account blocks NTLM?** ESC1/UnPAC/PKINIT hands you BOTH an NT hash AND a TGT ccache. If PtH returns `STATUS_ACCOUNT_RESTRICTION` (the account is in Protected Users / NTLM-hardened, common for `Administrator`), the hash is a red herring - use the ccache: `export KRB5CCNAME=<user>.ccache; impacket-smbclient/secretsdump -k -no-pass -dc-ip <dc> <dc-fqdn>` reads flags / DCSyncs over Kerberos. See [[adcs]].
 - Never pivot through `192.168.1.x` hosts (Ligolo tunnel only for lateral movement).
 
-## Attack Surface Signals
-Ports: SMB 445, LDAP 389/636, Kerberos 88, ADWS 9389, WinRM 5985/5986, RPC 135, MSSQL 1433, ADCS web enroll 80/443 (`/certsrv`).
-Footholds: null/guest SMB, anonymous LDAP bind, AS-REP-roastable users (no preauth), SMB signing OFF (relay), `ms-DS-MachineAccountQuota > 0`, pre-Win2000 computers, LAPS readable.
+## Ranked path + highest-value edges
+Ranked: enum -> AS-REP/Kerberoast -> ACL / ADCS ESC1-16 -> delegation -> DCSync -> lateral -> DA. **The ADCS ESC1-16 matrix (step 5) and the delegation paths (step 6) are the highest-value edges** - one vulnerable template or a writable `msDS-AllowedToActOnBehalfOfOtherIdentity` is often the entire DA chain. **Chain:** every cracked/sprayed cred re-feeds enum + BloodHound; a Kerberoastable SPN account doubles as an RBCD `-delegate-from`; an on-box cred store (step 7) frequently yields the account that holds the winning ACL.
 
 ## Methodology
 
@@ -100,19 +106,23 @@ impacket-secretsdump <domain>/<user>:<pass>@<dc>        # DCSync if rights
    - **On-box cred stores (via RDP/session):** a user only in **Remote Desktop Users** can still RDP the DC (nxc rdp shows Pwn3d) -> hunt KeePass `*.kdbx`, browser/WinSCP/RDP creds. A KeePass DB keyed to the **Windows user account** (`KeePass.config.xml` `<UserAccount>true</UserAccount>`) is UNCRACKABLE offline - open KeePass ON the box as that user, then spray the creds for reuse. Headless-RDP recipe: [[ad-lateral-movement]] / Skill(ctf-box); see [[password-cracking]].
 8. **Lateral:** PtH / PtT / overpass-the-hash -> `evil-winrm`, `nxc ... -x`, `impacket-wmiexec`, `psexec`. **AV gotcha:** Defender blocks `nxc -x`/wmiexec output retrieval ("could not retrieve output file"); to just READ a file (the flag) as admin, skip exec entirely: `smbclient //<dc>/C$ -U <dom>/Administrator --pw-nt-hash <nt> -c 'get Users\Administrator\Desktop\flag.txt'`, or use `--exec-method smbexec/atexec`.
 9. **Dominance:** golden (krbtgt) / silver / diamond ticket, DCSync persistence, AdminSDHolder, certificate (ESC8 NTLM relay to ADCS web enroll).
-10. **Distill to wiki (when confirmed):** if the finding is a reusable ACL chain, ADCS ESC variant, or relay primitive, stage a GENERIC wiki candidate now (no client host): `python3 scripts/wiki-stage.py --kind technique --slug <slug> --target-page techniques/active-directory/adcs.md` (or `--kind default-cred`). Promote later via `scripts/wiki-promote.py`.
+10. **Distill (confirmed, GENERIC):** a reusable ACL chain / ADCS ESC variant / relay primitive -> `python3 scripts/wiki-stage.py --kind technique --slug <slug> --target-page techniques/active-directory/adcs.md`.
 
-## FIND Output
-Confirmed:
-```
-Create Vulns/Research/FIND-XXX-SEVERITY-<issue>-<host>.md   (e.g. FIND-012-CRITICAL-adcs-esc1-dc01.md)
-Add row to Vuln-index.md: | FIND-XXX | ESC1 cert -> DA | dc01 | CONFIRMED |
-```
-Severity: CRITICAL = DA / domain compromise / DCSync / ESC1 / ESC8; HIGH = user creds + lateral, Kerberoast cracked to priv account; MEDIUM = enum/info disclosure, spray hit with no privilege.
+## Confirmation gate
 
-Exhausted (full user x pass matrix once, no hit; ADCS no vuln template; BloodHound no path):
+**NOT confirmation:** a hash captured but never cracked or used; a Kerberoast/AS-REP ticket dumped but not cracked; a BloodHound edge (`GenericWrite`, `AddAllowedToAct`, an ESC "vulnerable" flag) that is theoretical and never executed; `certipy find` listing a template you never enrolled against; a spray "hit" you have not re-validated with a clean authentication.
+
+**IS confirmation:** credentials validated against the DC (`nxc smb`/`ldap`/`winrm <dc> -u <user> -p <pass>` returns `[+]` / `Pwn3d!`); a TGT/TGS obtained AND used (authenticated an action, read a file, DCSynced with it); a DCSync that actually returned NT hashes; an ACL abuse executed end to end (shadow-creds -> authenticated, targeted Kerberoast -> cracked, group add -> new access gained); an ESC exploited to a certificate that authenticated as the target. Reproduced from your own written steps.
+
+## Severity
+
+CRITICAL = DA / domain compromise / DCSync / ESC1 / ESC8. HIGH = user creds + lateral movement, Kerberoast cracked to a privileged account. MEDIUM = enum / info disclosure, a spray hit with no privilege.
+
+## Deadends
+
 ```
-Append to Deadends.md: - [ ] AD spray <domain> -- full matrix Season2025!/Welcome1, 0 hits (lockout thr 5); ADCS no ESC; no BH path from <user>
+Append: - [ ] AD spray <domain> -- full user x pass matrix once (Season2025!/Welcome1), 0 hits, lockout thr 5;
+              ADCS no ESC template; no BloodHound path from <user>
 ```
 
-Report: Status + files created.
+Record the boundary (which creds, which lockout threshold, which ESC/BH gaps), not just that it failed. A bare entry gets re-run.

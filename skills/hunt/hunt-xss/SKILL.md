@@ -5,27 +5,26 @@ description: XSS hunting - reflected, stored, DOM-based. Marker discipline to av
 
 # Hunt: XSS
 
-## Pre-Attack: Wiki Query (MANDATORY)
+**Assumes `hunt-core`** for the scope gate, two-account rule, confirmation gate, enumeration
+limits, stop conditions, wiki protocol, FIND output, and Deadends. Marker discipline (unique 8+
+char canaries, check the baseline first) lives in hunt-core.
+
+## Wiki
+
 ```
-qmd_query "XSS cross-site scripting" via wiki-search MCP -> read matching technique page if found.
+qmd_query "XSS cross-site scripting DOM CSP bypass sanitizer" via wiki-search MCP
 ```
-Apply known sanitizer bypasses and CSP bypass techniques already documented. Payload arsenals: `wiki/payloads/{xss,prototype-pollution}.md`.
-Related client-side vectors: [[dangling-markup]] (scriptless HTML-injection exfil when script tags are blocked), [[xssi]] (JSONP/script-inclusion info leak), [[browser-extension-attacks]] (content-script/message-passing injection in an installed extension).
 
+Hub: [[web-moc]] (live web index). Primary page: [[xss]]. Payload arsenals: `wiki/payloads/{xss,prototype-pollution}.md`.
+Related client-side vectors: [[dangling-markup]] (scriptless HTML-injection exfil when script tags
+are blocked), [[xssi]] (JSONP/script-inclusion info leak), [[browser-extension-attacks]]
+(content-script/message-passing injection).
 
-**Self-heal:** If the wiki query returns nothing, create a stub `wiki/techniques/<area>/<slug>.md` (frontmatter + a `## Observed during <engagement>` section built from your findings) before proceeding, so the gap fills instead of silently recurring.
-
-## Scope Check
-- Confirm target is in scope
-- Read Deadends.md - skip paths already marked exhausted
-
-## OOB Gate (for blind/stored XSS)
+## Confirmation gate
 NOT confirmation: payload URL-encoded or HTML-encoded in response, `<script>` appears as `&lt;script&gt;`, ASP.NET validator blocked `<`.
 IS confirmation: HTTP/DNS request to your unique Collaborator subdomain with browser User-Agent (Mozilla/Chrome).
 
 When you plant a blind/stored XSS beacon, append a row to `targets/<eng>/oob.md`: `| <token> | <sink url+param> | xss | <date> | waiting | |` (columns: token | sink | class | planted | status | source, where token = your unique Burp Collaborator / interactsh label). The recon-capture hook auto-correlates incoming callbacks to flip the row to HIT and SessionStart surfaces HITs; a HIT row is the confirmation gate to scaffold the FIND. Do NOT claim a blind XSS without a HIT row.
-
-**Marker discipline:** use unique 8+ char alphanumeric canaries (e.g., `x4hd2k9pq`), NOT `test`/`marker`/`evil`/`payload`. Check the baseline response for your canary before claiming reflection.
 
 ## Attack Surface Signals
 High-value: admin panels (`*/admin`, `*/settings`), payment flows, stored wikis/labels/tags, SSO/signin pages, SVG upload endpoints.
@@ -47,7 +46,7 @@ eval(  $.html(  $(location  document.referrer
 8. Test UTM params: `utm_source`, `utm_medium` - often unsanitized on marketing pages
 9. Plant blind-XSS beacons in admin-viewable fields: error messages, User-Agent, Referer, username, email
 10. Validate in real browser before reporting
-11. **Distill to wiki (when confirmed):** if the finding is a reusable sanitizer bypass or CSP bypass, stage a GENERIC wiki candidate now (no client host): `python3 scripts/wiki-stage.py --kind technique --slug <slug> --target-page techniques/web/xss.md`. Promote later via `scripts/wiki-promote.py`.
+11. **Distill when confirmed** (per hunt-core): reusable sanitizer or CSP bypass, GENERIC, `python3 scripts/wiki-stage.py --kind technique --slug <slug> --target-page techniques/web/xss.md`.
 
 ## Key Payloads
 ```html
@@ -71,18 +70,12 @@ aaa"bbb'ccc<ddd>eee`fff
 [Click](javascript:alert(document.domain))
 ```
 
-## FIND Output
+## Severity
 
-If XSS confirmed in browser (not just Burp):
-```
-Create Vulns/Research/FIND-XXX-SEVERITY-xss-<host>.md
-Severity: HIGH for stored admin-context or session-theft demonstrated; MEDIUM for reflected requiring click; LOW for self-XSS without chain
-Add row to Vuln-index.md
-```
+Confirm in a real browser, not just Burp. FIND output and Deadends format per hunt-core:
 
-If path exhausted:
-```
-Append to Deadends.md: - [ ] XSS on <host> <param> -- payload encoded/rejected, [detail]
-```
+- **high** - stored in an admin/privileged context, or session theft demonstrated.
+- **medium** - reflected requiring a click.
+- **low** - self-XSS with no chain.
 
-Report: Status + files created.
+Class deadend line: `- [ ] XSS on <host> <param> -- payload encoded/rejected, [detail]`.

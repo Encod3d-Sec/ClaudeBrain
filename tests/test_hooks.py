@@ -45,6 +45,24 @@ def test_hunt_trigger_surface_tier_is_softer(vault):
     assert "consider" in out and "MANDATORY" not in out
 
 
+def test_hunt_trigger_coloads_hunt_core(vault):
+    out = run_hook("hunt-trigger.py", {"prompt": "test ssrf here"}, _env(vault)).stdout
+    assert "Skill(hunt-ssrf)" in out
+    assert "Skill(hunt-core)" in out            # spine co-loaded on a hard hunt fire
+
+
+def test_hunt_trigger_coloads_core_on_soft_hunt(vault):
+    out = run_hook("hunt-trigger.py", {"prompt": "look at this login form"}, _env(vault)).stdout
+    assert "Skill(hunt-auth)" in out
+    assert "Skill(hunt-core)" in out            # spine co-loaded on a soft hunt fire too
+
+
+def test_hunt_trigger_no_core_for_non_hunt(vault):
+    out = run_hook("hunt-trigger.py", {"prompt": "ingest the recon dump"}, _env(vault)).stdout
+    assert "Skill(ingest)" in out
+    assert "Skill(hunt-core)" not in out        # non-hunt skill -> no spine
+
+
 def test_hunt_trigger_logs_fire_telemetry(vault):
     env = _env(vault)
     run_hook("hunt-trigger.py", {"prompt": "test ssrf"}, env)
@@ -307,6 +325,32 @@ def test_hunt_trigger_stray_midline_backticks_do_not_swallow_prose(vault):
     prompt = "oops I typed ``` earlier, anyway check the api for ssrf via the redirect param"
     out = run_hook("hunt-trigger.py", {"prompt": prompt}, env).stdout
     assert "Skill(hunt-ssrf)" in out
+
+
+def test_serial_enum_loop_nudges(vault):
+    out = run_hook("recon-capture.py",
+                   {"tool_name": "Bash", "tool_input": {"command":
+                    "for i in $(seq 0 999); do curl -s http://10.0.0.5/datacubes/$i; done"}},
+                   _env(vault)).stdout
+    assert "SERIAL ENUMERATION" in out
+    assert (vault / "targets" / "acme" / ".serial-enum-nudged").exists()
+
+
+def test_serial_enum_silent_when_threaded(vault):
+    # a threaded xargs -P sweep is the CORRECT pattern -> no nudge
+    out = run_hook("recon-capture.py",
+                   {"tool_name": "Bash", "tool_input": {"command":
+                    "seq 1 65535 | xargs -P50 -I{} curl -s http://10.0.0.5:{}/"}}, _env(vault)).stdout
+    assert "SERIAL ENUMERATION" not in out
+
+
+def test_serial_enum_fires_once(vault):
+    env = _env(vault)
+    cmd = {"tool_name": "Bash", "tool_input":
+           {"command": "for i in $(seq 1 50); do curl -s http://10.0.0.5/$i; done"}}
+    first = run_hook("recon-capture.py", cmd, env).stdout
+    second = run_hook("recon-capture.py", cmd, env).stdout
+    assert "SERIAL ENUMERATION" in first and "SERIAL ENUMERATION" not in second
 
 
 def test_recon_capture_silent_on_non_recon(vault):

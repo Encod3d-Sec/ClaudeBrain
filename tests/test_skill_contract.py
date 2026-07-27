@@ -53,6 +53,8 @@ def _frontmatter(text):
 
 def _kind(path):
     base = os.path.basename(os.path.dirname(path))
+    if base == "hunt-core":
+        return "core"          # the shared spine, not a class hunt skill; exempt from class contracts
     if base.startswith("hunt-"):
         return "oob_hunt" if base[len("hunt-"):] in OOB_CLASSES else "hunt"
     return "skill"
@@ -94,12 +96,16 @@ def test_hunt_skills_carry_wiki_first_find_and_stage():
             continue
         text = _read(path)
         d = os.path.basename(os.path.dirname(path))
+        # A migrated skill declares "Assumes hunt-core"; the spine owns the FIND output block and
+        # the wiki-stage.py distill command, so a class skill need not re-embed them (that is the
+        # whole point of the spine). Unmigrated skills must still self-contain both.
+        assumes_core = bool(_ASSUMES.search(text))
         if not re.search(r"qmd_query|qmd_search", text):
             bad.append("%s: no wiki-first qmd_query/qmd_search" % d)
-        if "FIND-" not in text:
-            bad.append("%s: no FIND schema reference" % d)
-        if "wiki-stage.py" not in text:
-            bad.append("%s: no wiki-stage.py distill step" % d)
+        if "FIND-" not in text and not assumes_core:
+            bad.append("%s: no FIND schema reference (and does not assume hunt-core)" % d)
+        if "wiki-stage.py" not in text and not assumes_core:
+            bad.append("%s: no wiki-stage.py distill step (and does not assume hunt-core)" % d)
     assert not bad, "hunt-skill contract violations:\n" + "\n".join(bad)
 
 
@@ -148,3 +154,38 @@ def test_skills_use_pinned_find_vocab():
             if sm and sm.group(1) not in statuses:
                 bad.append("%s: Vuln-index status %r not in pinned set %s" % (d, sm.group(1), sorted(statuses)))
     assert not bad, "pinned-vocab violations:\n" + "\n".join(bad)
+
+
+# --- migration to the hunt-core spine: enforce on skills that declare it ------
+
+_ASSUMES = re.compile(r"[Aa]ssumes\s+`?hunt-core`?")
+
+
+def test_migrated_hunt_skills_carry_sharpening():
+    """A hunt skill is 'migrated' once it declares 'Assumes hunt-core'. Enforce the full
+    sharpening shape on migrated skills only, so this lint goes green skill-by-skill during
+    the phased migration and stays green at the end."""
+    bad = []
+    for path in _skill_files():
+        if _kind(path) not in ("hunt", "oob_hunt"):
+            continue
+        text = _read(path)
+        if not _ASSUMES.search(text):
+            continue  # not yet migrated
+        d = os.path.basename(os.path.dirname(path))
+        for section in ("## Wiki", "## Confirmation gate"):
+            if section not in text:
+                bad.append("%s: migrated (assumes hunt-core) but missing '%s'" % (d, section))
+    assert not bad, "spine-sharpening contract violations:\n" + "\n".join(bad)
+
+
+def test_all_hunt_skills_migrated_to_spine():
+    """Every VULN-CLASS hunt skill declares 'Assumes hunt-core'. hunt-core (kind 'core') and
+    the hunt-burp Burp driver (a tooling skill, not a vuln class) are exempt. Red until the
+    last class skill is migrated."""
+    exempt = {"hunt-burp"}
+    unmigrated = [os.path.basename(os.path.dirname(p)) for p in _skill_files()
+                  if _kind(p) in ("hunt", "oob_hunt")
+                  and os.path.basename(os.path.dirname(p)) not in exempt
+                  and not _ASSUMES.search(_read(p))]
+    assert not unmigrated, "not yet migrated to hunt-core spine: %s" % sorted(unmigrated)

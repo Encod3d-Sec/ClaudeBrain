@@ -5,27 +5,43 @@ description: Insecure deserialization hunting across Java / .NET / PHP / Python 
 
 # Hunt: Insecure Deserialization
 
-## Pre-Attack: Wiki Query (MANDATORY)
+**Assumes `hunt-core`** for the scope gate, two-account rule, confirmation gate, enumeration limits, stop conditions, wiki protocol, FIND output, and Deadends. Do not re-derive any of that here.
+
+## Wiki
+
 ```
-qmd_query "insecure deserialization gadget chain ysoserial" via wiki-search MCP -> read matching page.
+qmd_query "insecure deserialization gadget chain Java .NET PHP Python Ruby Node ysoserial" via wiki-search MCP
 ```
-Core page: [[insecure-deserialization]]. Related: [[os-command-injection]] (RCE sink), [[wiki/payloads/ssrf]] (URLDNS/blind probe).
 
-**Self-heal:** If the wiki query returns nothing, create a stub `wiki/techniques/web/insecure-deserialization.md` (frontmatter + a `## Observed during <engagement>` section built from your findings) before proceeding, so the gap fills instead of silently recurring.
+Hub: [[web-moc]] (live web index). Primary page: [[insecure-deserialization]]. Payload arsenal: `wiki/payloads/deserialization.md`.
+Anchors: [[ml-model-deserialization]].
 
-## Scope Check
-- Confirm target in scope. Read `Deadends.md` - skip exhausted sinks.
+## Confirmation gate
 
-## OOB Gate (READ FIRST)
-**Blind deserialization RCE claims require OOB confirmation. No exceptions.**
-First payload is always a benign OOB probe, not a command. Java `URLDNS` / `JRMPClient` cause a DNS/TCP callback with zero code exec risk - use it to prove the sink deserializes attacker data before firing a gadget.
+**Blind deserialization RCE claims require an OOB HIT. No exceptions.** The first payload is always
+a benign OOB probe, never a command: Java `URLDNS` / `JRMPClient` force a DNS/TCP callback with zero
+code-exec risk, proving the sink deserializes attacker data before you fire a gadget.
 
-NOT confirmation: stack trace, type error, 500 alone. IS confirmation: DNS/HTTP hit to your unique interactsh subdomain, or time-delay gadget reliably toggling.
+**NOT confirmation:** a deserialization error, a type error, a stack trace, a `500`, or the blob
+merely being accepted. Any of these alone means the parser saw your bytes, not that you control
+execution.
 
-When you plant the OOB probe (URLDNS/JRMPClient or any blind payload), append a row to `targets/<eng>/oob.md`: `| <token> | <sink url+param> | deser | <date> | waiting | |` (columns: token | sink | class | planted | status | source, where token = your unique interactsh label). The recon-capture hook auto-correlates incoming callbacks to flip the row to HIT and SessionStart surfaces HITs; a HIT row is the confirmation gate to scaffold the FIND. Do NOT claim a blind deserialization finding without a HIT row.
+**IS confirmation:** an OOB callback from the gadget to your unique Collaborator / interactsh
+subdomain, or a demonstrated effect - command execution, a file read, an SSRF fetch - reproduced in
+a clean session per hunt-core. A time-delay gadget that reliably toggles counts as the effect.
+Blind cases need the OOB HIT.
 
-## Attack Surface Signals
+When you plant the OOB probe (URLDNS/JRMPClient or any blind payload), append a row to
+`targets/<eng>/oob.md`: `| <token> | <sink url+param> | deser | <date> | waiting | |` (columns:
+token | sink | class | planted | status | source, token = your unique interactsh label). The
+recon-capture hook auto-correlates incoming callbacks to flip the row to HIT and SessionStart
+surfaces HITs; the HIT row is the gate to scaffold the FIND. Do NOT claim a blind deserialization
+finding without a HIT row.
+
+## Attack surface signals
+
 Fingerprint serialized blobs by magic bytes / shape:
+
 ```
 rO0AB...                      Java (base64, 0xAC 0xED 0x00 0x05)
 AAEAAAD/////                  .NET BinaryFormatter (base64)
@@ -33,7 +49,20 @@ a:2:{... / O:8:"stdClass":    PHP serialize()
 gASV / \x80\x04 / \x80\x05    Python pickle (base64 gAS...)
 BAh... / --- !ruby/object     Ruby Marshal / YAML
 ```
-Sink locations: cookies (`session`, `auth`, `state`, `viewstate`), hidden form fields, `Authorization`, API JSON with type hints, message queues, cache, file upload of `.ser`/`.pickle`.
+
+Sink locations: cookies (`session`, `auth`, `state`, `viewstate`), hidden form fields,
+`Authorization`, API JSON with type hints, message queues, cache, file upload of `.ser`/`.pickle`.
+
+**Rank before firing a gadget.** Not all sinks are equal:
+
+- **ASP.NET `__VIEWSTATE`** - if MAC is off or the machineKey leaked, straight to RCE; check first.
+- **Session / auth cookies carrying a serialized blob** - attacker-controlled every request, no
+  prior access needed to reach the sink.
+- **`.ser`/`.pickle` file uploads and `phar://` sinks** - the parser runs on your bytes by design.
+- **API JSON with type hints** (`$type`, `_class`, polymorphic deserializers) - Jackson / fastjson
+  default-typing, .NET `TypeNameHandling`.
+- **Message-queue / cache payloads** - internal, often unauthenticated, frequently no look-ahead
+  filter.
 
 ## Methodology
 1. Locate serialized data (decode base64, match magic bytes above).
@@ -53,19 +82,41 @@ modern-JDK (17/21) gotchas (class-version mismatch, `InaccessibleObjectException
 5. **Python:** `pickle.loads` on user data -> `__reduce__` returning `(os.system, ("cmd",))`. yaml.load (unsafe) -> `!!python/object/apply:os.system`.
 6. **Ruby:** Marshal.load / unsafe YAML.load -> universal gadget chains (`Gem::...`).
 7. **Node:** `node-serialize` `_$$ND_FUNC$$_` IIFE; `funcster`, `serialize-javascript` sinks.
-8. **Distill to wiki (when confirmed):** if the finding is a reusable gadget chain or framework sink, stage a GENERIC wiki candidate now (no client host): `python3 scripts/wiki-stage.py --kind technique --slug <slug> --target-page techniques/web/insecure-deserialization.md`. Promote later via `scripts/wiki-promote.py`.
+8. **Distill when confirmed** (per hunt-core): reusable gadget chain or framework sink -> `python3 scripts/wiki-stage.py --kind technique --slug <slug> --target-page techniques/web/insecure-deserialization.md`.
 
-## FIND Output
-Confirmed (OOB callback or reliable exec):
-```
-Create Vulns/Research/FIND-XXX-CRITICAL-deserialization-rce-<host>.md
-Add row to Vuln-index.md: | FIND-XXX | <stack> deser RCE | host | CONFIRMED |
-```
-Severity: CRITICAL if command exec / OOB code callback; HIGH if file read/SSRF-only gadget; MEDIUM if DoS-only.
+## Chaining
 
-Exhausted (sink deserializes - URLDNS fired - but no working RCE gadget after gadget-set sweep; or no callback after 30+ payloads):
+A deserialization sink is usually the RCE itself, not a step toward one: a working gadget executes
+your command in-process. When the classpath yields only a partial primitive - URLDNS / JRMPClient
+SSRF, a file-read gadget, a JNDI lookup - drive the follow-on through `hunt-rce` (JNDI/LDAP to code
+exec, log4shell-style) or the relevant sink skill rather than forcing a command gadget the
+look-ahead filter blocks.
+
+## Evasion
+
+Look-ahead deserialization filters (`ValidatingObjectInputStream`, `ObjectInputFilter`, Jackson
+allowlists) reject known gadget classes by name. When a confirmed sink rejects CC1-7: switch to a
+gadget library actually on the classpath (Spring, Hibernate5, C3P0, ROME, MozillaRhino), try a
+different serialization format the same endpoint accepts (XML / JSON / YAML vs binary), nest the
+payload (`SignedObject` wrapping), or - .NET - swap the formatter (`LosFormatter`, `SoapFormatter`,
+`Json.NET TypeNameHandling`). Fingerprint the exact library version before sweeping blind.
+
+## Severity
+
+- **CRITICAL** - command execution or an OOB code callback from the gadget.
+- **HIGH** - file-read or SSRF-only gadget (no command exec).
+- **MEDIUM** - DoS-only gadget.
+
+Rated on demonstrated impact per hunt-core, not the theoretical maximum of the class.
+
+## Deadends
+
+Stop after the bounded OOB gadget sweep (per hunt-core / CLAUDE.md: ~30-40 payloads, zero
+callbacks) or when the sink deserializes but no gadget on the classpath executes:
+
 ```
-Append to Deadends.md: - [ ] <host> <param> -- Java sink confirmed (URLDNS hit) but CC1-7/Spring/Hibernate no exec (hardened classpath / look-ahead filter)
+Append: - [ ] deser on <host> <param> -- Java sink confirmed (URLDNS hit) but CC1-7/Spring/
+              Hibernate no exec (hardened classpath / look-ahead filter)
 ```
 
-Report: Status + files created.
+Record which gadget libraries and formats you tried, not just that it failed.

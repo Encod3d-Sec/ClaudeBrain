@@ -308,6 +308,18 @@ def _weaponize_undone(d):
     return "[x]" not in body and "[~]" not in body and "[ ]" in body
 
 
+_LOOP_RE = re.compile(r"\bfor\b[^\n]*\bin\b|\bwhile\b[^\n]*\bdo\b|\bseq\b\s+\d", re.I)
+_FETCH_RE = re.compile(r"\b(?:curl|wget)\b", re.I)
+_THREADED_RE = re.compile(r"xargs\s+-\S*[pP]|\bparallel\b|\bffuf\b|\bferoxbuster\b", re.I)
+
+
+def _is_serial_enum_loop(cmd):
+    """A shell loop fetching URLs one-at-a-time (for/while/seq + curl/wget) that is NOT already
+    threaded (xargs -P / parallel / ffuf / feroxbuster). This is the exact serial-vs-parallel
+    drift: a serial curl enumeration where a threaded ffuf sweep belongs."""
+    return bool(_LOOP_RE.search(cmd) and _FETCH_RE.search(cmd) and not _THREADED_RE.search(cmd))
+
+
 def main():
     raw = sys.stdin.read()
     try:
@@ -362,6 +374,21 @@ def main():
                 "GATE 1 (wiki-first): exploiting, but killchain.md Weaponize has no progress. "
                 "Query the wiki for this tech/CVE first (Skill(arsenal) / qmd_query), pull the "
                 "payload from wiki/payloads/, mark the Weaponize item, THEN exploit.")
+            try:
+                open(marker, "w").close()
+            except OSError:
+                pass
+
+    # serial-enumeration nudge (fire-once per engagement, advisory): a for/while/seq + curl loop
+    # fetches one URL at a time -- the recurring serial-vs-parallel drift that turns a 10-min box
+    # into 40. Nudge to fan out with a threaded ffuf sweep.
+    if d and _engagement and not _is_framework_meta(cmd):
+        marker = os.path.join(d, ".serial-enum-nudged")
+        if not os.path.exists(marker) and _is_serial_enum_loop(cmd):
+            blocks.append(
+                "SERIAL ENUMERATION: a for/while/seq + curl loop fetches one URL at a time (slow). "
+                "Fan out instead -- ffuf -t 80 over the range (e.g. `seq -f %04g 0 9999` as -w) or "
+                "xargs -P50. Parallel discovery is the 10-min-vs-40-min difference.")
             try:
                 open(marker, "w").close()
             except OSError:

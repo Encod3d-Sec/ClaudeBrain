@@ -200,6 +200,7 @@ Read `docs/workflows.md` before performing any ingest, target session, lint, or 
 
 ## Output rules
 
+- **Brevity during engagements/tool-loops (output tokens are billed).** When working a target (recon -> foothold -> privesc) or any multi-step tool loop, keep prose MINIMAL: one short line before a tool batch stating intent, and lead the next turn with the RESULT/finding, not a recap. No per-step paragraphs, no restating what a command will do (the command is shown), no narrating the plan you already gave. Full prose is for the deliverables that need it (a report, a walkthrough, a design/brainstorm, an explicit explanation the user asked for), not for the play-by-play. A 40-min box should not cost a paragraph per step.
 - Never use em-dashes (`--`). Use a comma, semicolon, or rewrite the sentence. (`--` is permitted inside code blocks as a CLI flag.)
 - Never use emojis.
 - Do not narrate what you are doing with echo/printf inside commands (label banners, "now doing X" lines, `=== ... ===` / `== x ==` / `-- x --` separators). You already explain each step in your normal response text, so echoing it into the command is duplicate noise, and the harness already shows every command with its own output. Run commands directly.

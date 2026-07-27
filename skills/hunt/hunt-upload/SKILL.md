@@ -5,19 +5,28 @@ description: File upload attack hunting - extension/content-type/magic-byte bypa
 
 # Hunt: File Upload
 
-## Pre-Attack: Wiki Query (MANDATORY)
+**Assumes `hunt-core`** for the scope gate, two-account rule, confirmation gate, enumeration limits, stop conditions, wiki protocol, FIND output, and Deadends. Do not re-derive any of that here.
+
+## Wiki
+
 ```
-qmd_query "file upload bypass web shell" via wiki-search MCP -> read matching page.
+qmd_query "file upload webshell extension content-type magic-byte bypass SVG XXE zip slip path traversal" via wiki-search MCP
 ```
-Core page: [[file-upload]]. RCE sink overlaps [[os-command-injection]]; SVG overlaps [[xss]]. Payload arsenal: `wiki/payloads/file-upload.md`.
 
-**Self-heal:** If the wiki query returns nothing, create a stub `wiki/techniques/web/file-upload.md` (frontmatter + a `## Observed during <engagement>` section built from your findings) before proceeding, so the gap fills instead of silently recurring.
+Hub: [[web-moc]] (live index). Primary page: [[file-upload]]. Payload arsenal: `wiki/payloads/file-upload.md`.
+Anchors: [[path-traversal-lfi]].
 
-## Scope Check
-- Confirm target in scope. Identify where uploads land (web-root? CDN? processed?) and how they're served back. Read `Deadends.md`.
+## Attack surface
 
-## Attack Surface Signals
-Avatar/profile pictures, document/import, ticket attachments, CSV/XML import, image-processing (thumbnails -> ImageMagick), SVG/PDF render, firmware/plugin upload, signature/logo fields.
+Rank the sinks first - not every upload reaches code:
+
+- **Avatar / profile / logo / signature fields** - most common; frequently re-encoded, so check whether the original bytes are served back.
+- **Document / CSV / XML import** - parser sinks (XXE, formula injection, zip).
+- **Ticket / message attachments** - often served under the original name and type from a reachable path.
+- **Image-processing** (thumbnails -> ImageMagick/Ghostscript), SVG/PDF render, EXIF parsers - the processor is the bug, not the store.
+- **Firmware / plugin / theme upload** - direct code load; highest value when present.
+
+Then attack in layers, cheapest first: **extension -> content-type -> magic-byte -> parser/render.**
 
 ## Methodology
 1. **Baseline:** upload a valid file; note stored path, returned URL, filename transformation, and whether it is reachable + executed by the server.
@@ -31,24 +40,31 @@ web.config (IIS)   .jsp/.jspx/.war (Java)   .asp/.aspx (IIS)
 ```
 3. **Content-Type / magic-byte bypass:** set `Content-Type: image/png`; prepend real magic bytes (`GIF89a;`, `\xFF\xD8\xFF` JPEG, `%PDF-`) before the payload; polyglot (valid image + PHP).
 4. **Path traversal in filename:** `filename="../../../../var/www/html/shell.php"` to escape the upload dir / overwrite files.
-5. **SVG / XML:** SVG with `<script>` -> stored XSS; SVG/XML with external entity -> [[xxe]] (file read/SSRF).
+5. **SVG / XML:** SVG with `<script>` -> stored XSS ([[xss]]); SVG/XML with external entity -> [[xxe]] (file read/SSRF).
 6. **Archive:** zip-slip (`../` paths inside zip) on extract; symlink in archive -> read host files.
 7. **Image processing:** ImageMagick/Ghostscript (ImageTragick CVE-2016-3714), pixel-flood DoS, EXIF payload executed by a downstream parser.
-8. **Confirm RCE:** request the uploaded shell and execute (`?cmd=id`); OOB callback if blind.
-9. **Distill to wiki (when confirmed):** if the finding is a reusable extension or parser bypass, stage a GENERIC wiki candidate now (no client host): `python3 scripts/wiki-stage.py --kind technique --slug <slug> --target-page techniques/web/file-upload.md`. Promote later via `scripts/wiki-promote.py`.
+8. **Confirm by execution, through Burp.** Request the uploaded shell in **Burp Repeater** (operator visibility) and run a command (`?cmd=id`); OOB callback if blind. For traversal, fetch the written/read target back from the path you claimed it hit.
+9. **Distill (confirmed, generic):** per hunt-core, `python3 scripts/wiki-stage.py --kind technique --slug <slug> --target-page techniques/web/file-upload.md`.
 
-## FIND Output
-Confirmed:
-```
-Create Vulns/Research/FIND-XXX-CRITICAL-upload-rce-<host>.md      (web shell executes)
-Create Vulns/Research/FIND-XXX-HIGH-stored-xss-svg-<host>.md      (SVG XSS)
-Add row to Vuln-index.md: | FIND-XXX | upload -> web shell | host | CONFIRMED |
-```
-Severity: CRITICAL if code execution; HIGH if stored XSS / XXE / arbitrary file write to sensitive path; MEDIUM if upload of dangerous type with no execution path proven.
+## Evasion (when a layer rejects)
+Double extension (`shell.php.jpg` / `shell.jpg.php`), null byte (`shell.php%00.jpg`), content-type spoof (`Content-Type: image/png` on a script), magic-byte prefix (`GIF89a;` + payload), and case variation (`.pHp`, `.PHtml`). Combine them - a single-layer allowlist rarely survives extension + content-type + magic-byte applied together.
 
-Exhausted (server stores outside web-root / renames to random / re-encodes images / strict allowlist, all bypasses fail):
-```
-Append to Deadends.md: - [ ] upload <host> -- ext+CT+magic+traversal all blocked; files re-encoded + served from CDN no-exec
-```
+## Chaining
+- **Upload -> web-shell RCE:** once a shell executes, hand off `hunt-rce` for post-exploitation and CVE-specific escalation.
+- **SVG/HTML -> stored XSS:** hand off `hunt-xss` (marker discipline, blind-XSS beacon for a stored context).
+- **SVG/XML/DOCX -> XXE:** hand off `hunt-injection` (OOB-mandatory for blind XXE).
 
-Report: Status + files created.
+## Confirmation gate
+
+**NOT confirmation:** the upload was accepted; a `200` or a returned file URL; the file shows up in a listing; a stored path you have not fetched back; a script uploaded but never requested; a traversal filename accepted with nothing actually read or written outside the upload dir.
+
+**IS confirmation:** the uploaded file **executed as code** - fetch it back and it runs your command (`?cmd=id` returns output) or fires an OOB callback when blind; or the traversal demonstrably **wrote or read outside the upload dir**, proven by fetching that target back. SVG/XML: the script fires in a victim context, or the external entity returns file contents / an OOB hit. Reproduce in a clean session.
+
+## Severity
+CRITICAL if code execution; HIGH if stored XSS / XXE / arbitrary file write to a sensitive path; MEDIUM if upload of a dangerous type with no execution path proven.
+
+## Deadends
+```
+Append: - [ ] upload <host> <endpoint> -- ext+CT+magic+traversal all blocked; files re-encoded + served from CDN no-exec
+```
+Record which layers you cleared and which held, so the next pass does not retry them.

@@ -5,21 +5,20 @@ description: SSRF hunting - OOB-mandatory methodology. Cloud metadata, blind SSR
 
 # Hunt: SSRF
 
-## Pre-Attack: Wiki Query (MANDATORY)
+**Assumes `hunt-core`** for the scope gate, two-account rule, confirmation gate, enumeration
+limits, stop conditions, wiki protocol, FIND output, and Deadends. Do not re-derive any of that here.
+
+## Wiki
+
 ```
-qmd_query "SSRF server-side request forgery" via wiki-search MCP -> read matching technique page if found.
+qmd_query "SSRF server-side request forgery cloud metadata" via wiki-search MCP
 ```
-Apply known payloads, bypass variants, and cloud metadata endpoints already documented.
-Bypass variants: [[dns-rebinding]] (hostname re-resolution TOCTOU past an allowlist check), [[open-redirect]] (chain a trusted redirect to reach an internal target).
 
+Hub: [[web-moc]] (live web index). Primary page: [[ssrf]]. Payload arsenal: `wiki/payloads/ssrf.md`.
+Bypass variants: [[dns-rebinding]] (hostname re-resolution TOCTOU past an allowlist),
+[[open-redirect]] (chain a trusted redirect to an internal target).
 
-**Self-heal:** If the wiki query returns nothing, create a stub `wiki/techniques/<area>/<slug>.md` (frontmatter + a `## Observed during <engagement>` section built from your findings) before proceeding, so the gap fills instead of silently recurring.
-
-## Scope Check
-- Confirm target is in scope
-- Read Deadends.md - skip paths already marked exhausted
-
-## OOB Gate (Read First)
+## Confirmation gate
 **Blind SSRF claims require OOB confirmation. No exceptions.**
 
 NOT confirmation: URL echo in error message, different status code, delayed response alone.
@@ -57,9 +56,12 @@ An internal-only service is the usual SSRF objective and it is **invisible to yo
 so the SSRF is your only scanner. Before grinding cloud metadata or filter bypasses, sweep
 `127.0.0.1` ports THROUGH the sink and fingerprint everything that answers:
 ```bash
-T=<target>
-# non-empty / distinct body = open. Sweep the FULL range, not a "common ports" shortlist. Thread it.
-for P in $(seq 1 65535); do R=$(curl -s -m3 "http://$T/preview.php?url=http://127.0.0.1:$P/"); [ -n "$R" ] && echo "OPEN $P len=${#R}"; done
+export T=<target>
+# non-empty / distinct body = open. Sweep the FULL range, threaded (-P 50). Under no_dos or a
+# scan-rate cap in scope.md, probe the curated high-value port list in wiki/payloads/ssrf instead
+# of blasting all 65535. This is service discovery, NOT object enumeration -- the hunt-core 5-20
+# ceiling does not apply; the RoE cap does.
+seq 1 65535 | xargs -P50 -I{} sh -c 'r=$(curl -s -m3 "http://$T/preview.php?url=http://127.0.0.1:{}/"); [ -n "$r" ] && echo "OPEN {} len=${#r}"'
 ```
 - **Sweep wide.** "Common ports only" misses the box: THM Extract hid its objective (a Next.js app)
   on internal **:10000**. Threaded drop-in + curated high-value ports in [[wiki/payloads/ssrf]] payloads.
@@ -114,7 +116,7 @@ http://127.0.0.1:{3000,5000,8000,8080,8888,9000,10000}/   # app/admin ports - wh
 6. Test redirect-based SSRF (host redirect server pointing to internal addresses)
 7. Test headless browser contexts - inject `<script>fetch(...)` for PDF/screenshot endpoints
 8. Chain: SSRF -> cloud creds -> account takeover; SSRF -> Redis/memcached -> RCE
-9. **Distill to wiki (when confirmed):** if the finding is a reusable cloud bypass or SSRF chain, stage a GENERIC wiki candidate now (no client host): `python3 scripts/wiki-stage.py --kind technique --slug <slug> --target-page techniques/web/ssrf.md`. Promote later via `scripts/wiki-promote.py`.
+9. **Distill when confirmed** (per hunt-core): reusable cloud bypass or SSRF chain, GENERIC, `python3 scripts/wiki-stage.py --kind technique --slug <slug> --target-page techniques/web/ssrf.md`.
 
 ## Lessons (THM Extract)
 - The objective (a Next.js app) sat on internal **:10000**, reachable ONLY via the SSRF. A
@@ -131,18 +133,12 @@ http://127.0.0.1:{3000,5000,8000,8080,8888,9000,10000}/   # app/admin ports - wh
 - File read stayed blocked (`file://` / `php://` / `data://` keyword-filtered, case-insensitive)
   and the chain needed none. Don't grind source disclosure the chain doesn't require.
 
-## FIND Output
+## Severity
 
-If finding confirmed (OOB callback received):
-```
-Create Vulns/Research/FIND-XXX-HIGH-ssrf-<host>.md
-Add row to Vuln-index.md: | FIND-XXX | SSRF on host:port | host:port | PARTIAL |
-Severity: CRITICAL if cloud metadata creds retrieved; HIGH if internal service access; MEDIUM if DNS-only OOB
-```
+FIND output and Deadends format per hunt-core; rated on what the SSRF actually reached:
 
-If path exhausted (38+ payloads, zero OOB callbacks):
-```
-Append to Deadends.md: - [ ] SSRF on <host> param <param> -- zero OOB callbacks, URL echo only (server-side URL validation, not fetching)
-```
+- **critical** - cloud metadata credentials retrieved (IMDS role creds).
+- **high** - internal service access (admin panel, Redis/etcd/k8s API, an internal app).
+- **medium** - DNS-only OOB, no internal read.
 
-Report: Status + files created.
+Class deadend line: `- [ ] SSRF on <host> param <param> -- zero OOB callbacks, URL echo only (server-side validation, not fetching)`. Exhaustion is ~38 payloads with zero callbacks.

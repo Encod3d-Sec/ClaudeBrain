@@ -5,30 +5,43 @@ description: macOS attack hunting - foothold to root/persistence on a macOS host
 
 # Hunt: macOS
 
-## Pre-Attack: Wiki Query (MANDATORY)
+**Assumes `hunt-core`** for the scope gate, two-account rule, confirmation gate, enumeration limits, stop conditions, wiki protocol, FIND output, and Deadends. Do not re-derive any of that here.
+
+## Wiki
+
 ```
-qmd_query "<technique: TCC bypass | SIP bypass | Gatekeeper bypass | XPC abuse | dylib injection | keychain dump | macOS persistence>" via wiki-search MCP -> read matching page.
+qmd_query "macOS TCC SIP Gatekeeper AMFI keychain XPC dylib injection sandbox escape code signing entitlements" via wiki-search MCP
 ```
-Hub: [[macos-moc]] (links every macOS technique page). Core pages: [[macos-privesc]], [[macos-tcc]],
-[[macos-sip]], [[macos-gatekeeper]], [[macos-sandbox-escape]], [[macos-keychain]], [[macos-xpc-abuse]],
-[[macos-persistence]], [[macos-code-signing]]. Payload: [[macos-app-injection]]. Cheatsheets:
-[[macos-enumeration]] (fast local recon), [[macos-loot-locations]] (credential/DB harvest map).
 
-**Self-heal:** If the wiki query returns nothing, create a stub `wiki/techniques/macos/<slug>.md` (frontmatter + a `## Observed during <engagement>` section built from your findings), link it from [[macos-moc]], before proceeding, so the gap fills instead of silently recurring.
+Hub: [[macos-moc]] (live index). Primary page: [[macos-tcc]]. Payload arsenal: `wiki/payloads/macos-app-injection.md`.
+Anchors: [[macos-privesc]] (general privesc checklist), [[macos-keychain]] (credential/DB harvest).
 
-## Scope + Safety Gate (READ FIRST)
-- Confirm the macOS host/user is in scope. Read `Deadends.md` + `loot.md` - reuse captured creds first.
-- macOS boxes on THM/HTB are usually a VM (not real Apple hardware) - SIP/Gatekeeper/TCC still apply as
-  shipped, but device-specific protections (Secure Enclave, T2) generally do not.
-- Confirm root/admin vs a sandboxed app context before picking an escalation path - the sandbox-escape
-  and TCC-bypass techniques below assume different starting points.
+## Environment note
 
-## Attack Surface Signals
+macOS boxes on THM/HTB are usually a VM (not real Apple hardware) - SIP/Gatekeeper/TCC still apply as
+shipped, but device-specific protections (Secure Enclave, T2) generally do not. Confirm root/admin vs a
+sandboxed app context before picking an escalation path - the sandbox-escape and TCC-bypass techniques
+below assume different starting points.
+
+## Attack surface signals
+
 Detected via: SSH/service banner (`Darwin`, `Mac OS X 10.`, `macOS 1[1-5]`), a `.app` bundle / `.plist`
 delivered as a foothold vector, Bonjour/mDNS (5353), ARD/screen-sharing (5900/3283), SMB served by
 `smbd` with a macOS-flavoured share layout, or a CTF prompt naming macOS/Darwin explicitly.
 Footholds: a delivered `.pkg`/`.dmg`/`.app` (installer/Gatekeeper abuse), a web app or service running
 as a low-priv user, physical/VNC/screen-sharing access to a logged-in session.
+
+**Rank the surface** once you have a foothold:
+
+- **TCC / SIP / Gatekeeper / AMFI** - the macOS-specific security stack; a bypass here is the signature
+  finding of this class and the primary path to protected data or unsigned code exec.
+- **Keychain / credential loot** - highest reward-per-effort; a login-keychain dump or a reused hash
+  often beats grinding a hardened control (see chaining note).
+- **XPC / dylib / library injection** - inherit a privileged or entitled process's rights; the main
+  local-privesc lever once enumeration finds a vulnerable service or a hijackable load path.
+- **Sandbox escape** - only relevant from a sandboxed app context; escapes to the full user context.
+- **MDM / installer abuse** - a `.pkg` postinstall runs as root at install time; MDM enrollment reaches
+  the whole fleet. Highest blast radius when either is present.
 
 ## Methodology
 
@@ -65,19 +78,39 @@ sqlite3 ~/Library/Application\ Support/com.apple.TCC/TCC.db "select * from acces
      surface for code exec in that app's context.
 5. **Persistence + lateral** - [[macos-persistence]] (launch agents/daemons, login items, cron) and
    [[macos-mdm]] (enrolled-MDM abuse for fleet-wide reach, if the host is MDM-managed).
-6. **Distill to wiki (when confirmed):** if the finding is a reusable macOS privesc, TCC/SIP/Gatekeeper bypass, or injection chain, stage a GENERIC wiki candidate now (no client host): `python3 scripts/wiki-stage.py --kind technique --slug <slug> --target-page techniques/macos/macos-privesc.md`. Promote later via `scripts/wiki-promote.py`.
 
-## FIND Output
-Confirmed:
-```
-Create Vulns/Research/FIND-XXX-SEVERITY-<issue>-<host>.md
-Add row to Vuln-index.md: | FIND-XXX | TCC bypass -> full-disk access | <host> | CONFIRMED |
-```
-Severity: CRITICAL = root/SIP-disabled code exec, MDM fleet compromise; HIGH = sandbox escape, XPC
-privesc, keychain-wide credential dump; MEDIUM = TCC bypass to a single data class, Gatekeeper bypass
-with no privilege gain.
+**Chaining.** Foothold -> keychain/credential loot -> privesc is the reliable macOS chain: a
+low-priv shell first dumps the login keychain and `/var/db/dslocal/` hashes ([[macos-keychain]] /
+[[macos-loot-locations]]), a cracked or reused admin password then unlocks sudo/`security` and the
+privileged XPC/dylib paths in step 4. Loot before you grind a hardened control.
 
-Exhausted (SIP enabled + no writable privileged launchd script + no vulnerable XPC service found):
-```
-Append to Deadends.md: - [ ] macOS privesc <host> -- SIP on, no writable root launchd/cron, no XPC found
-```
+**Evasion.** Prefer the least-noisy path that clears the gate: strip the `com.apple.quarantine`
+xattr rather than fully re-sign, ride an already-TCC-granted app's entitlement rather than defeating
+TCC head-on, and load via a hijackable dylib search path before touching AMFI/launch-constraint
+internals. Escalate to heavier bypasses ([[macos-amfi]], [[macos-launch-constraints]]) only when the
+lighter path is actually blocked.
+
+Distill a confirmed reusable macOS technique per hunt-core: `python3 scripts/wiki-stage.py --kind technique --slug <slug> --target-page techniques/macos/macos-privesc.md`.
+
+## Confirmation gate
+
+**NOT confirmation:** a permissive entitlement (`com.apple.security.*`, a `get-task-allow` or a
+private-framework entitlement) present in a plist; an unsigned or ad-hoc-signed binary sitting on
+disk; a world-writable app bundle or launchd plist; `csrutil`/`spctl` reporting a control as present;
+a `DYLD_INSERT_LIBRARIES` that the loader ignored on a hardened process. A capability that *exists*
+is not a control that was *bypassed*.
+
+**IS confirmation:** the control was actually defeated and demonstrated - TCC bypassed and the
+protected resource (contacts/photos/full-disk/camera) actually read; SIP-protected path written or
+`csrutil`-guarded action performed; Gatekeeper/AMFI/launch-constraint bypassed and your unsigned code
+*ran* past it; an injected dylib/thread executing inside the privileged/entitled process and
+exercising its rights; a `.pkg` postinstall or XPC call yielding a root-context action you performed -
+each re-verified in a clean session and reproduced from your own written steps.
+
+## Severity
+
+| Severity | Class |
+|---|---|
+| CRITICAL | root / SIP-disabled code exec, MDM fleet compromise |
+| HIGH | sandbox escape, XPC privesc, keychain-wide credential dump |
+| MEDIUM | TCC bypass to a single data class, Gatekeeper bypass with no privilege gain |

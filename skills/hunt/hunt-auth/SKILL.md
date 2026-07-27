@@ -5,18 +5,24 @@ description: Auth bypass and ATO hunting - legacy protocol matrix (XMLRPC, Share
 
 # Hunt: Auth Bypass & Account Takeover
 
-## Pre-Attack: Wiki Query (MANDATORY)
+**Assumes `hunt-core`** for the scope gate, two-account rule, confirmation gate, enumeration limits, stop conditions, wiki protocol, FIND output, and Deadends. Do not re-derive any of that here.
+
+## Wiki
+
 ```
-qmd_query "authentication bypass account takeover" via wiki-search MCP -> read matching technique page if found.
+qmd_query "authentication bypass account takeover password reset poisoning session fixation legacy protocol" via wiki-search MCP
 ```
-Apply known legacy endpoint patterns and JWT bypass techniques already documented. Payload arsenals: `wiki/payloads/{auth-bypass,csrf,mfa-bypass,session,crypto}.md` (tokens: [[jwt]], `oauth-saml`).
 
+Hub: [[web-moc]] (live index). Primary page: [[authentication-attacks]]. Payload arsenal: `wiki/payloads/{auth-bypass,jwt,oauth-saml,session,mfa-bypass,crypto}.md`.
+Anchors: [[session-management-attacks]], [[mfa-bypass]].
 
-**Self-heal:** If the wiki query returns nothing, create a stub `wiki/techniques/<area>/<slug>.md` (frontmatter + a `## Observed during <engagement>` section built from your findings) before proceeding, so the gap fills instead of silently recurring.
+## Attack surface (ranked)
 
-## Scope Check
-- Confirm target is in scope
-- Read Deadends.md - skip paths already marked exhausted
+Probe in this order; a higher entry is more often unguarded than a cleverer payload on the main form is likely to land.
+
+1. **Legacy protocol endpoints** (matrix below) - a second door to the same credential store, frequently with no rate limit, MFA, or CAPTCHA. Probe first on any custom/branded login.
+2. **Password reset flows** - host-header poisoning, token in Referer, token reuse/expiry, reset that does not invalidate live sessions.
+3. **Session and MFA** - fixation, missing rotation on privilege change, MFA-optional endpoints, JWT manipulation.
 
 ## Legacy Protocol Matrix (Probe First on Any Custom-Branded Login)
 
@@ -41,8 +47,8 @@ When a target has a custom/branded login UI, ALWAYS probe the platform's legacy 
 1. Identify tech stack from headers/paths
 2. Probe legacy endpoint anonymously (confirm reachable, not 403/404)
 3. Test with synthetic credentials - confirm differential (success vs failure)
-4. Verify NO rate limit: burst 10 requests at same user, confirm uniform timing
-5. Report as Critical/High if unlimited credential brute-force endpoint confirmed
+4. Verify NO rate limit against a synthetic or your OWN test account (never a real user - every failed attempt counts toward account lockout): send a bounded burst - 5 by default per hunt-core, 20 ceiling with operator approval, 0 under `no_bruteforce` - and confirm uniform timing, no `429`, no lockout counter. The ABSENCE of the limit is the finding; do not actually brute-force to prove it.
+5. Confirmed when the endpoint takes native creds with no rate limit / MFA / CAPTCHA (severity below).
 
 ## JWT Attacks
 ```bash
@@ -72,27 +78,43 @@ eyJhbGciOiJub25lIn0.PAYLOAD.
 5. Test JWT if present: none algorithm, key confusion, weak secret
 6. Test password reset: host header injection, token in Referer, token reuse after expiry
 7. Test email change: no re-auth, no confirmation
-8. Verify impact: demonstrate full ATO on test account B from attacker session A
-9. **Distill to wiki (when confirmed):** if the finding is a reusable legacy-endpoint bypass or JWT variant, stage a GENERIC wiki candidate now (no client host): `python3 scripts/wiki-stage.py --kind technique --slug <slug> --target-page techniques/web/authentication-attacks.md`. Promote later via `scripts/wiki-promote.py`.
+8. Verify impact: demonstrate full ATO on test account B from attacker session A, then clear the confirmation gate below
+9. **Distill when confirmed** (per hunt-core): a reusable legacy-endpoint bypass or JWT variant, GENERIC (no client host): `python3 scripts/wiki-stage.py --kind technique --slug <slug> --target-page techniques/web/authentication-attacks.md`
 
-## FIND Output
+## Drive it through Burp
 
-If auth bypass or ATO confirmed:
-```
-Create Vulns/Research/FIND-XXX-CRITICAL-auth-bypass-<host>.md (if no auth needed)
-Create Vulns/Research/FIND-XXX-HIGH-ato-<host>.md (if requires one click)
-Add row to Vuln-index.md under CRITICAL or HIGH
-```
+Push the load-bearing requests through Burp for operator visibility (`Skill(hunt-burp)`):
+- The password-reset request with the injected `X-Forwarded-Host` / `Host`, and each JWT-tampered request (`alg:none`, key-confusion), go to **Repeater** so the operator can replay and inspect them.
+- The bounded rate-limit / lockout probe (matrix step 4) goes to **Intruder** with the hunt-core bound, never a hand-rolled loop.
+- `scripts/capture.sh burp` grabs the request+response PoC the moment it lands.
 
-If legacy endpoint found but no creds to test:
-```
-Create Vulns/Research/FIND-XXX-MEDIUM-legacy-auth-endpoint-<host>.md
-Document: endpoint reachable, accepts native creds, no rate limit, awaiting cred list
-```
+## Confirmation gate
 
-If path exhausted:
-```
-Append to Deadends.md: - [ ] Auth bypass on <host> -- legacy endpoints 404, JWT RS256 key confusion failed, reset tokens expire
-```
+**NOT confirmation:** a `200` on the login page or reset form; a different or friendlier error message; a password-reset email merely received; a JWT that decodes cleanly or whose `alg`/claims you edited and the server did not reject; a legacy endpoint that returns `200` to an anonymous probe; the server "accepting" a modified token without acting on it.
 
-Report: Status + files created.
+**IS confirmation:** an authenticated session obtained as a *different* user - exercise a capability only that account has - OR a reset token that actually resets another account's password and lets you log in as them. Reproduced from scratch in a clean session (fresh profile, no cached cookies) per hunt-core, with your own account ruled out as the thing you logged into.
+
+## Chaining
+
+- **Reset poisoning / token leak -> ATO.** A host-header or Referer-leaked reset token completes a full victim takeover - report the chain, not the leak alone.
+- **Trusted JWT claim -> ATO.** A `sub`/`user_id` the server trusts plus a weak or strippable signature is arbitrary account takeover.
+- **Hand off `hunt-federation`** for SSO/OAuth/SAML redirect_uri, state CSRF, and XSW signature attacks; this skill covers the SAML *auth-bypass* surface only.
+- **Hand off `hunt-idor`** for the trusted-identifier overlap - a `PATCH /users/{victim}` that rewrites a victim email is an IDOR that chains straight back here to reset-based ATO (ATO path 5).
+
+## Evasion
+
+When the primary login rate-limits or enforces MFA, the bypass is usually a *different entry point to the same credential store*, not a cleverer payload: the legacy endpoints above, an alternate host (mobile/partner/API), an older API version, or a SOAP/JSON variant of the same auth call. For a hardened reset flow, vary the host-header injection vector (`X-Forwarded-Host`, dual `Host` headers, absolute-URI request line) rather than repeating one form.
+
+## Severity
+
+Rated on demonstrated impact (per hunt-core), not the mechanism.
+
+| Condition | Typical |
+|---|---|
+| Auth bypass reaching an authenticated context with no credentials | critical |
+| Full ATO of a victim account (reset poisoning, trusted-JWT claim, session fixation) | critical / high |
+| Full ATO requiring one victim click | high |
+| Unlimited credential brute-force endpoint confirmed (legacy protocol, no rate limit) | critical / high |
+| Legacy endpoint reachable, accepts native creds, no rate limit, no creds tested yet | medium |
+
+Unauthenticated outranks authenticated. A precondition you cannot satisfy (a victim click, a cred list you do not hold) lowers it.

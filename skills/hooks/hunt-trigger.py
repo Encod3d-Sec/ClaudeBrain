@@ -221,6 +221,15 @@ def main():
             + _skills(soft)
             + " (heuristic; skip only if this prompt is not about testing that surface)."
         )
+    # Co-load the shared spine whenever any hunt-* class skill fired. The per-skill
+    # "Assumes hunt-core" line covers the paths the hook does not (model-judged, typed /hunt-xxx).
+    fired = hard + soft
+    if any(s.startswith("hunt-") and s != "hunt-core" for s in fired) and "hunt-core" not in fired:
+        out.append(
+            "Also load Skill(hunt-core) -- the shared spine every hunt-* skill assumes "
+            "(scope gate, two-account rule, confirmation gate, enumeration limits, stop "
+            "conditions, FIND output, Deadends). Load it alongside the skill(s) above."
+        )
     print("\n".join(out))
 
 

@@ -5,21 +5,24 @@ description: Microsoft 365 / Entra ID attack - tenant discovery, user enumeratio
 
 # Hunt: M365 / Entra ID
 
-## Pre-Attack: Wiki Query (MANDATORY)
+**Assumes `hunt-core`** for the scope gate, two-account rule, confirmation gate, enumeration limits, stop conditions, wiki protocol, FIND output, and Deadends. Do not re-derive any of that here.
+
+## Wiki
+
 ```
-qmd_query "M365 Entra ID Azure AD password spray" via wiki-search MCP -> read matching technique page if found.
+qmd_query "Microsoft 365 Entra ID Azure AD tenant discovery user enumeration OneDrive AADSTS smart lockout conditional access ROPC" via wiki-search MCP
 ```
-Apply known spray techniques and Conditional Access bypass patterns already documented.
 
+Hub: [[cloud-moc]] (live index). Primary page: [[azure-ad-enumerate]].
+Anchors: [[azure-ad-conditional-access-policy]] (the CA gap you must prove bypassed), [[azure-ad-access-and-tokens]] (ROPC / token issuance).
 
-**Self-heal:** If the wiki query returns nothing, create a stub `wiki/techniques/<area>/<slug>.md` (frontmatter + a `## Observed during <engagement>` section built from your findings) before proceeding, so the gap fills instead of silently recurring.
+## Attack surface (ranked - spend the zero-auth signal before any auth attempt)
 
-## Scope Check
-- Confirm target is in scope for credential testing
-- Read Deadends.md - check if spray already run against this tenant
+**Fingerprint (target is M365/Entra) when you see:** `*.onmicrosoft.com`, `*-my.sharepoint.com`, `login.microsoftonline.com` redirects, `enterpriseregistration.*` records, or "Microsoft 365" in tech-stack notes.
 
-## When to Use
-Target has: `*.onmicrosoft.com`, `*-my.sharepoint.com`, `login.microsoftonline.com` redirects, `enterpriseregistration.*` records, or "Microsoft 365" in tech-stack notes.
+1. **Tenant discovery** - zero auth, zero lockout. Namespace type, tenant ID, SharePoint presence.
+2. **User enumeration via OneDrive differential** - zero auth, zero lockout. Build the full user list here; it costs nothing against the lockout counter, so do it exhaustively before touching auth.
+3. **Auth (ROPC) - LAST, and hard-capped.** Only after 1 and 2 are done. This is the ONLY step that burns the Smart Lockout budget: at most 1-2 attempts per user, ever. See the math below; the ROPC helper enforces it.
 
 ## AADSTS Code Reference (Memorize)
 
@@ -43,6 +46,8 @@ Codes {53003, 50076, 50079, 50158, 530003} = password confirmed valid. Microsoft
 - With 1 attempt/user, lockout is mathematically impossible
 - Any AADSTS50053 = pre-existing lockout from another actor
 
+This cap is stricter than the `hunt-core` generic enumeration ceiling and overrides it. Never batch a password list against a user, never loop the ROPC helper without its per-email attempt file, and never re-run a user that already spent its attempt. If a step would exceed 1-2 attempts/user, stop and reduce it.
+
 ## Tenant Discovery
 ```bash
 msftrecon -d client.example
@@ -62,6 +67,7 @@ curl -sk "https://<tenant>-my.sharepoint.com/personal/<user>_<domain>_com/_layou
 Signal: OneDrive 404 + ROPC AADSTS50126 = functional/shared mailbox account (no OneDrive license, has password) = prime target for spray (historically MFA-exempt).
 
 ## ROPC Validation (Single-Attempt Pattern)
+`HARD_CAP = 1` is load-bearing, not a default. The per-email attempt file is what keeps step 3 inside the Smart Lockout math above - do not remove it, do not raise the cap, do not call `attempt()` in a bare list loop.
 ```python
 import urllib.request, urllib.parse, ssl, json, os
 
@@ -115,25 +121,26 @@ After finding valid credential (AADSTS53003/50076/etc), document CA policy:
 - Note if CA is per-app or universal
 - If universal CA: document as "valid credential, external access blocked by CA - phishing/AiTM required for exploitation"
 
-## FIND Output
+## Confirmation gate
 
-If valid credential found (AADSTS50076/53003/etc):
-```
-Create Vulns/Research/FIND-XXX-HIGH-m365-valid-credential-<tenant>.md
-Note: CRITICAL if CA bypassed and token obtained; HIGH if password valid but CA blocks
-Add row to Vuln-index.md
-```
+M365/Entra specific. Adds to the `hunt-core` gate, does not replace it.
 
-If unlimited spray endpoint found (no MFA, no rate limit):
-```
-Create Vulns/Research/FIND-XXX-HIGH-m365-no-ratelimit-<endpoint>.md
-```
+**NOT confirmation:** a valid username from OneDrive enumeration alone (200 / ~57KB body proves the account exists and is licensed, never that it is accessible); an AADSTS error code read in isolation - especially AADSTS50126 (wrong password: proves only that the user EXISTS) and AADSTS50034 (no user). An error code is not a token. A "CA bypass" inferred from a block code (AADSTS53003) without an actually issued access token - 53003 proves the password, it does NOT prove you got past Conditional Access.
 
-If path exhausted (all users non-existent or locked):
-```
-Append to Deadends.md: - [ ] M365 spray on <tenant> -- all users AADSTS50034 or pre-locked, tenant hardened
-```
+**IS confirmation - valid credential:** ROPC returns an `access_token` (`VALID_TOKEN`), OR the login returns one of the strictly-post-validation codes {53003, 50076, 50079, 50158, 530003} (Microsoft emits these only after the password checks out; password confirmed, access gated by MFA/CA). Reproduced.
 
-**Distill to wiki (when confirmed):** if the finding is a reusable Conditional Access bypass or OneDrive enumeration method, stage a GENERIC wiki candidate now (no client host): `python3 scripts/wiki-stage.py --kind technique --slug <slug> --target-page techniques/cloud/azure-ad-enumerate.md` (Conditional Access bypass: `--target-page techniques/cloud/azure-ad-conditional-access-policy.md`). Promote later via `scripts/wiki-promote.py`.
+**IS confirmation - Conditional Access bypass:** an `access_token` actually obtained through a client_id / flow the policy fails to cover (not merely a 53003 on one client), reproduced in a clean run.
 
-Report: Status + files created.
+## Chaining
+
+Confirmed credential + obtained token -> hand off to `hunt-cloud` (Azure / Graph post-auth enumeration) or `hunt-federation` (AiTM / token replay when CA blocks direct ROPC). A Federated namespace (ADFS) -> `hunt-auth` legacy-protocol matrix instead of ROPC.
+
+## Severity
+
+| Outcome | Severity |
+|---|---|
+| CA bypassed and access token obtained (data / Graph access) | critical |
+| Valid password confirmed but MFA / CA blocks token issuance | high |
+| Unauthenticated user-enum / no rate-limit endpoint (enables spray) | high |
+
+Distill (when confirmed): reusable CA bypass or OneDrive enumeration method, GENERIC, no client host -> `python3 scripts/wiki-stage.py --kind technique --slug <slug> --target-page techniques/cloud/azure-ad-enumerate.md` (CA bypass: `python3 scripts/wiki-stage.py --kind technique --slug <slug> --target-page techniques/cloud/azure-ad-conditional-access-policy.md`).

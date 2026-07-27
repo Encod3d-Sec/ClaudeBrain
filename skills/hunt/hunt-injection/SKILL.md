@@ -5,19 +5,16 @@ description: GraphQL IDOR/auth-bypass, XXE file-read/SSRF (SVG/DOCX/SAML), SSTI 
 
 # Hunt: GraphQL / XXE / SSTI
 
-## Pre-Attack: Wiki Query (MANDATORY)
+**Assumes `hunt-core`** for the scope gate, two-account rule, confirmation gate, enumeration limits, stop conditions, wiki protocol, FIND output, and Deadends. Do not re-derive any of that here.
+
+## Wiki
+
 ```
-qmd_query "GraphQL XXE SSTI injection" via wiki-search MCP -> read matching technique page if found.
+qmd_query "SSTI XXE GraphQL injection template injection XML external entity" via wiki-search MCP
 ```
-Apply known introspection bypass and XXE OOB techniques already documented. Payload arsenals: `wiki/payloads/{graphql,xxe,ssti,ldap,xpath,crlf}.md`, [[xslt]] payloads.
-Other XML-family surfaces: [[soap-attacks]] (SOAP/JAX-WS auth-bypass and threadlocal issues), [[xslt-injection]] (server-side XSLT transform -> SSRF/LFI/RCE via `document()`/extension functions).
 
-
-**Self-heal:** If the wiki query returns nothing, create a stub `wiki/techniques/<area>/<slug>.md` (frontmatter + a `## Observed during <engagement>` section built from your findings) before proceeding, so the gap fills instead of silently recurring.
-
-## Scope Check
-- Confirm target is in scope
-- Read Deadends.md - skip paths already marked exhausted
+Hub: [[web-moc]] (live web index). Primary page: [[ssti]]. Payload arsenals: `wiki/payloads/{ssti,xxe,graphql,xslt}.md`.
+Anchors: [[xxe]], [[graphql-attacks]], [[xslt-injection]] (server-side XSLT injection, payloads [[xslt]]).
 
 ---
 
@@ -39,22 +36,26 @@ curl -s -X POST https://target.com/graphql \
 ```
 If blocked, try: `{"query":"{ __typename }"}`
 
-2. Use InQL (Burp extension) or graphql-voyager to map schema
+2. Use InQL (Burp extension) or graphql-voyager to map schema. Push load-bearing queries/mutations to **Burp Repeater** (`Skill(hunt-burp)` / the Burp MCP) so the operator can replay them.
 3. Find REST/GraphQL overlap - resources modifiable via BOTH APIs
 4. Test IDOR: replay queries/mutations with another user's object IDs
 5. Test authorization: lower-privilege user calling admin mutations
 6. Test for persistent privilege after REST revokes access - GraphQL re-grants?
 
+### Evasion
+Introspection disabled -> `{"query":"{ __typename }"}` confirms GraphQL is live; then field-suggestion mining (typo a field, the error often names valid ones), alias-based enumeration for parallel object access, and query batching (array body) to bypass per-request rate limits and some auth checks.
+
 ---
 
 ## XXE
 
-### Attack Surface
+### Attack Surface (ranked)
 ```
 /upload  /import  /parse  /convert  /saml/acs  /soap/*
 Content-Type: application/xml or text/xml
 SVG, DOCX, XLSX, PPTX file upload features
 ```
+Rank: SAML ACS and document/office upload converters first (parsers there routinely resolve external entities), then any endpoint you can flip to `Content-Type: application/xml`.
 
 ### Classic File Read
 ```xml
@@ -84,7 +85,8 @@ SVG, DOCX, XLSX, PPTX file upload features
 <!ENTITY xxe SYSTEM "http://169.254.169.254/latest/meta-data/iam/security-credentials/">
 ```
 
-**OOB Gate:** blind XXE requires OOB DNS/HTTP callback confirmation. When you plant a blind/OOB XXE payload, append a row to `targets/<eng>/oob.md`: `| <token> | <sink url+param> | xxe | <date> | waiting | |` (columns: token | sink | class | planted | status | source, where token = your unique interactsh/Collaborator label). The recon-capture hook auto-correlates incoming callbacks to flip the row to HIT and SessionStart surfaces HITs; a HIT row is the confirmation gate to scaffold the FIND. Do NOT claim a blind XXE without a HIT row.
+### Evasion
+XML/DTD rejected -> switch vector (SVG/DOCX/XLSX/PPTX upload, or a `Content-Type: application/xml` swap on a JSON endpoint), UTF-16/UTF-7 re-encode the payload, wrap the leaked file through `php://filter/convert.base64-encode/resource=` for binary/PHP source, and use parameter entities + an external DTD when the inline DOCTYPE is blocked.
 
 ---
 
@@ -117,38 +119,54 @@ ${7*7}       -> 49 = Freemarker / Velocity / SpEL
 # Spring Thymeleaf SpEL
 *{T(java.lang.Runtime).getRuntime().exec('id')}
 ```
+Prove RCE with a harmless command (`id` / `whoami`) first - as the payloads above do. Never lead with a destructive command to demonstrate execution.
 
-### Where to Test
-Name/bio/description fields, email templates, invoice names, PDF generators, URL path parameters, search queries reflected in results, HTTP headers reflected in responses.
+### Where to Test (ranked)
+Highest yield first: PDF/invoice generators and email-template fields (server-side render by design), then name/bio/description fields, invoice names, search queries reflected in results, URL path parameters, and HTTP headers reflected in responses.
 
-## FIND Output
+### Evasion
+`{{7*7}}` filtered or returned literally -> cycle every engine syntax above, then bypass keyword filters via attribute-access variants (`request["application"]` vs `request.application`), string concatenation to rebuild blocked names, and hex/unicode escapes. WAF on `__class__` -> `|attr('__class__')`.
 
-If GraphQL IDOR confirmed:
+---
+
+## Chaining
+- **SSTI -> RCE.** Evaluation confirmed -> escalate to command execution with the engine payload above (safe command first). For sandbox-escape gadget chains and OOB-blind RCE, hand off to `hunt-rce`.
+- **XXE -> SSRF / file read.** Point the external entity at `http://169.254.169.254/...` for cloud metadata or an internal service; for the full SSRF surface (redirect bypass, protocol smuggling, Collaborator-gated blind) hand off to `hunt-ssrf`. File read escalates to source/config disclosure and, through those, to further creds.
+- **GraphQL IDOR / auth bypass -> object enumeration.** Nested-resolver and `node(id:)` traversal are IDOR - hand off to `hunt-idor` (two-account method) or `hunt-api` (BOLA/BFLA, mass assignment, batching).
+
+## Confirmation gate
+
+Per `hunt-core`. Reproduce every claim in a clean session before scaffolding a FIND; a response body on its own is not proof.
+
+**SSTI - NOT confirmation:** a `{{7*7}}` (or `${7*7}` / `<%= 7*7 %>`) reflected back *literally* as `{{7*7}}`; an error naming the template engine; input echoed unchanged.
+**SSTI - IS confirmation:** the expression is *evaluated* - `{{7*7}}` renders `49`, `{{7*'7'}}` renders `7777777`, or a rendered object comes back (e.g. a dumped `config` object). RCE is confirmed only when a safe command (`id` / `whoami`) returns its real output.
+
+**XXE - NOT confirmation:** a parser error, a `500`, or "entity not allowed" - these prove XML is parsed, not that the entity resolved.
+**XXE - IS confirmation:** the external entity resolves to real content - `/etc/passwd` (or metadata creds) reflected in the response, OR an out-of-band callback.
+
+**Blind XXE / blind SSTI need an OOB HIT.** When you plant a blind/OOB payload (parameter-entity XXE, or SSTI with no reflected sink), fire it at your own interactsh/Collaborator listener and append a row to `targets/<eng>/oob.md`:
 ```
-Create Vulns/Research/FIND-XXX-HIGH-graphql-idor-<host>.md
+| <token> | <sink url+param> | xxe | <date> | waiting | |
+```
+(columns: token | sink | class | planted | status | source; token = your unique interactsh/Collaborator label). The recon-capture hook flips the row waiting -> HIT on the incoming callback and SessionStart surfaces HITs; that HIT row is the confirmation gate to scaffold the FIND. Do NOT claim a blind XXE (or blind SSTI) without a HIT row.
+
+## Severity
+
+| Confirmed | Severity |
+|---|---|
+| SSTI -> RCE | critical |
+| SSTI, sandboxed (no RCE) | medium |
+| XXE file read | high (critical if cloud-metadata creds retrieved) |
+| XXE -> SSRF | high |
+| GraphQL IDOR / auth bypass | high |
+
+**Distill when confirmed** (GENERIC, no client host): `python3 scripts/wiki-stage.py --kind technique --slug <slug> --target-page techniques/web/ssti.md` (XXE -> `techniques/web/xxe.md`; GraphQL -> `techniques/web/graphql-attacks.md`).
+
+## Deadends
+
+```
+Append: - [ ] XXE on <host> -- XML rejected (JSON-only), SVG sanitized, parameter entities blocked;
+              SSTI -- {{7*7}} literal across all engines; GraphQL -- introspection off, no field suggestions
 ```
 
-If XXE file read confirmed:
-```
-Create Vulns/Research/FIND-XXX-HIGH-xxe-<host>.md
-Severity CRITICAL if cloud metadata creds retrieved
-```
-
-If SSTI RCE confirmed:
-```
-Create Vulns/Research/FIND-XXX-CRITICAL-ssti-rce-<host>.md
-```
-
-If SSTI confirmed but sandboxed (no RCE):
-```
-Create Vulns/Research/FIND-XXX-MEDIUM-ssti-<host>.md
-```
-
-If path exhausted:
-```
-Append to Deadends.md: - [ ] XXE on <host> -- XML content rejected (JSON-only), SVG sanitized; SSTI -- {{7*7}} returned literally
-```
-
-**Distill to wiki (when confirmed):** if the finding is a reusable XXE bypass or SSTI chain, stage a GENERIC wiki candidate now (no client host): `python3 scripts/wiki-stage.py --kind technique --slug <slug> --target-page techniques/web/xxe.md` (SSTI findings: `--target-page techniques/web/ssti.md`). Promote later via `scripts/wiki-promote.py`.
-
-Report: Status + files created.
+Record what you tried, not just that it failed. The next pass needs the boundary.

@@ -5,20 +5,27 @@ description: RCE hunting - template injection, YAML/XML deserialization, depende
 
 # Hunt: Remote Code Execution
 
-## Pre-Attack: Wiki Query (MANDATORY)
+**Assumes `hunt-core`** for the scope gate, two-account rule, confirmation gate, enumeration limits, stop conditions, wiki protocol, FIND output, and Deadends. Do not re-derive any of that here.
+
+## Wiki
+
 ```
-qmd_query "RCE remote code execution template injection" via wiki-search MCP -> read matching technique page if found.
+qmd_query "remote code execution command injection template injection deserialization CVE" via wiki-search MCP
 ```
-Apply known CVEs and template injection payloads already documented.
 
+Hub: [[web-moc]] (live web index). Primary page: [[os-command-injection]]. Payload arsenal: `wiki/payloads/command-injection.md`.
+Anchors: [[ssti]], [[insecure-deserialization]].
 
-**Self-heal:** If the wiki query returns nothing, create a stub `wiki/techniques/<area>/<slug>.md` (frontmatter + a `## Observed during <engagement>` section built from your findings) before proceeding, so the gap fills instead of silently recurring.
+## Attack surface signals
 
-## Scope Check
-- Confirm target is in scope
-- Read Deadends.md - skip paths already marked exhausted
+**Rank before probing.** Not every free-text field is equally likely to reach an interpreter:
 
-## Attack Surface Signals
+- **Config / template editors** - Nomad, CI job specs, notification templates: user text is compiled, not just stored.
+- **Import / render / export endpoints** - `?template=`, `?url=`, document generation, PDF/HTML renderers.
+- **Admin and management consoles** - richer surface, weaker input handling, often the shortest path.
+- **Deserialization sinks** - any endpoint eating a serialized blob (magic bytes, `!!` YAML tags, Java `AC ED`, PHP `O:`).
+- **Version-pinned components** - a fingerprinted Apache 2.4.49 / Spring Cloud Function beats blind probing.
+
 URL patterns: `/management-console/*`, `/admin/settings/*`, `/webhook/*`, `/render?template=`, `/import?url=`
 
 Tech stack signals:
@@ -70,9 +77,11 @@ curl -X POST http://target:8080/functionRouter \
   --data "x"
 ```
 
-7. Verify all RCE with OOB callback before claiming: use interactsh DNS token. When you plant a blind/OOB RCE payload, append a row to `targets/<eng>/oob.md`: `| <token> | <sink url+param> | rce | <date> | waiting | |` (columns: token | sink | class | planted | status | source, where token = your unique interactsh label). The recon-capture hook auto-correlates incoming callbacks to flip the row to HIT and SessionStart surfaces HITs; a HIT row is the confirmation gate to scaffold the FIND. Do NOT claim a blind RCE without a HIT row.
-8. Chain: low-severity misconfig (CSRF, traversal) + RCE primitive = critical
-9. **Distill to wiki (when confirmed):** if the finding is a reusable template bypass or a new CVE, stage a GENERIC wiki candidate now (no client host): `python3 scripts/wiki-stage.py --kind technique --slug <slug> --target-page techniques/web/os-command-injection.md`. Promote later via `scripts/wiki-promote.py`.
+7. Chain: low-severity misconfig (CSRF, traversal) + RCE primitive = critical
+8. **Distill (when confirmed)** a reusable template bypass / new CVE, GENERIC, no client host:
+`python3 scripts/wiki-stage.py --kind technique --slug <slug> --target-page techniques/web/os-command-injection.md`
+
+**Safe-PoC first.** Every probe above runs `id` (or a bare OOB callback), never a destructive command. Only after a callback or command output confirms the sink do you swap in a reverse shell. Never run a state-changing command (delete, overwrite, service restart) to prove exec - `id` proves it and destroys nothing.
 
 ## Template Injection RCE Payloads
 ```python
@@ -89,23 +98,54 @@ curl -X POST http://target:8080/functionRouter \
 <#assign x="freemarker.template.utility.Execute"?new()>${x("id")}
 ```
 
-## FIND Output
+## Evasion
 
-If RCE confirmed (command output returned or OOB callback received):
-```
-Create Vulns/Research/FIND-XXX-CRITICAL-rce-<host>.md
-Add row to Vuln-index.md: CRITICAL section
-```
+When a probe is filtered rather than absent, the sink may still be reachable:
 
-If template injection confirmed but sandboxed (no RCE):
-```
-Create Vulns/Research/FIND-XXX-HIGH-ssti-<host>.md
-Severity HIGH if reflected in output; MEDIUM if sandboxed
-```
+- **Command filters:** `$IFS` (or `${IFS}`) for blocked spaces, quote/backslash breaking (`c""url`, `w\get`), `base64 -d | sh`, wildcard globbing (`/???/??t`), `$(...)` / backticks, and env-var indirection.
+- **Template keyword filters:** rebuild blocked names via attribute access and concatenation (Jinja `request|attr('application')...`, `'os'` assembled from chars) rather than the literal `os`/`popen`.
+- **WAF on the body:** move the payload to the query string (or vice versa) - the eval sink in step 3b frequently lives on only one of them.
 
-If path exhausted:
-```
-Append to Deadends.md: - [ ] RCE/template injection on <host> -- probes returned literal {{7*7}}, no eval
-```
+Marker discipline (`hunt-core`): use a unique 8+ char canary in reflected/SSTI probes, never `test`, and check the baseline for it before claiming reflection.
 
-Report: Status + files created.
+## Confirmation gate
+
+**NOT confirmation:**
+- a delayed response alone - load or a slow upstream, not proof of `sleep`.
+- an error echoing your input - reflection is not execution.
+- a `500` / stack trace - a parser choking is not code running.
+- `{{7*7}}` returned literally, or a fixed `200` for every body (the eval-swallow case in 3b).
+- `49` from `{{7*7}}` on its own - that is template evaluation, not yet an exec primitive.
+
+**IS confirmation:**
+- injected command output in the response matching what you ran (e.g. `uid=... gid=...` from `id`), reproduced in a clean session against your own written steps.
+- for SSTI: `49` PLUS a follow-up payload that reaches an `os`/runtime primitive and returns its output.
+- for blind (no output channel): an out-of-band callback correlated to your planted token - see below.
+
+**Blind RCE is OOB-gated, never inferred.** Plant an interactsh / Burp Collaborator token, then append a row to `targets/<eng>/oob.md`:
+```
+| <token> | <sink url+param> | rce | <date> | waiting | |
+```
+(columns: token | sink | class | planted | status | source; token = your unique interactsh/Collaborator label). The recon-capture hook auto-correlates an incoming callback to flip the row to HIT and SessionStart surfaces HITs; a HIT row is the confirmation gate to scaffold the FIND. **Do NOT claim a blind RCE without a HIT row.**
+
+**Drive load-bearing exploit requests through Burp Repeater** (`Skill(hunt-burp)` / Burp MCP) so the operator can replay the injection; fuzz belongs in Intruder, not a hand-rolled loop.
+
+## Chaining
+
+RCE is rarely the finish line. Once exec is confirmed:
+
+- **Loot credentials from the foothold** - env vars, config files, cloud metadata, `.git-credentials`, connection strings. Hand off to `hunt-secrets`.
+- **Lateral movement** - reused creds, service tokens, and internal trust from the RCE host pivot into the domain. Hand off to `hunt-ad`.
+- **Vector-specific siblings** - a serialized-blob sink is `hunt-deserialization`; a container/orchestrator surface is `hunt-cloud`.
+
+Report the chain, not just the primitive: pre-auth RCE plus credential reuse implicates far more than the one host.
+
+## Severity
+
+| Outcome | Severity |
+|---|---|
+| Command output returned or OOB callback received (RCE) | critical |
+| SSTI reflected, reaches output but no exec primitive | high |
+| SSTI sandboxed - arithmetic only, no sandbox escape | medium |
+
+Rate on demonstrated execution, not the theoretical ceiling. **Unauthenticated / pre-auth RCE outranks post-auth by a band.** A sink you can only trigger with a precondition you cannot meet (an admin-only field, an unreachable header) lowers it.

