@@ -47,6 +47,26 @@ _ANSI_FG = {30: "#3b4048", 31: "#e05561", 32: "#8cc265", 33: "#d18f52",
             34: "#4aa5f0", 35: "#c162de", 36: "#42b3c2", 37: "#d7dae0",
             90: "#57606f", 91: "#ff616e", 92: "#a5e075", 93: "#f0a45d",
             94: "#4dc4ff", 95: "#de73ff", 96: "#4cd1e0", 97: "#ffffff"}
+
+# background palette (normal 40-47, bright 100-107) -- used for --highlight (43 = yellow).
+_ANSI_BG = {40: "#3b4048", 41: "#e05561", 42: "#8cc265", 43: "#e5c07b",
+            44: "#4aa5f0", 45: "#c162de", 46: "#42b3c2", 47: "#d7dae0",
+            100: "#57606f", 101: "#ff616e", 102: "#a5e075", 103: "#f0d060",
+            104: "#4dc4ff", 105: "#de73ff", 106: "#4cd1e0", 107: "#ffffff"}
+
+
+def apply_highlight(text, pattern):
+    """Highlight every LINE that matches pattern (regex, case-insensitive) by wrapping the
+    whole line in a yellow-highlight SGR (black on yellow) so the finding row pops in the
+    card. Whole-line reads clearer than a mid-line token. Invalid regex -> literal match."""
+    if not pattern:
+        return text
+    try:
+        rx = re.compile(pattern, re.I)
+    except re.error:
+        rx = re.compile(re.escape(pattern), re.I)
+    return "\n".join("\x1b[30;43m" + ln + "\x1b[0m" if rx.search(ln) else ln
+                     for ln in text.split("\n"))
 _ANSI_RE = re.compile(r"\x1b\[([0-9;]*)m")
 
 
@@ -74,6 +94,8 @@ def ansi_to_html(text):
                 style.append("font-weight:bold")
             elif c in _ANSI_FG:
                 style.append("color:" + _ANSI_FG[c])
+            elif c in _ANSI_BG:
+                style.append("background-color:" + _ANSI_BG[c])
         close()
         if style:
             out.append('<span style="%s">' % ";".join(style))
@@ -466,6 +488,7 @@ def main(argv=None):
     ap.add_argument("--window", help="grab a GUI window by name (xdotool+import), else full screen")
     ap.add_argument("--cmd", default="", help="command string shown in the terminal-card title bar")
     ap.add_argument("--maxlines", type=int, default=120, help="cap rendered lines (--term/--tmux)")
+    ap.add_argument("--highlight", help="regex; whole matching LINE is highlighted yellow in --term/--tmux cards, e.g. 'www-data|uid=0'")
     ap.add_argument("--history", action="store_true",
                     help="--tmux: capture the FULL pane scrollback (-S -) so long output is never truncated")
     ap.add_argument("--raw", action="store_true",
@@ -503,6 +526,7 @@ def main(argv=None):
             raw = cooked if a.raw else clean_term(cooked)    # drop the fused prompt lines
             if a.reqresp:
                 raw = colorize_session(raw)                          # comment/command/response coloring
+            raw = apply_highlight(raw, a.highlight)
             body, nlines, truncated = term_body(raw, a.maxlines)
             proc = capture(html_str=term_html(body, a.cmd or a.tmux, truncated, url=a.url_bar),
                            out=out, width=a.width,
@@ -515,6 +539,7 @@ def main(argv=None):
                 raw = clean_term(raw)
             if a.reqresp:
                 raw = colorize_session(raw)
+            raw = apply_highlight(raw, a.highlight)
             body, nlines, truncated = term_body(raw, a.maxlines)
             proc = capture(html_str=term_html(body, a.cmd, truncated, url=a.url_bar),
                            out=out, width=a.width,
