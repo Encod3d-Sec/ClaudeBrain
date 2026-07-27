@@ -57,14 +57,19 @@ def sub_id(path, span, newid):
     return path[:span[0]] + str(newid) + path[span[1]:]
 
 
+AUTH_HEADERS = ("cookie", "authorization", "x-api-key", "x-auth-token")
+
+
 def swap_auth(headers, attacker_auth):
+    # Strip ALL standard auth headers first so no owner credential survives into the attacker request
+    # (a surviving owner Authorization/Cookie would make idor-test look like the owner -> false IDOR).
+    out = [(k, v) for (k, v) in headers if k.lower() not in AUTH_HEADERS]
     if attacker_auth:
         an, av = attacker_auth.split(":", 1)
         an, av = an.strip(), av.strip()
-        out = [(k, v) for (k, v) in headers if k.lower() != an.lower()]
+        out = [(k, v) for (k, v) in out if k.lower() != an.lower()]
         out.append((an, av))
-        return out
-    return [(k, v) for (k, v) in headers if k.lower() not in ("cookie", "authorization")]
+    return out
 
 
 def build_set(req, idinfo, attacker_auth, rng):
@@ -118,55 +123,60 @@ def _raw(reqd, meta):
     return "\r\n".join(lines) + "\r\n\r\n"
 
 
+RESP_MARK = "httpResponse="
+ANNO_MARK = ", messageAnnotations="
+
+
+def parse_send_response(out):
+    """(status, body_length, body_hash16) from a Burp send_http1_request return blob
+    (Java toString: HttpRequestResponse{httpRequest=.., httpResponse=.., messageAnnotations=..}).
+    subprocess text=True already collapsed CRLF -> LF, so the header/body separator is a blank LF line.
+    Degrades to (0,0,"") on an unrecognized shape (fail-loud upstream, never a false verdict)."""
+    i = out.find(RESP_MARK)
+    if i == -1:
+        return (0, 0, "")
+    j = out.rfind(ANNO_MARK)
+    seg = out[i + len(RESP_MARK):j] if j > i else out[i + len(RESP_MARK):]
+    m = re.search(r"HTTP/\d(?:\.\d)?\s+(\d{3})", seg)   # re.search (NOT ^-anchored): tolerant of leading space
+    status = int(m.group(1)) if m else 0
+    body = seg.split("\n\n", 1)[1] if "\n\n" in seg else ""
+    return (status, len(body), hashlib.sha256(body.encode("utf-8", "ignore")).hexdigest()[:16])
+
+
 def run_live(meta):
-    """Send every request via Burp send_http1_request in ONE VM-side python; parse status+len+hash."""
     payload = {"host": meta["host"], "port": meta["port"], "https": meta["https"],
                "reqs": [{"label": r["label"], "id": r["id"], "raw": _raw(r, meta)} for r in meta["requests"]]}
     b64 = base64.b64encode(json.dumps(payload).encode()).decode()
     vm_py = r'''
-import base64, json, os, re, hashlib, subprocess
+import base64, json, os, subprocess
 cli = os.path.expanduser("~/burp-mcp-cli.py")
 P = json.loads(base64.b64decode("%s").decode())
 def send(raw):
-    args = json.dumps({"content": raw, "targetHostname": P["host"], "targetPort": P["port"],
-                       "usesHttps": P["https"]})
+    args = json.dumps({"content": raw, "targetHostname": P["host"], "targetPort": P["port"], "usesHttps": P["https"]})
     try:
-        out = subprocess.run(["python3", cli, "call", "send_http1_request", args],
-                             capture_output=True, text=True, timeout=30).stdout
+        return subprocess.run(["python3", cli, "call", "send_http1_request", args],
+                              capture_output=True, text=True, timeout=30).stdout
     except Exception:
-        return (0, 0, "")
-    # Live-verified 2026-07-27 (bridge call, real target): the return is a Java toString() blob
-    # "HttpRequestResponse{httpRequest=<raw req>, httpResponse=<raw resp>, messageAnnotations=...}".
-    # Two traps a naive "first HTTP/x.y match" + "first \r\n\r\n split" both fall into:
-    #  1. header values contain commas (Date/Allow), so slicing on ", " is unsafe -> slice by the
-    #     httpResponse=/messageAnnotations= markers instead.
-    #  2. subprocess.run(text=True) applies universal-newline decoding, so by the time `out` is a
-    #     str the wire's \r\n is already bare \n -> split on "\n\n", not "\r\n\r\n".
-    i = out.find("httpResponse=")
-    if i == -1:
-        return (0, 0, "")
-    resp = out[i + len("httpResponse="):]
-    j = resp.rfind(", messageAnnotations=")
-    if j != -1:
-        resp = resp[:j]
-    m = re.search(r"^HTTP/\d(?:\.\d)?\s+(\d{3})", resp)
-    status = int(m.group(1)) if m else 0
-    body = resp.split("\n\n", 1)[-1] if "\n\n" in resp else resp
-    return (status, len(body), hashlib.sha256(body.encode("utf-8", "ignore")).hexdigest()[:16])
-res = []
-for r in P["reqs"]:
-    s, ln, h = send(r["raw"])
-    res.append({"label": r["label"], "id": r["id"], "status": s, "length": ln, "hash": h})
-print(json.dumps(res))
+        return ""
+print(json.dumps([{"label": r["label"], "id": r["id"], "raw": send(r["raw"])} for r in P["reqs"]]))
 ''' % b64
     py_b64 = base64.b64encode(vm_py.encode()).decode()
-    cmd = "echo '%s' | base64 -d > /tmp/idor_sweep_send.py; python3 /tmp/idor_sweep_send.py" % py_b64
-    r = subprocess.run(["bash", VM_SH, cmd], capture_output=True, text=True, timeout=180)
+    cmd = "echo '%s' | base64 -d > /tmp/idor_sweep_send.py; python3 /tmp/idor_sweep_send.py; rm -f /tmp/idor_sweep_send.py" % py_b64
+    to = max(60, 30 * len(meta["requests"]) + 30)
     try:
-        resps = json.loads(r.stdout.strip().splitlines()[-1])
+        r = subprocess.run(["bash", VM_SH, cmd], capture_output=True, text=True, timeout=to)
+    except subprocess.TimeoutExpired:
+        print("idor-sweep: bridge send timed out after %ds" % to, file=sys.stderr)
+        return 1
+    try:
+        raws = json.loads(r.stdout.strip().splitlines()[-1])
     except Exception:
         print("idor-sweep: bridge send failed -> %s%s" % (r.stdout[-300:], r.stderr[-300:]), file=sys.stderr)
         return 1
+    resps = []
+    for x in raws:
+        st, ln, h = parse_send_response(x["raw"])
+        resps.append({"label": x["label"], "id": x["id"], "status": st, "length": ln, "hash": h})
     v = verdict(resps)
     print("id | label | status | len | ")
     for x in resps:
@@ -223,7 +233,7 @@ def main():
     if a.dry_run:
         print(json.dumps(meta, indent=2))
         return 0
-    return run_live(meta)   # live send + verdict; the function body is added in Task 2
+    return run_live(meta)   # live send + verdict
 
 
 if __name__ == "__main__":

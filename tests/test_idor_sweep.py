@@ -138,3 +138,24 @@ def test_verdict_counts_enum_accessible():
     v = idor.verdict([_r("owner-baseline", 5, 200, 100, "H"), _r("idor-test", 5, 403, 0, "X"),
                       _r("enum", 4, 200, 90, "A"), _r("enum", 6, 404, 0, "B")])
     assert v["enum_accessible"] == 1 and v["enum_total"] == 2
+
+
+def test_swap_auth_strips_all_owner_auth_headers():
+    hdrs = [("Host", "h"), ("Cookie", "session=OWNER"),
+            ("Authorization", "Bearer OWNER"), ("Accept", "*/*")]
+    out = idor.swap_auth(hdrs, "Cookie: session=ATTACKER")
+    keys = {k.lower(): v for k, v in out}
+    assert keys.get("cookie") == "session=ATTACKER"
+    assert "authorization" not in keys            # owner bearer must NOT survive
+    assert keys.get("accept") == "*/*"             # non-auth headers preserved
+
+
+def test_parse_send_response_extracts_status_and_len():
+    blob = ("HttpRequestResponse{httpRequest=GET / HTTP/1.1, "
+            "httpResponse=HTTP/2 200 OK\nContent-Length: 5\n\nhello, messageAnnotations=NONE}")
+    st, ln, h = idor.parse_send_response(blob)
+    assert st == 200 and ln == 5 and len(h) == 16
+
+
+def test_parse_send_response_degrades_on_unknown_shape():
+    assert idor.parse_send_response("garbage no markers") == (0, 0, "")
