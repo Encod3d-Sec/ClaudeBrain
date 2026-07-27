@@ -81,12 +81,9 @@ def build_set(req, idinfo, attacker_auth, rng):
 
 
 def host_in_scope(host, in_scope):
-    host = host.lower()
-    for e in in_scope:
-        e = e.strip().lower().split("/")[0]  # ignore CIDR suffix for a host compare
-        if host == e or host.endswith("." + e):
-            return True
-    return False
+    host = (host or "").lower().strip()
+    return any(_engagement._scope_entry_match(host, (e or "").lower().strip(), strict=True)
+               for e in in_scope)
 
 
 def _die(msg, code=2):
@@ -106,6 +103,8 @@ def main():
     ap.add_argument("--no-https", dest="https", action="store_false")
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args()
+    if a.attacker_auth and ":" not in a.attacker_auth:
+        _die("--attacker-auth must be 'Name: value' (got %r)" % a.attacker_auth)
 
     d = os.path.join(VAULT, "targets", a.eng)
     if not os.path.isdir(d):
@@ -113,11 +112,13 @@ def main():
     sc = _engagement.scope(d)
     if sc.get("passive_only"):
         _die("passive_only is set in scope.md; idor-sweep is an ACTIVE test, refusing")
+    if not sc["in_scope"]:
+        _die("scope.md has no in_scope entries; add the target before running idor-sweep (active tool)")
     try:
         req = parse_request(open(a.reqfile, encoding="utf-8", errors="ignore").read())
     except OSError as e:
         _die("cannot read reqfile: %s" % e)
-    if sc["in_scope"] and not host_in_scope(req["host"], sc["in_scope"]):
+    if not host_in_scope(req["host"], sc["in_scope"]):
         _die("target host %r not in scope.md in_scope; refusing" % req["host"])
     idinfo = find_id(req["path"], a.id_regex)
     if not idinfo:

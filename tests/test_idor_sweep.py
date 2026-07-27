@@ -80,3 +80,26 @@ def test_no_numeric_id_fails_loud(tmp_path):
     r = _run(tmp_path, "--dry-run", "e5", rf)
     assert r.returncode == 2
     assert "no numeric id" in r.stderr.lower()
+
+
+def test_empty_in_scope_refused(tmp_path):
+    _mk(tmp_path, "e6", [])
+    rf = _req(tmp_path, "r.txt", REQ)
+    r = _run(tmp_path, "--dry-run", "e6", rf)
+    assert r.returncode == 2
+    assert "no in_scope entries" in r.stderr.lower()
+
+
+def test_url_form_scope_entry_matches_host(tmp_path):
+    _mk(tmp_path, "e7", ["https://shop.example.com"])
+    rf = _req(tmp_path, "r.txt", REQ)
+    r = _run(tmp_path, "--dry-run", "e7", rf)
+    assert r.returncode == 0, r.stderr
+
+
+def test_bad_attacker_auth_clean_error(tmp_path):
+    _mk(tmp_path, "e8", ["shop.example.com"])
+    rf = _req(tmp_path, "r.txt", REQ)
+    r = _run(tmp_path, "--dry-run", "e8", rf, "--attacker-auth", "NoColonHere")
+    assert r.returncode == 2
+    assert "Name: value" in r.stderr
