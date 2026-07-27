@@ -91,6 +91,97 @@ def _die(msg, code=2):
     sys.exit(code)
 
 
+def verdict(resps):
+    owner = next(r for r in resps if r["label"] == "owner-baseline")
+    idor = next(r for r in resps if r["label"] == "idor-test")
+    enum = [r for r in resps if r["label"] == "enum"]
+    out = {"owner_status": owner["status"]}
+    if not (200 <= owner["status"] < 300):
+        out["idor"] = "WARN: baseline not 2xx (stale session / wrong request?)"
+    elif 200 <= idor["status"] < 300 and (
+            idor["hash"] == owner["hash"]
+            or abs(idor["length"] - owner["length"]) <= 0.05 * max(owner["length"], 1)):
+        out["idor"] = "LIKELY IDOR"
+    elif idor["status"] in (401, 403, 404) or idor["length"] == 0:
+        out["idor"] = "authorization enforced"
+    else:
+        out["idor"] = "inconclusive (status %d)" % idor["status"]
+    out["enum_accessible"] = sum(1 for r in enum if 200 <= r["status"] < 300)
+    out["enum_total"] = len(enum)
+    return out
+
+
+def _raw(reqd, meta):
+    """Build the raw HTTP/1.1 request text for one request dict."""
+    lines = ["%s %s HTTP/1.1" % (meta["method"], reqd["path"])]
+    lines += ["%s: %s" % (k, v) for (k, v) in reqd["headers"]]
+    return "\r\n".join(lines) + "\r\n\r\n"
+
+
+def run_live(meta):
+    """Send every request via Burp send_http1_request in ONE VM-side python; parse status+len+hash."""
+    payload = {"host": meta["host"], "port": meta["port"], "https": meta["https"],
+               "reqs": [{"label": r["label"], "id": r["id"], "raw": _raw(r, meta)} for r in meta["requests"]]}
+    b64 = base64.b64encode(json.dumps(payload).encode()).decode()
+    vm_py = r'''
+import base64, json, os, re, hashlib, subprocess
+cli = os.path.expanduser("~/burp-mcp-cli.py")
+P = json.loads(base64.b64decode("%s").decode())
+def send(raw):
+    args = json.dumps({"content": raw, "targetHostname": P["host"], "targetPort": P["port"],
+                       "usesHttps": P["https"]})
+    try:
+        out = subprocess.run(["python3", cli, "call", "send_http1_request", args],
+                             capture_output=True, text=True, timeout=30).stdout
+    except Exception:
+        return (0, 0, "")
+    # Live-verified 2026-07-27 (bridge call, real target): the return is a Java toString() blob
+    # "HttpRequestResponse{httpRequest=<raw req>, httpResponse=<raw resp>, messageAnnotations=...}".
+    # Two traps a naive "first HTTP/x.y match" + "first \r\n\r\n split" both fall into:
+    #  1. header values contain commas (Date/Allow), so slicing on ", " is unsafe -> slice by the
+    #     httpResponse=/messageAnnotations= markers instead.
+    #  2. subprocess.run(text=True) applies universal-newline decoding, so by the time `out` is a
+    #     str the wire's \r\n is already bare \n -> split on "\n\n", not "\r\n\r\n".
+    i = out.find("httpResponse=")
+    if i == -1:
+        return (0, 0, "")
+    resp = out[i + len("httpResponse="):]
+    j = resp.rfind(", messageAnnotations=")
+    if j != -1:
+        resp = resp[:j]
+    m = re.search(r"^HTTP/\d(?:\.\d)?\s+(\d{3})", resp)
+    status = int(m.group(1)) if m else 0
+    body = resp.split("\n\n", 1)[-1] if "\n\n" in resp else resp
+    return (status, len(body), hashlib.sha256(body.encode("utf-8", "ignore")).hexdigest()[:16])
+res = []
+for r in P["reqs"]:
+    s, ln, h = send(r["raw"])
+    res.append({"label": r["label"], "id": r["id"], "status": s, "length": ln, "hash": h})
+print(json.dumps(res))
+''' % b64
+    py_b64 = base64.b64encode(vm_py.encode()).decode()
+    cmd = "echo '%s' | base64 -d > /tmp/idor_sweep_send.py; python3 /tmp/idor_sweep_send.py" % py_b64
+    r = subprocess.run(["bash", VM_SH, cmd], capture_output=True, text=True, timeout=180)
+    try:
+        resps = json.loads(r.stdout.strip().splitlines()[-1])
+    except Exception:
+        print("idor-sweep: bridge send failed -> %s%s" % (r.stdout[-300:], r.stderr[-300:]), file=sys.stderr)
+        return 1
+    v = verdict(resps)
+    print("id | label | status | len | ")
+    for x in resps:
+        print("%s | %s | %s | %s" % (x["id"], x["label"], x["status"], x["length"]))
+    print("\nVERDICT: %s  (baseline %s; %d/%d enum neighbors accessible)" % (
+        v["idor"], v["owner_status"], v["enum_accessible"], v["enum_total"]))
+    if v["idor"] == "LIKELY IDOR":
+        sch = "https" if meta["https"] else "http"
+        print("PoC it:  scripts/capture.sh burp %s idor-%s %s %s %s %s %s" % (
+            "<eng>", meta["host"], meta["host"], meta["port"], str(meta["https"]).lower(),
+            meta["method"], meta["requests"][0]["path"]))
+        print("Then scaffold a FIND per hunt-idor (never auto-written).")
+    return 0
+
+
 def main():
     ap = argparse.ArgumentParser(prog="idor-sweep.py")
     ap.add_argument("eng")

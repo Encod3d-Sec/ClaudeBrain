@@ -103,3 +103,38 @@ def test_bad_attacker_auth_clean_error(tmp_path):
     r = _run(tmp_path, "--dry-run", "e8", rf, "--attacker-auth", "NoColonHere")
     assert r.returncode == 2
     assert "Name: value" in r.stderr
+
+
+import importlib.util
+_spec = importlib.util.spec_from_file_location(
+    "idor_sweep", pathlib.Path(__file__).resolve().parents[1] / "scripts" / "burp" / "idor-sweep.py")
+idor = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(idor)
+
+
+def _r(label, id, status, length, h):
+    return {"label": label, "id": id, "status": status, "length": length, "hash": h}
+
+
+def test_verdict_flags_likely_idor_on_matching_body():
+    v = idor.verdict([_r("owner-baseline", 5, 200, 1000, "H"),
+                      _r("idor-test", 5, 200, 1000, "H")])
+    assert v["idor"] == "LIKELY IDOR"
+
+
+def test_verdict_authorization_enforced_on_403():
+    v = idor.verdict([_r("owner-baseline", 5, 200, 1000, "H"),
+                      _r("idor-test", 5, 403, 0, "X")])
+    assert v["idor"] == "authorization enforced"
+
+
+def test_verdict_warns_when_baseline_not_2xx():
+    v = idor.verdict([_r("owner-baseline", 5, 401, 0, "X"),
+                      _r("idor-test", 5, 200, 1000, "H")])
+    assert "WARN" in v["idor"]
+
+
+def test_verdict_counts_enum_accessible():
+    v = idor.verdict([_r("owner-baseline", 5, 200, 100, "H"), _r("idor-test", 5, 403, 0, "X"),
+                      _r("enum", 4, 200, 90, "A"), _r("enum", 6, 404, 0, "B")])
+    assert v["enum_accessible"] == 1 and v["enum_total"] == 2
