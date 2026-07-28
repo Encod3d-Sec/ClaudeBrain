@@ -45,7 +45,7 @@ If ClaudeBrain saves you time on an engagement, a [star](https://github.com/Enco
 ## Features
 
 - **Wiki-first methodology.** 500+ markdown technique pages indexed by `qmd` for semantic and keyword search over an MCP server (`wiki-search`). Every hunt skill queries the wiki *before* attacking, so knowledge compounds instead of scattering.
-- **Hunt skills** (`skills/hunt/hunt-*`): one per vulnerability class, XSS, SQLi, SSRF, IDOR, RCE, auth bypass, OAuth/SAML federation, deserialization, cloud (AWS/Azure/GCP), Active Directory, API (OWASP API Top 10), LLM/AI, request smuggling, cache poisoning, and more. Each is wiki-first, out-of-band-gated for blind bugs, and emits a uniform FIND finding schema.
+- **Hunt skills** (`skills/hunt/hunt-*`): one per vulnerability class, XSS, SQLi, SSRF, IDOR, RCE, auth bypass, OAuth/SAML federation, deserialization, cloud (AWS/Azure/GCP), Active Directory, local Windows and macOS privilege escalation, API (OWASP API Top 10), LLM/AI, ICS/OT, request smuggling, cache poisoning, and more. Each is wiki-first, out-of-band-gated for blind bugs, and emits a uniform FIND finding schema.
 - **Deterministic automation (hooks).** Plain Python that fires on Claude Code lifecycle events:
   - `hunt-trigger.py` (UserPromptSubmit) matches your prompt against `skills/hunt/triggers.json` and loads the matching hunt skill.
   - `recon-capture.py` (PostToolUse) fingerprints discovered tech against `scripts/playbook.json`, routes to targeted tests, and auto-captures results into engagement state and PoC evidence.
