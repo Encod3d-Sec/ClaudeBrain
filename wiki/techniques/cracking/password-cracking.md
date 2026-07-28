@@ -281,3 +281,38 @@ john --show hashes.txt
 
 - CPTS Password Attacks module (HTB Academy)
 - CPTS sections: Intro to Password Cracking, John, Hashcat, Custom Wordlists, SAM/LSASS/NTDS extraction, Linux auth
+
+## MySQL 8 `caching_sha2_password` (`$A$005$...`) -> hashcat -m 7401
+
+`mysql.user.authentication_string` on MySQL 8 is `$A$<iter>$<20-byte salt><43-char digest>`, where
+the salt is RAW BYTES (often non-printable, and it can contain a newline that breaks a line-based
+hash file). Hashcat mode 7401 wants a different layout: `$mysql$A$005*<salt-hex>*<digest-hex>`.
+
+Any account with `SELECT` on `mysql.user` can dump them; convert in SQL so the raw bytes never
+have to survive a shell:
+
+```sql
+SELECT user, CONCAT('$mysql', SUBSTR(authentication_string,1,3),
+    LPAD(CONV(SUBSTR(authentication_string,4,3),16,10),4,0),
+    '*', INSERT(HEX(SUBSTR(authentication_string,8)),41,0,'*')) AS hash
+FROM mysql.user
+WHERE plugin = 'caching_sha2_password'
+  AND authentication_string NOT LIKE '%INVALIDSALTANDPASSWORD%';
+```
+
+`HEX(SUBSTR(...,8))` hexes salt+digest together; inserting `*` at offset 41 splits after the
+20-byte salt. The `NOT LIKE` drops the `mysql.infoschema`/`session`/`sys` placeholder rows.
+
+```sh
+hashcat -m 7401 -a 0 dev.hash /usr/share/wordlists/rockyou.txt
+```
+
+Gotchas:
+- It is sha256crypt with 5000 iterations, so it is SLOW (low thousands of H/s on CPU). Cut the
+  file to the one interesting account rather than cracking every row.
+- `root@localhost` is usually `auth_socket` (empty `authentication_string`) - it is not crackable
+  and does not need to be: it means the OS root user logs in without a password.
+- An account in `mysql.user` that no application config references is a deliberate lead; DBMS
+  passwords are prime candidates for OS-account reuse (see [[linux-privesc]]).
+
+<!-- promoted-slug: mysql-caching-sha2-cracking -->

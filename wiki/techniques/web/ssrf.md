@@ -814,3 +814,33 @@ stockApi=http://localhost%2523@stock.weliketoshop.net/admin/delete?username=carl
 - [[open-redirect]] (a redirect on an allowlisted domain chains past SSRF host filters)
 - [[aws-metadata-ssrf]] (the cloud metadata endpoint is the highest-impact SSRF target)
 - [[dns-rebinding]] (rebinding defeats resolve-then-fetch SSRF validation)
+
+### The SSRF target may be an already-open port, not a hidden one
+
+A port that answers `403` to every external path is not necessarily empty - it can be a vhost
+gated on the SOURCE ADDRESS, e.g. an Apache `.htaccess`:
+
+```
+order deny,allow
+deny from all
+allow from 127.0.0.1 localhost
+```
+
+Externally every path (even non-existent ones) returns an identical `403`, which reads like a
+blanket deny and invites you to write the port off. Through an SSRF the same port serves a
+completely different site. Always replay the "empty" ports you already scanned through the SSRF
+before hunting for a hidden internal service.
+
+Diagnostic - the differential tells you WHICH kind of gate it is:
+- `http://[::1]/` returns the `403` but a case-variant `http://LocalHost/` returns content ->
+  the gate is source-IP and the allow list is IPv4-only (`::1` is not in it).
+- Every loopback spelling returns the same `403` -> genuinely deny-all; stop.
+- A bare integer/octal host (`http://0:80/`, `http://0177.0.0.1/`) can draw a `400 Bad Request`
+  from the server rejecting the `Host` header, which is NOT the same as being denied - retry with
+  a name-form host before concluding anything.
+
+A blind SSRF port sweep cannot distinguish these: a closed port and an open non-HTTP port both
+surface as an empty body once the client raises and the app swallows the exception, and response
+time does not separate them either. Enumerate the reachable HTTP roots instead.
+
+<!-- promoted-slug: ssrf-loopback-only-vhost -->

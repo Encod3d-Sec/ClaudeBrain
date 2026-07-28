@@ -13,3 +13,4 @@ sustained zero means either wiki saturation (good) or a skipped harvest (investi
 2026-07-28  pentest  1
 2026-07-28  ctf  1
 2026-07-28  ctf  1
+2026-07-28  ctf  4

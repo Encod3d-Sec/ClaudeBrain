@@ -1746,3 +1746,49 @@ The `!root` restricts the runas GROUP only when `-g` is explicitly passed; a bar
 to root:root and is allowed. Always `sudo --version` first: `-u#-1` is only a fallback on sudo < 1.8.28.
 
 <!-- promoted-slug: sudo-nopasswd-plain-form -->
+
+### `find -writable` false positive: masked systemd units
+
+`find / -writable` FOLLOWS SYMLINKS, and a *masked* systemd unit is a symlink to `/dev/null`,
+which is world-writable. So a hardened box reports a pile of apparently writable root-owned
+units:
+
+```
+/usr/lib/systemd/system/sudo.service
+/usr/lib/systemd/system/hwclock.service
+/usr/lib/systemd/system/rc.service
+```
+
+None of these is a privesc. Confirm before building an exploit around one:
+
+```sh
+ls -la /usr/lib/systemd/system/<unit>.service     # lrwxrwxrwx ... -> /dev/null  = masked, dead end
+systemctl status <unit>.service                   # "Loaded: masked" confirms it
+```
+
+Use `find / -writable -type f` (a symlink to `/dev/null` is not a regular file) or `-xtype f` to
+drop them from the sweep.
+
+Related trap on the same class of box: a missing `sudo` binary does not mean sudo is unreachable
+(`/snap/core20/*/usr/bin/sudo` is SUID root and squashfs is mounted `nodev` but **not** `nosuid`),
+and a missing `/usr/bin/sudo` with a dangling `sudoedit` symlink is a deliberate signal that the
+intended path is elsewhere. Version-check before reaching for Baron Samedit: `sudoedit -s '\'`
+printing the usage message means it is patched.
+
+### `ssh root@` failing is not proof the root password is wrong
+
+`PermitRootLogin no` (the Ubuntu default) rejects a correct root password over SSH, so a password
+spray that tests only SSH produces a false negative for root. Always re-test a candidate with
+`su` from an existing shell. `su` reads the password from the controlling terminal, so it needs a
+PTY - piping into it silently fails:
+
+```python
+pid, fd = pty.fork()
+if pid == 0:
+    os.execv("/bin/su", ["su", "-", "root", "-c", "id"])
+# read from fd until "assword", then os.write(fd, pw + b"\n")
+```
+
+`script -qc 'su - root' /dev/null` works interactively for the same reason.
+
+<!-- promoted-slug: writable-find-masked-unit-fp -->
