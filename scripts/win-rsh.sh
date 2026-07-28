@@ -72,14 +72,15 @@ import os, re, sys
 pane = sys.stdin.read().split("\n")
 cmd = os.environ["CMD"].strip().splitlines()[0][:40]
 prompt = re.compile(r"(^PS .*> *$)|([A-Za-z]:\\.*> *$)|(^PS> *$)")
-# echo line = first line that carries (the start of) our command; output starts after it
+# echo line = the LAST line carrying (the start of) our command (the most recent invocation, so
+# stale scrollback / a prior run of the same command never wins); output starts after it.
 start = 0
-for k, l in enumerate(pane):
-    if cmd and cmd in l:
+for k in range(len(pane) - 1, -1, -1):
+    if cmd and cmd in pane[k]:
         start = k + 1; break
-# trailing prompt = last prompt line at/after start; output ends before it
+# output ends at the FIRST prompt line after the echo (the next shell prompt).
 end = len(pane)
-for k in range(len(pane) - 1, start - 1, -1):
+for k in range(start, len(pane)):
     if prompt.search(pane[k]):
         end = k; break
 print("\n".join(pane[start:end]).strip())

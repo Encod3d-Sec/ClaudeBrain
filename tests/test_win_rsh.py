@@ -9,25 +9,28 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RSH = os.path.join(REPO, "scripts", "win-rsh.sh")
 
 
-def _fake_live(tmp_path, output_lines):
-    """Live PS reverse shell. On send-keys: record args, extract+unescape the command (bridge
-    behaviour), write pane = 'PS C:\\X> <cmd>' + output + returning prompt. On capture-pane: cat it
-    (identical each poll -> win-rsh's stability check fires)."""
+def _fake_live(tmp_path, output_lines, seed=""):
+    """Live PS reverse shell. `seed` pre-loads the pane with STALE scrollback (e.g. old marker lines
+    from a prior driver + an earlier command). On send-keys: record args, extract+unescape the command
+    (bridge behaviour), APPEND 'PS C:\\X> <cmd>' + output + returning prompt to the pane. On
+    capture-pane: cat it (identical each poll -> win-rsh's stability check fires)."""
     out = tmp_path / "out.txt"; out.write_text("\n".join(output_lines))
-    pane = tmp_path / "pane.txt"
+    pane = tmp_path / "pane.txt"; pane.write_text(seed)
     sent = tmp_path / "sent.log"
     fake = tmp_path / "vm.sh"
     fake.write_text(
         "#!/usr/bin/env bash\n"
         'PANE="%s"; OUT="%s"; SENT="%s"\n' % (pane, out, sent) +
         'A="$*"\n'
+        # win-rsh sends "clear-history; send-keys ..." in ONE arg, so match send-keys FIRST.
+        # clear-history clears scrollback, NOT the visible seed, so the seed persists (intended).
         'case "$A" in\n'
         "  *send-keys*)\n"
         '    printf "%s\\n" "$A" >> "$SENT"\n'
         # extract the quoted command sent to send-keys, then unescape ONE level (\$ \" \` \\)
         '    C=$(printf "%s" "$A" | sed -n \'s/.*send-keys -t [^ ]* "\\(.*\\)" Enter.*/\\1/p\')\n'
         '    C=$(printf "%s" "$C" | sed \'s/\\\\\\$/$/g; s/\\\\"/"/g; s/\\\\`/`/g; s/\\\\\\\\/\\\\/g\')\n'
-        '    { echo "PS C:\\\\X> ${C}"; cat "$OUT"; echo; echo "PS C:\\\\X> "; } > "$PANE"\n'
+        '    { echo "PS C:\\\\X> ${C}"; cat "$OUT"; echo; echo "PS C:\\\\X> "; } >> "$PANE"\n'
         "  ;;\n"
         '  *capture-pane*) cat "$PANE" 2>/dev/null ;;\n'
         "  *) : ;;\n"
@@ -63,6 +66,19 @@ def test_win_rsh_clean_output_no_markers(tmp_path):
         assert banned not in sent_text, "win-rsh must not inject %r" % banned
     # $-safety: the command reached the shell as $env (escaped on the wire, unescaped by the bridge)
     assert "$env:USERNAME" in open(tmp_path / "pane.txt").read()
+
+
+def test_win_rsh_ignores_stale_scrollback(tmp_path):
+    # visible pane still carries a PRIOR driver's marker lines + an earlier command's output;
+    # win-rsh must return only THIS command's output (anchor on the most-recent echo).
+    seed = ("RSHSTART9999\nnt authority\\system\nRSHEND9999\n"
+            "PS C:\\X> whoami; $env:USERNAME\nprivesc\\svcadmin\nPRIVESC$\nPS C:\\X> \n")
+    fake, _ = _fake_live(tmp_path, ["THM{only_this}"], seed=seed)
+    env = dict(os.environ, VM_SH=fake)
+    r = subprocess.run(["bash", RSH, "--timeout", "10", "jump", "Get-Content C:\\flag4.txt"],
+                       capture_output=True, text=True, env=env, timeout=40)
+    assert r.returncode == 0, r.stderr
+    assert r.stdout.strip("\n") == "THM{only_this}"
 
 
 def test_win_rsh_detects_dead_shell_false_rce(tmp_path):
