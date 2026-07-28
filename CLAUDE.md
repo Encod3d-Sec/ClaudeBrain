@@ -71,13 +71,17 @@ in context. On every engagement, run each step in order, do not skip under momen
    hand-rolled exploit before its wiki item is `[x]` (step 1); GATE 2 = no exploit step goes `[x]`
    without a `poc/` image (step 3); GATE 3 = an exhausted vector is marked `[!]` + one `Deadends.md`
    line, then move to the next open item, never re-run `[!]` (step 5's stop condition).
-1. **Wiki-first.** Before exploiting a fingerprinted service/class, consult the wiki for it -
-   fastest path is `Skill(wiki-arsenal)` (parallel lookup across techniques/payloads/tools/cheatsheets;
-   say "deep" for the 4-agent synthesized card), or directly `qmd_query`/`qmd_search` via the
-   `wiki-search` OR `caveman-shrink` MCP (same index), or `Read` the `wiki/` page.
-   MCP-independent: if the MCP is down (it has dropped mid-session on multiple engagements), run
-   `bash scripts/wiki-query.sh "<tech> exploit"` (semantic; `-k` for an exact CVE/tool string) - it
-   wraps the SAME qmd index. If one path is down, use another; NEVER degrade to ad-hoc grep or skip it.
+1. **Wiki-first, reference-map before qmd (qmd is ~15-30s, so it is hint-driven).** Before exploiting
+   a fingerprinted service/class: (a) FIRST read the mapped pages directly - the hunt skill's `## Wiki`
+   section (domain MOC + primary page + anchors) and one-hop from the MOC. That is an instant `Read`
+   and answers the anticipated case with zero qmd latency. (b) Fire `qmd_query`/`qmd_search` (via the
+   `wiki-search` OR `caveman-shrink` MCP) ONLY when you have a concrete hint the map does not cover - a
+   specific sink/version/CVE, an observed escape (a `<script>` context, an SSRF-reaching function).
+   Each call is slow, so it is a targeted deepen, not a blanket pre-attack step; equally, do NOT
+   hand-roll from memory when a targeted qmd would answer. `Skill(wiki-arsenal)` still gives the fast
+   parallel lookup ("deep" for the synthesized card). MCP-independent fallback: `bash
+   scripts/wiki-query.sh "<tech> exploit"` (`-k` for an exact CVE/tool string) wraps the SAME index.
+   NEVER degrade to ad-hoc grep or skip the wiki.
 2. **Tools, not hand-rolls; then READ the output whole.** Reach for the installed tool
    (nmap/ffuf/nuclei/httpx/nxc/sqlmap/borg/...), never a hand-rolled `curl`/`/dev/tcp` loop; if none
    fits, say why in one line. Enumerate NON-STANDARD installed tools (borg/borgmatic/restic/duplicity,

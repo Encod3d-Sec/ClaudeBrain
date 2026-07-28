@@ -1126,6 +1126,24 @@ def test_playbook_cognito_not_off_incognito():
     assert "hunt-cloud" in [s for _l, sp in recs2 for s in (sp.get("skills") or [])]
 
 
+def test_playbook_fires_xss_on_reflected_script_and_dom_sink():
+    # new web-source hint: a reflected <script>/event-handler or a DOM sink routes hunt-xss
+    rc = _import_recon_capture()
+    def sk(b): return [s for _l, sp in rc.fingerprint_records(b) for s in (sp.get("skills") or [])]
+    assert "hunt-xss" in sk("the page reflects <script>alert(1)</script> unescaped")
+    assert "hunt-xss" in sk("el.innerHTML = location.hash")
+    assert sk("a normal html page about cats") == []          # benign -> no fire
+
+
+def test_playbook_fires_ssrf_on_fetch_sink():
+    # new web-source hint: a URL-fetch param/sink taking input routes hunt-ssrf
+    rc = _import_recon_capture()
+    def sk(b): return [s for _l, sp in rc.fingerprint_records(b) for s in (sp.get("skills") or [])]
+    for blob in ("GET /preview?url=http://169.254.169.254", "r = requests.get(user_url)",
+                 "$x = file_get_contents($_GET[u]);"):
+        assert "hunt-ssrf" in sk(blob), blob
+
+
 def test_playbook_xss_not_off_generic_name_field():
     # a generic name="name" form field must NOT route hunt-xss; a search field still does
     rc = _import_recon_capture()

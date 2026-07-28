@@ -116,19 +116,63 @@ injection, open redirect): use a unique 8+ char alphanumeric canary (e.g. `x4hd2
 `test`/`marker`/`evil`/`payload`. Check the baseline response for the canary BEFORE claiming
 reflection; a value already present is not proof you put it there.
 
-## Wiki-first
+## Wiki lookup (reference-map first, qmd on a hint)
 
-```
-qmd_query "<class> <technique terms>" via wiki-search MCP -> read the matching page.
-```
+`qmd_query` is powerful but ~15-30s per call, so it is a TARGETED deepen, not a pre-attack ritual.
+Three tiers, in order:
 
-The qmd query is the primary path and it auto-surfaces pages added after the skill was written.
-Each hunt skill also carries a `## Wiki` section: the class's domain MOC and a few curated
-`[[wikilinks]]`. Payload arsenals live in `wiki/payloads/`.
+1. **Reference map FIRST (instant `Read`).** Your hunt skill's `## Wiki` section names the class's
+   domain MOC + primary page + a few anchors. `Read` those directly, and one-hop from the MOC for a
+   sibling technique. This answers the anticipated case with zero qmd latency.
+2. **`qmd_query` ONLY on a concrete hint the map does not cover** - a specific sink/function (an
+   SSRF-reaching `requests.get(user_input)`), an observed escape (a `<script>` context that could be
+   XSS), a fingerprinted version/CVE, or a service the MOC does not list:
+   `qmd_query "<the specific thing>" via wiki-search MCP`. It auto-surfaces pages added since the
+   skill was written. Do NOT blanket-qmd every action (too slow); do NOT hand-roll from memory when a
+   targeted qmd would answer (that is the opposite failure). Fire it when you have the hint, then act.
+3. **Self-heal** only if neither the map nor a targeted qmd has it: stub
+   `wiki/techniques/<area>/<slug>.md` (frontmatter + `## Observed during <engagement>`) so the gap fills.
 
-**Self-heal:** if neither the query nor the mapped page has it, that is a real coverage gap. Create
-a stub `wiki/techniques/<area>/<slug>.md` (frontmatter plus `## Observed during <engagement>` built
-from your findings) before proceeding, so the gap fills instead of silently recurring.
+Payload arsenals live in `wiki/payloads/`. If the MCP is down, `bash scripts/wiki-query.sh "<terms>"`
+wraps the same qmd index (`-k` for an exact CVE/string).
+
+## Hunt approaches (which skill for the signal)
+
+`hunt-core` is the hub: route from the observed signal to the class skill, load it, then use that
+skill's `## Wiki` map. The `recon-capture` fingerprint router auto-suggests many of these from tool
+output; this table is the manual reference when it does not fire or you are reasoning about approach.
+
+| Signal / surface | Skill |
+|---|---|
+| reflected/stored input, `<script>` / `onerror` / `javascript:` / a DOM sink | `Skill(hunt-xss)` |
+| a param/body reaching a DB; an error / boolean / time oracle | `Skill(hunt-sqli)` |
+| a URL/host param, a fetch/preview/import sink, `?url=` | `Skill(hunt-ssrf)` |
+| an object id, `/users/{id}`, two-account cross-access | `Skill(hunt-idor)` |
+| template `{{ }}` render, XXE (SVG/DOCX/SAML), GraphQL | `Skill(hunt-injection)` |
+| a command sink, template-injection-to-exec, a version+CVE | `Skill(hunt-rce)` |
+| a serialized blob (`rO0` / `AAEAAAD` / `O:`), viewstate, a signed cookie | `Skill(hunt-deserialization)` |
+| login / reset / session / JWT, a legacy-protocol endpoint | `Skill(hunt-auth)` |
+| OAuth / SAML redirect_uri or assertion | `Skill(hunt-federation)` |
+| file upload / avatar / document import | `Skill(hunt-upload)` |
+| REST/GraphQL/gRPC, BOLA / BFLA / mass-assignment | `Skill(hunt-api)` |
+| checkout / price / coupon / workflow logic, a race | `Skill(hunt-bizlogic)` |
+| CL.TE / TE.CL / HTTP-2 downgrade desync | `Skill(hunt-smuggling)` |
+| an unkeyed header/param reaching a cache | `Skill(hunt-cache)` |
+| exposed `.git` / `.env` / keys, secrets in a JS bundle | `Skill(hunt-secrets)` |
+| LLM prompt-injection / excessive agency | `Skill(hunt-llm)` |
+| MCP tool-poisoning / indirect injection | `Skill(hunt-mcp)` |
+| AD: kerberoast / AS-REP / ADCS / DCSync / delegation | `Skill(hunt-ad)` |
+| AWS/Azure/GCP metadata or IAM | `Skill(hunt-cloud)` |
+| Microsoft 365 / Entra tenant | `Skill(hunt-m365)` |
+| CI/CD pipeline (Actions / runners / OIDC) | `Skill(hunt-cicd)` |
+| macOS TCC / SIP / keychain / XPC | `Skill(hunt-macos)` |
+| SSL-VPN appliance (Fortinet/Citrix/Ivanti/Cisco/PAN) | `Skill(hunt-vpn)` |
+| Modbus / S7 / EtherNet-IP / PLC / HMI | `Skill(hunt-ics)` |
+
+Process skills (not vuln classes): `Skill(ctf-box)` boot-to-root, `Skill(wiki-recon)` external recon,
+`Skill(arsenal)` / `Skill(wiki-arsenal)` tool+payload lookup, `Skill(triage)` -> `Skill(evidence)`
+finding validation, `Skill(coverage)` untested-class gaps, `Skill(next-move)` prioritize,
+`Skill(hunt-burp)` drive Burp.
 
 ## FIND output
 
