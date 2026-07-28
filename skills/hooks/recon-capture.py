@@ -228,6 +228,103 @@ def fingerprint_records(blob):
     return out
 
 
+EXCERPT_MAX_LINES = 28
+# Ranked: a BYPASS section first. Bypass tables (alternate loopback encodings, parser quirks)
+# are the exact thing that gets re-derived from memory; a payload list is long and more easily
+# recalled. Falls back down the list when a page has no bypass section.
+_EXCERPT_RANK = (r"bypass", r"payload|example", r"exploit|attack|abuse", r"escalat|technique")
+
+
+def _wiki_index():
+    """slug -> best path, over wiki/**.md. On a duplicate basename (payloads/xss.md vs
+    techniques/web/xss.md -- ~13 such pairs exist) keep the LARGEST file: the substantive
+    twin. A plain dict assignment here silently dropped one of every pair and was a real bug
+    in wiki-wiring-audit.py, so do not reintroduce it."""
+    idx = {}
+    try:
+        import _engagement
+        root = os.path.join(_engagement.VAULT, "wiki")
+        for dirpath, _dirnames, filenames in os.walk(root):
+            for fn in filenames:
+                if not fn.endswith(".md"):
+                    continue
+                full = os.path.join(dirpath, fn)
+                slug = fn[:-3]
+                try:
+                    size = os.path.getsize(full)
+                except OSError:
+                    continue
+                prev = idx.get(slug)
+                if prev is None or size > prev[0]:
+                    idx[slug] = (size, full)
+    except Exception:
+        return {}
+    return {k: v[1] for k, v in idx.items()}
+
+
+def _wiki_excerpt(slugs):
+    """Inline the mapped wiki knowledge INSTEAD of telling the model to go look it up. Returns
+    (text, [rel_paths]) -- a bounded excerpt of the first bypass/payload/exploit-ish section of
+    the first resolvable page, or that page's opening prose if it has no such section.
+
+    WHY inline rather than nudge: the recurring drift is not that the lookup is hard to find,
+    it is that complying costs a detour and recalling from memory feels cheaper mid-exploit. A
+    page that is already in context cannot be skipped (observed live: an SSRF box where the
+    documented case-variation/decimal/octal loopback bypass table was re-derived by hand)."""
+    idx = None
+    for slug in slugs:
+        if idx is None:
+            idx = _wiki_index()
+        s = str(slug).strip().removesuffix(".md")
+        path = idx.get(s)
+        if not path and "/" in s:
+            # refs are written both ways in playbook.json ("ssrf" and "payloads/ssrf"); a
+            # path-form ref must resolve to that exact page, not to whichever basename twin
+            # the index happens to prefer.
+            try:
+                import _engagement
+                cand = os.path.join(_engagement.VAULT, "wiki", s + ".md")
+                path = cand if os.path.isfile(cand) else idx.get(s.rsplit("/", 1)[-1])
+            except Exception:
+                path = None
+        if not path:
+            continue
+        try:
+            txt = open(path, encoding="utf-8", errors="ignore").read()
+        except OSError:
+            continue
+        body = re.sub(r"\A---\n.*?\n---\n", "", txt, count=1, flags=re.S)   # drop frontmatter
+        lines = body.splitlines()
+        start = None
+        for pat in _EXCERPT_RANK:
+            rx = re.compile(r"^(#{2,4})\s+.*\b(%s)\w*\b" % pat, re.I)
+            start = next((i for i, ln in enumerate(lines) if rx.match(ln)), None)
+            if start is not None:
+                break
+        if start is None:
+            chunk = [ln for ln in lines if ln.strip()][:EXCERPT_MAX_LINES]
+        else:
+            level = len(re.match(r"^(#+)", lines[start]).group(1))
+            chunk = [lines[start]]
+            for ln in lines[start + 1:]:
+                m = re.match(r"^(#{1,6})\s", ln)
+                # break only on a SAME-or-higher-level heading, so a "## Bypasses" section
+                # keeps its "### ..." children. Breaking on any heading returned the section
+                # title plus a blank line and nothing else.
+                if m and len(m.group(1)) <= level:
+                    break
+                chunk.append(ln)
+                if len(chunk) >= EXCERPT_MAX_LINES:
+                    break
+        try:
+            import _engagement
+            rel = os.path.relpath(path, _engagement.VAULT)
+        except Exception:
+            rel = path
+        return "\n".join(chunk).rstrip(), rel
+    return "", ""
+
+
 def fingerprint_hits(blob):
     """Return up to MAX_HITS ROUTING lines ('<tech> detected -> load Skill(x)') from
     playbook.json. Routing only: the named hunt skill owns the tests, tooling-first,
@@ -290,6 +387,78 @@ def _is_exploit_cmd(cmd):
         if invokes(c, EXPLOIT_TOOLS) or _REVSHELL_RE.search(c):
             return True
     return False
+
+
+GATE1_MAX = 3
+
+
+def _gate1_state(d):
+    """{skill: times_nudged} for this engagement. Replaces the old fire-once-per-ENGAGEMENT
+    marker: one reminder for the whole box was trivially ridden past under momentum (observed
+    live: six routed hunt-* skills, none invoked, on a box whose central bug was one of them).
+    Per-SKILL and escalating up to GATE1_MAX is the smallest change that keeps nagging about
+    the specific skill still being ignored without becoming noise."""
+    try:
+        return json.load(open(os.path.join(d, ".gate1-nudged.json"), encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _gate1_record(d, skill, n):
+    st = _gate1_state(d)
+    st[skill] = n
+    try:
+        json.dump(st, open(os.path.join(d, ".gate1-nudged.json"), "w", encoding="utf-8"))
+    except OSError:
+        pass
+
+
+def _gate1_unmet(d):
+    """(skill, page_or_None, nudge_number) for the highest-priority routed hunt skill that is
+    STILL unsatisfied, else None. Every claim it returns is backed by `.events.jsonl`, never
+    inferred: `route` events say what was routed, `tool` events carry the Skill name invoked
+    and (since the tool-telemetry wiki field) the wiki page read. A skill counts as satisfied
+    once it was invoked OR any wiki page was read after it was routed -- reading the mapped
+    page IS the point, the skill is only the vehicle."""
+    routed, invoked, read_any = [], set(), False
+    try:
+        with open(os.path.join(d, ".events.jsonl"), encoding="utf-8") as fh:
+            for ln in fh:
+                try:
+                    e = json.loads(ln)
+                except Exception:
+                    continue
+                if e.get("kind") == "route" and e.get("routed"):
+                    if e["routed"] not in routed:
+                        routed.append(e["routed"])
+                elif e.get("kind") == "tool":
+                    if e.get("skill"):
+                        invoked.add(e["skill"])
+                    if e.get("wiki"):
+                        read_any = True
+    except Exception:
+        return None
+    if read_any:
+        return None
+    st = _gate1_state(d)
+    for s in routed:
+        if s in invoked:
+            continue
+        n = int(st.get(s, 0)) + 1
+        if n <= GATE1_MAX:
+            page = None
+            try:
+                import _engagement
+                sk = os.path.join(_engagement.VAULT, "skills", "hunt", s, "SKILL.md")
+                m = re.search(r"Primary page:\s*\[\[([^\]]+)\]\]",
+                              open(sk, encoding="utf-8", errors="ignore").read())
+                if m:
+                    page = _wiki_index().get(m.group(1).strip())
+                    page = os.path.basename(page) if page else None
+            except Exception:
+                page = None
+            return s, page, n
+    return None
 
 
 def _weaponize_undone(d):
@@ -368,16 +537,35 @@ def main():
     # wiki/CVE lookup. Framework-meta commands are exempt. This is the only ENFORCEMENT the
     # board's GATE lines get -- one cheap reminder, not a block.
     if d and _engagement and not _is_framework_meta(cmd):
-        marker = os.path.join(d, ".gate1-nudged")
-        if not os.path.exists(marker) and _is_exploit_cmd(cmd) and _weaponize_undone(d):
-            blocks.append(
-                "GATE 1 (wiki-first): exploiting, but killchain.md Weaponize has no progress. "
-                "Query the wiki for this tech/CVE first (Skill(arsenal) / qmd_query), pull the "
-                "payload from wiki/payloads/, mark the Weaponize item, THEN exploit.")
-            try:
-                open(marker, "w").close()
-            except OSError:
-                pass
+        if _is_exploit_cmd(cmd) and _weaponize_undone(d):
+            unmet = _gate1_unmet(d)
+            if unmet:
+                skill, page, n = unmet
+                proof = ["Skill(%s) was routed for this target and has never been invoked" % skill]
+                if page:
+                    proof.append("%s has never been opened" % page)
+                blocks.append(
+                    "GATE 1 (wiki-first) [%d/%d]: an exploit-shaped command just ran, but %s. "
+                    "Load Skill(%s) now (its ## Wiki map names the pages), or say in ONE line "
+                    "why it is irrelevant here -- do not hand-roll from memory."
+                    % (n, GATE1_MAX, "; and ".join(proof), skill))
+                _gate1_record(d, skill, n)
+            else:
+                # Fallback to the original generic, fire-once-per-engagement reminder. Without
+                # it a box where the router never fingerprinted anything (so there is no routed
+                # skill to escalate on) would get NO wiki-first reminder at all -- the per-skill
+                # gate above must add coverage, never replace it.
+                marker = os.path.join(d, ".gate1-nudged")
+                if not os.path.exists(marker):
+                    blocks.append(
+                        "GATE 1 (wiki-first): exploiting, but killchain.md Weaponize has no "
+                        "progress. Query the wiki for this tech/CVE first (Skill(arsenal) / "
+                        "qmd_query), pull the payload from wiki/payloads/, mark the Weaponize "
+                        "item, THEN exploit.")
+                    try:
+                        open(marker, "w").close()
+                    except OSError:
+                        pass
 
     # serial-enumeration nudge (fire-once per engagement, advisory): a for/while/seq + curl loop
     # fetches one URL at a time -- the recurring serial-vs-parallel drift that turns a 10-min box
@@ -506,11 +694,26 @@ def main():
             blob = (cmd + "\n" + _response_text(data))[:MAX_BLOB]
             lines = fingerprint_hits(blob)
             if lines:
-                blocks.append(
+                routed_block = (
                     "Tech fingerprinted (playbook.json) -> load the hunt Skill named below; it "
                     "carries the wiki-first, tooling-first, tests, and payload steps:\n"
                     + "\n".join(lines)
                 )
+                # GATE 1, satisfied FOR you: inline the mapped wiki section rather than telling
+                # the model to go fetch it. Cheapest possible compliance -- the documented
+                # bypasses/payloads are in context before the first exploit attempt.
+                try:
+                    _slugs = []
+                    for _lbl, _spec in fingerprint_records(blob):
+                        _slugs.extend(_spec.get("refs") or [])
+                    _ex, _rel = _wiki_excerpt(_slugs)
+                    if _ex:
+                        routed_block += ("\n\n--- wiki (already looked up for you) :: %s ---\n%s"
+                                         "\n--- read the full page before hand-rolling ---"
+                                         % (_rel, _ex))
+                except Exception:
+                    pass
+                blocks.append(routed_block)
                 # log routed hunt skills so eval_metrics can flag any never invoked (drift signal)
                 if d:
                     try:

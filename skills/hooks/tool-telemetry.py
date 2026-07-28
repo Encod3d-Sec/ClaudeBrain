@@ -33,8 +33,22 @@ def main():
     d = _engagement.active_dir()
     if not d:
         return
-    skill = (data.get("tool_input") or {}).get("skill") if tool == "Skill" else None
-    _telemetry.log_event("tool", d=d, tool=tool, skill=skill)
+    ti = data.get("tool_input") or {}
+    skill = ti.get("skill") if tool == "Skill" else None
+    # Record a wiki-page READ (path relative to wiki/, e.g. "techniques/web/ssrf.md"). This is
+    # the only way a hook can tell "the mapped page was actually opened" from "worked from
+    # memory" -- Skill calls are already countable by name, reads were not. Leak-safe by
+    # construction: only paths INSIDE the vault's own wiki/ are recorded, never a target path.
+    wiki = None
+    if tool in ("Read", "Grep"):
+        try:
+            p = os.path.abspath(str(ti.get("file_path") or ti.get("path") or ""))
+            root = os.path.join(_engagement.VAULT, "wiki") + os.sep
+            if p.startswith(root):
+                wiki = p[len(root):]
+        except Exception:
+            wiki = None
+    _telemetry.log_event("tool", d=d, tool=tool, skill=skill, wiki=wiki)
     _telemetry.stamp_once("started_at", _telemetry.now_iso(), d=d)
     _telemetry.add_transcript(data.get("transcript_path"), d=d)
 

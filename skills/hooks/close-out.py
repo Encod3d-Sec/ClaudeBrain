@@ -71,6 +71,30 @@ def main():
                     _telemetry.hook("close-out", action="paths-nudge")
                 except Exception:
                     pass
+        # Cred-reuse reflex: several credentials captured, box not rooted, and no spray/reuse
+        # line in Deadends.md -> a captured password is sitting unused. Deduped on the cred
+        # row-count so it re-fires only when a NEW credential lands.
+        creds = _engagement.unsprayed_cred_gap(d)
+        if creds:
+            cmarker = os.path.join(d, ".cred-spray-nudged")
+            clast = 0
+            try:
+                clast = int((open(cmarker).read().strip() or "0"))
+            except Exception:
+                clast = 0
+            if creds > clast:
+                print("Cred-reuse: loot.md holds %d credential(s) and the box is not rooted, but "
+                      "Deadends.md records no spray/reuse attempt. Try EVERY captured secret "
+                      "against EVERY auth surface (ssh, su, the DB, the web login) BEFORE hunting "
+                      "a new privesc vector -- and crack any hash you already hold. Log the "
+                      "result to Deadends.md either way." % creds)
+                try:
+                    open(cmarker, "w").write(str(creds))
+                    import _telemetry
+                    _telemetry.drift("close-out", "credentials captured but never sprayed")
+                    _telemetry.hook("close-out", action="cred-spray-nudge")
+                except Exception:
+                    pass
         return
     # box is SOLVED: stamp the finish time once (the far end of the start->finish delta)
     try:

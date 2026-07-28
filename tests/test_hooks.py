@@ -982,6 +982,45 @@ def test_paths_write_gap(tmp_path):
     assert e.paths_write_gap(None) == 0
 
 
+def test_unsprayed_cred_gap(tmp_path):
+    """Cred-reuse reflex: >=2 credential rows in loot.md + not solved + no spray/reuse line in
+    Deadends.md -> gap = cred row count. A single cred, a solved box, or a logged spray -> 0."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("_eng_cs", os.path.join(HOOKS, "_engagement.py"))
+    e = importlib.util.module_from_spec(spec); spec.loader.exec_module(e)
+    d = tmp_path
+    hdr = "| cred | value | source | works on |\n|------|-------|--------|----------|\n"
+    (d / "state.md").write_text("# State\n", encoding="utf-8")
+    (d / "Deadends.md").write_text("# Deadends\n", encoding="utf-8")
+    # one cred only -> not yet a reuse gap
+    (d / "loot.md").write_text(hdr + "| app admin | password s3cret | web | login |\n", encoding="utf-8")
+    assert e.unsprayed_cred_gap(str(d)) == 0
+    # two creds, nothing sprayed -> gap = 2
+    (d / "loot.md").write_text(hdr + "| app admin | password s3cret | web | login |\n"
+                                     "| db | password hunter2 | .env | mysql |\n", encoding="utf-8")
+    assert e.unsprayed_cred_gap(str(d)) == 2
+    # a non-credential row (a flag) must not count toward the gap
+    (d / "loot.md").write_text(hdr + "| app admin | password s3cret | web | login |\n"
+                                     "| flag1 | THM{aaa} | robots.txt | n/a |\n", encoding="utf-8")
+    assert e.unsprayed_cred_gap(str(d)) == 0
+    # two creds but a spray is logged -> gap clears
+    (d / "loot.md").write_text(hdr + "| app admin | password s3cret | web | login |\n"
+                                     "| db | password hunter2 | .env | mysql |\n", encoding="utf-8")
+    (d / "Deadends.md").write_text("- [x] cred spray of both passwords vs ssh/su -- all rejected\n",
+                                   encoding="utf-8")
+    assert e.unsprayed_cred_gap(str(d)) == 0
+    # the `user / password` loot form counts even without the word "password"
+    (d / "Deadends.md").write_text("# Deadends\n", encoding="utf-8")
+    (d / "loot.md").write_text(hdr + "| app admin | administrator / Th1s_1s | source | web |\n"
+                                     "| db | clocky_user / seG3mY4 | .env | mysql |\n", encoding="utf-8")
+    assert e.unsprayed_cred_gap(str(d)) == 2
+    # solved box never nudges
+    (d / "state.md").write_text("## STATUS: SOLVED\n", encoding="utf-8")
+    assert e.unsprayed_cred_gap(str(d)) == 0
+    # fail-open on missing dir
+    assert e.unsprayed_cred_gap(None) == 0
+
+
 # --- hunt-trigger framework-meta guard + intent-gate tightening (0.4) ---
 
 def test_hunt_trigger_api_methodology_does_not_fire(vault):
@@ -1166,3 +1205,122 @@ def test_close_out_fires_eval_metrics_when_solved(vault):
     run_hook("close-out.py", {}, _env(vault))
     assert (eng / ".eval-written").exists()
     assert "## Metrics (auto)" in (eng / "eval.md").read_text()
+
+
+# --- GATE 1 wiki-first: inline the mapped page + per-skill escalating nudge ---
+
+def _load_rc():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("_rc_g1", os.path.join(HOOKS, "recon-capture.py"))
+    m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+    return m
+
+
+def test_wiki_index_prefers_the_substantive_twin(vault, monkeypatch):
+    """Duplicate basenames across the wiki (payloads/xss.md vs techniques/web/xss.md) must not
+    silently drop one: the index keeps the LARGEST file. This is the exact dict-collision bug
+    that once made wiki-wiring-audit invent false orphans."""
+    rc = _load_rc()
+    import _engagement
+    w = os.path.join(_engagement.VAULT, "wiki")
+    os.makedirs(os.path.join(w, "payloads"), exist_ok=True)
+    os.makedirs(os.path.join(w, "techniques", "web"), exist_ok=True)
+    open(os.path.join(w, "payloads", "xss.md"), "w").write("tiny\n")
+    big = os.path.join(w, "techniques", "web", "xss.md")
+    open(big, "w").write("## Bypass\n" + ("x" * 500) + "\n")
+    monkeypatch.setattr(rc, "_wiki_index", rc._wiki_index)
+    assert rc._wiki_index().get("xss") == big
+
+
+def test_wiki_excerpt_inlines_the_bypass_section(vault):
+    """The routing nudge must hand over the documented bypasses, not just name the page --
+    removing the detour is the whole point of the fix."""
+    rc = _load_rc()
+    import _engagement
+    d = os.path.join(_engagement.VAULT, "wiki", "techniques", "web")
+    os.makedirs(d, exist_ok=True)
+    open(os.path.join(d, "ssrf.md"), "w").write(
+        "---\ntitle: ssrf\n---\n\n## Intro\nprose\n\n"
+        "### Blocklist bypass\n| Case-variation | http://LoCaLHosT/admin |\n"
+        "| Decimal | 2130706433 |\n\n## Next section\nignored\n")
+    text, rel = rc._wiki_excerpt(["ssrf"])
+    assert "LoCaLHosT" in text and "2130706433" in text
+    assert "ignored" not in text                      # stops at the next heading
+    assert rel.endswith("ssrf.md")
+    assert rc._wiki_excerpt(["no-such-page"]) == ("", "")
+
+
+def test_wiki_excerpt_keeps_subsections_and_resolves_path_form_refs(vault):
+    """Two bugs the first version shipped with, caught by smoke-testing against the real wiki:
+    (1) breaking on ANY heading returned a section title plus a blank line, because a '## X'
+    section is immediately followed by its own '### Y' child -- break only on a same-or-higher
+    level heading; (2) playbook.json writes refs both as 'ssrf' and as 'payloads/ssrf', and the
+    path form must resolve to THAT page, not to whichever basename twin the index prefers."""
+    rc = _load_rc()
+    import _engagement
+    w = os.path.join(_engagement.VAULT, "wiki")
+    os.makedirs(os.path.join(w, "payloads"), exist_ok=True)
+    os.makedirs(os.path.join(w, "techniques", "web"), exist_ok=True)
+    open(os.path.join(w, "techniques", "web", "dupe.md"), "w").write(
+        "## Bypasses\n\n### Child one\nkeep-me\n\n### Child two\nalso-keep\n\n## After\ndrop-me\n"
+        + "padding\n" * 50)
+    open(os.path.join(w, "payloads", "dupe.md"), "w").write("## Bypasses\npayload-twin\n")
+    text, rel = rc._wiki_excerpt(["dupe"])
+    assert "keep-me" in text and "also-keep" in text     # subsections survive
+    assert "drop-me" not in text                          # same-level heading ends it
+    # path-form ref must pick the payloads twin even though the index prefers the larger file
+    text2, rel2 = rc._wiki_excerpt(["payloads/dupe"])
+    assert "payload-twin" in text2 and rel2.endswith(os.path.join("payloads", "dupe.md"))
+
+
+def test_gate1_unmet_only_claims_what_telemetry_proves(vault):
+    """Per-skill escalation, and a routed skill counts as satisfied once it is invoked OR any
+    wiki page is read. Never asserts 'not read' without the telemetry to back it."""
+    rc = _load_rc()
+    import _engagement
+    d = _engagement.active_dir()
+    ev = os.path.join(d, ".events.jsonl")
+
+    def w(rows):
+        with open(ev, "w", encoding="utf-8") as fh:
+            for r in rows:
+                fh.write(json.dumps(r) + "\n")
+
+    # nothing routed -> nothing to nudge
+    w([{"kind": "tool", "tool": "Bash"}])
+    assert rc._gate1_unmet(d) is None
+    # routed + never invoked + no wiki read -> nudge 1/3, naming the skill
+    w([{"kind": "route", "routed": "hunt-ssrf"}])
+    assert rc._gate1_unmet(d)[0] == "hunt-ssrf"
+    assert rc._gate1_unmet(d)[2] == 1
+    # escalates while still ignored, then stops at the cap
+    rc._gate1_record(d, "hunt-ssrf", 3)
+    assert rc._gate1_unmet(d) is None
+    # invoking the skill satisfies it
+    rc._gate1_record(d, "hunt-ssrf", 0)
+    w([{"kind": "route", "routed": "hunt-ssrf"},
+       {"kind": "tool", "tool": "Skill", "skill": "hunt-ssrf"}])
+    assert rc._gate1_unmet(d) is None
+    # so does reading a wiki page (the skill is only the vehicle)
+    w([{"kind": "route", "routed": "hunt-ssrf"},
+       {"kind": "tool", "tool": "Read", "wiki": "techniques/web/ssrf.md"}])
+    assert rc._gate1_unmet(d) is None
+
+
+def test_tool_telemetry_records_wiki_reads_only(vault):
+    """A Read under wiki/ is recorded (it is the proof the page was opened); a Read of a target
+    file must NOT be -- the events log stays free of client paths."""
+    import _engagement
+    env = _env(vault)
+    wiki_file = os.path.join(_engagement.VAULT, "wiki", "techniques", "web", "ssrf.md")
+    os.makedirs(os.path.dirname(wiki_file), exist_ok=True)
+    open(wiki_file, "w").write("x\n")
+    run_hook("tool-telemetry.py",
+             {"tool_name": "Read", "tool_input": {"file_path": wiki_file}}, env)
+    run_hook("tool-telemetry.py",
+             {"tool_name": "Read", "tool_input": {"file_path": "/tmp/loot/creds.txt"}}, env)
+    rows = [json.loads(l) for l in
+            open(os.path.join(_engagement.active_dir(), ".events.jsonl"), encoding="utf-8")]
+    wikis = [r.get("wiki") for r in rows if r.get("wiki")]
+    assert wikis == ["techniques/web/ssrf.md"]
+    assert not any("creds.txt" in json.dumps(r) for r in rows)

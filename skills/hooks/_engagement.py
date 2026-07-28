@@ -855,6 +855,49 @@ def paths_write_gap(d):
         return 0
 
 
+def unsprayed_cred_gap(d):
+    """Live cred-reuse reflex: we hold MULTIPLE distinct credentials in loot.md, the box is
+    still short of root, and Deadends.md records no cred-reuse/spray attempt -- the drift where
+    a newly captured password is written down and then never tried against the auth surfaces
+    while a new privesc vector is hunted instead. (Observed live: the app's real DB password sat
+    in loot.md while filesystem privesc was ground for ~25min; that password's sibling was the
+    root password.) Returns the loot cred-row count when a gap exists, else 0. Counts only rows
+    that look like a credential, so a flag/technique row never triggers it. Fail-open (0)."""
+    if not d:
+        return 0
+    try:
+        if is_solved(d):
+            return 0
+        loot = open(os.path.join(d, "loot.md"), encoding="utf-8", errors="ignore").read()
+        creds = 0
+        for ln in loot.splitlines():
+            s = ln.strip()
+            if not s.startswith("|"):
+                continue
+            cells = [c.strip() for c in s.strip("|").split("|")]
+            if not cells or not cells[0] or set(cells[0]) <= set("-: "):
+                continue
+            if cells[0].lower() in ("item", "cred", "credential", "type", "user", "scope"):
+                continue                                    # header row
+            row = " ".join(cells).lower()
+            # " / " (spaced) catches the `user / password` loot form; a bare "/" would match
+            # incidental cells like "n/a" or a path and count a flag row as a credential.
+            if any(k in row for k in ("pass", "cred", "secret", "token", "key", "hash", " / ")):
+                creds += 1
+        if creds < 2:
+            return 0
+        try:
+            de = open(os.path.join(d, "Deadends.md"), encoding="utf-8",
+                      errors="ignore").read().lower()
+        except Exception:
+            de = ""
+        if any(k in de for k in ("spray", "reuse", "cred-reuse", "password reuse")):
+            return 0
+        return creds
+    except Exception:
+        return 0
+
+
 def ensure_state_files():
     """Create any missing per-engagement files (from the type's template) and the
     standard dirs in the active engagement. The shared set is type-aware: a ctf

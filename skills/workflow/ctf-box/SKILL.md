@@ -80,6 +80,10 @@ smbclient -N //$T/<share> -c 'recurse;ls'       # then use smbclient ONLY to pul
 #      is the vuln (a hidden `/v1/ingest/*` endpoint in an `#EXT-X-SESSION-DATA` manifest header, a
 #      commented creds line, an alternate route) is exactly what a narrow `grep <keyword>` skips.
 #      grep to LOCATE in a huge file, then read the surrounding block; never let grep BE the read.
+#      SAME RULE FOR YOUR OWN PIPELINE: a `| head -N` / `| grep` you append to a probe over the VM
+#      bridge truncates the very response you are reading. A one-line body ("Internal dev storage")
+#      and a 200-line one look identical through `head -12`. Pipe an EXPLOIT/lead response through
+#      NOTHING; save it and read it whole. Only cap output for a known-huge scan log.
 #  (a3) EXPLOIT REQUESTS -> BURP, not just curl. curl is fine for quick loops, but push every
 #      LOAD-BEARING request (SSRF, LFI, SQLi/injection, an auth/BFLA bypass, a deser payload, the
 #      flag-returning request) into Burp Repeater via `Skill(hunt-burp)` so the operator can replay
@@ -142,6 +146,9 @@ Fingerprint the exact app + version. **On any fingerprinted surface/service, `Sk
 - Deliver the staged payload/exploit against the target; prefer the documented PoC over a fresh one.
 - **Stabilize EVERY Linux shell the moment it lands** (a raw `nc` shell has no job control, no arrow keys, no tab-complete, and Ctrl-C kills it). Full TTY-upgrade dance, in order: `python3 -c 'import pty;pty.spawn("/bin/bash")'` (fall back to `python`/`python2` if `python3` is absent; `script -qc /bin/bash /dev/null` if no python) -> `Ctrl+Z` to background -> `stty raw -echo; fg` (hands your terminal's raw mode to the shell; press Enter twice) -> `export TERM=xterm` (fixes clear/less/vim). Then set `stty rows <R> cols <C>` to your local `stty size` if editors wrap. Or better, drop your SSH key into a writable user's `~/.ssh/authorized_keys` for a resilient, already-interactive session. (Windows shells: no PTY dance; grab a proper shell via a C2/`ConPtyShell` or just RDP/WinRM once you have creds.)
 - **Cred-reuse FIRST.** Capture creds to `targets/<eng>/loot.md` immediately; try reuse (su / ssh / other services) BEFORE hunting new ones. DB/web creds are very often **reused for SSH**.
+  - **Spray EVERY secret you hold against EVERY user x surface, not just the newest one.** The drift: a cred gets written to loot.md, one obvious target is tried, and the rest of the matrix is never run while a fresh privesc vector is ground for half an hour. Re-run the FULL matrix each time a new secret lands. `su` and SSH are NOT equivalent - `PermitRootLogin no` makes `ssh root@` fail while `su root` with the same password succeeds, so a "root: []" SSH result is NOT a negative for root (needs a PTY: `pty.spawn`/`script -qc`).
+  - **The leaked config is not the live secret.** An app that does `load_dotenv()` / `os.environ.get(...)` keeps its REAL password in a `.env` beside the source, not in the seeded `.sql`. Read every config the app actually loads, and diff it against what the leak gave you.
+  - **Crack the hashes you ALREADY hold before hunting a new vector.** A DB account with `ALL PRIVILEGES` lets you read the DBMS's own account table; a second, otherwise-invisible account there is a deliberate lead. MySQL 8 `caching_sha2_password` (`$A$005$...`) is hashcat `-m 7401` (see [[password-cracking]], [[mysql]]) - convert `$A$<iter>$<20-byte salt><43-byte digest>` to `$mysql$A$005*<salt-hex>*<digest-hex>`. A DBMS password is a prime candidate for OS-account reuse.
 
 ## Phase 4 Exploit: finish the foothold, then privesc
 
