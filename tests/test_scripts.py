@@ -330,6 +330,26 @@ def test_fingerprint_router_matches_playbook():
     assert rc.fingerprint_hits("nothing interesting here") == []
 
 
+def test_fingerprint_smb_workgroup_routes_windows_not_ad():
+    # a STANDALONE/workgroup Windows box (single-label domain == hostname) must NOT route hunt-ad;
+    # the Windows OS banner routes LOCAL privesc (hunt-windows) instead.
+    rc = _load("skills/hooks/recon-capture.py", "recon_capture")
+    blob = ("SMB 10.0.0.5 445 PRIVESC [*] Windows 10 / Server 2019 Build 17763 x64 "
+            "(name:PRIVESC) (domain:privesc) (signing:False)")
+    hits = " ".join(rc.fingerprint_hits(blob))
+    assert "Skill(hunt-windows)" in hits
+    assert "hunt-ad" not in hits
+
+
+def test_fingerprint_smb_domain_fqdn_routes_ad():
+    # a dotted FQDN realm (a DC / domain-joined host) DOES route hunt-ad
+    rc = _load("skills/hooks/recon-capture.py", "recon_capture")
+    blob = ("SMB 10.0.0.5 445 DC01 [*] Windows Server 2019 Build 17763 "
+            "(name:DC01) (domain:corp.local) (signing:True)")
+    hits = " ".join(rc.fingerprint_hits(blob))
+    assert "Skill(hunt-ad)" in hits
+
+
 def test_freshness_flags_old_pages(tmp_path, monkeypatch):
     from datetime import date
     fr = _load("scripts/freshness.py", "freshness")

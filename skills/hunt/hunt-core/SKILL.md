@@ -161,7 +161,8 @@ output; this table is the manual reference when it does not fire or you are reas
 | exposed `.git` / `.env` / keys, secrets in a JS bundle | `Skill(hunt-secrets)` |
 | LLM prompt-injection / excessive agency | `Skill(hunt-llm)` |
 | MCP tool-poisoning / indirect injection | `Skill(hunt-mcp)` |
-| AD: kerberoast / AS-REP / ADCS / DCSync / delegation | `Skill(hunt-ad)` |
+| AD: kerberoast / AS-REP / ADCS / DCSync / delegation (dotted-FQDN domain / a DC) | `Skill(hunt-ad)` |
+| Windows LOCAL privesc: service misconfig / autologon reg / SeImpersonate-Potato / scheduled-task / DLL hijack (standalone/workgroup box, or a local shell on a member) | `Skill(hunt-windows)` |
 | AWS/Azure/GCP metadata or IAM | `Skill(hunt-cloud)` |
 | Microsoft 365 / Entra tenant | `Skill(hunt-m365)` |
 | CI/CD pipeline (Actions / runners / OIDC) | `Skill(hunt-cicd)` |
