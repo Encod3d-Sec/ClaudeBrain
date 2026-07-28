@@ -10,6 +10,8 @@ sources: [cpts-common-services, hacktricks-network]
 # Network Services Cheatsheet
 
 > Dense command reference — every command is copy-paste ready. See [[network-service-attacks]] for explanation and context.
+>
+> One tool covers SMB, LDAP, WinRM, WMI, MSSQL, RDP, SSH, FTP, NFS, and VNC at once: see [[netexec]] before reaching for a per-service client.
 
 ---
 

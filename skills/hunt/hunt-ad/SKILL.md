@@ -15,6 +15,7 @@ qmd_query "Active Directory kerberoast AS-REP ADCS ESC delegation DCSync lateral
 
 Hub: [[active-directory-moc]] (live index). Primary page: [[active-directory]].
 Anchors: [[adcs]] (ESC1-16 matrix, the highest-value escalation edge), [[kerberos-attacks]] (AS-REP/Kerberoast plus the delegation paths).
+Tool anchor: [[netexec]] (the full nxc map: every protocol, flag, and module, with the spray/lockout, Kerberos, exec-method, and dumping gotchas). Read the LDAP + SMB sections before hand-rolling any AD enumeration; most steps below are one nxc flag.
 
 ## Attack surface signals
 Ports: SMB 445, LDAP 389/636, Kerberos 88, ADWS 9389, WinRM 5985/5986, RPC 135, MSSQL 1433, ADCS web enroll 80/443 (`/certsrv`).

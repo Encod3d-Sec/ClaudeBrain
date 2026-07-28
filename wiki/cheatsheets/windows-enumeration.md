@@ -9,6 +9,8 @@ sources: [git-htb-writeups]
 
 # Windows Post-Exploitation Enumeration Cheatsheet
 
+> Much of this is available remotely and more quietly with [[netexec]] (`--tasklist`, `--qwinsta`, `--reg-sessions`, `--interfaces`, `--disks`, `-M enum_av`, `-M wcc`) instead of running commands in a shell.
+
 ---
 
 ## System Information

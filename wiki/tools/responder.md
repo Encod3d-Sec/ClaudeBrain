@@ -11,6 +11,17 @@ sources: []
 
 **Responder** poisons broadcast name-resolution protocols (LLMNR, NBT-NS, mDNS) to make victims authenticate to you, capturing NetNTLMv2 hashes (crack offline) or relaying them to other hosts for code execution. The classic internal-network foothold when you have no creds.
 
+## How it works (the poisoning)
+
+When a Windows host fails to resolve a name via DNS, it falls back to broadcast/multicast name resolution and trusts whoever answers. Responder answers for every name, so the victim connects to you and authenticates:
+
+- **LLMNR** (Link-Local Multicast Name Resolution, UDP 5355): the primary DNS fallback on modern Windows. Responder's default and highest-yield poisoning target.
+- **NBT-NS** (NetBIOS Name Service, UDP 137): the legacy fallback below LLMNR, still enabled on most networks.
+- **mDNS** (Multicast DNS, UDP 5353): Bonjour-style resolution, poisonable the same way.
+- **WPAD** (Web Proxy Auto-Discovery): if hosts look for a `wpad` proxy config, `-wF` serves a rogue PAC to route their HTTP through you, widening capture beyond a single mistyped share.
+
+The captured credential is a **NetNTLMv2** challenge/response: crack it offline, or (if SMB signing is off on another host) relay it live to that host for code execution. This name-poisoning to hash-capture step is the front half of the [[internal-ntlm-relay]] chain.
+
 ## Install / setup
 
 ```bash

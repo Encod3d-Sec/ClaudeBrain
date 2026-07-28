@@ -9,6 +9,8 @@ sources: [cpts-password-attacks, thm-ad-lateral, thm-ad-persistence, git-htb-wri
 
 # Password Attacks Cheatsheet
 
+> For spraying and credential validation across SMB/WinRM/MSSQL/RDP/SSH/LDAP, plus every remote dumping flag (`--sam`/`--lsa`/`--ntds`/`--dpapi`) and the loot modules, see [[netexec]].
+
 ---
 
 ## Hash Identification

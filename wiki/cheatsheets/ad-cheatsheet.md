@@ -9,6 +9,8 @@ sources: [thm-ad-breaching, thm-ad-lateral, thm-ad-persistence, thm-ad-enumerati
 
 # Active Directory Cheatsheet
 
+> Most remote steps below are a single `nxc` flag. See [[netexec]] for the full protocol and module map (LDAP roasting/delegation/DACL/ADCS sweep, SMB dumping and exec, spray-safe lockout rules).
+
 ---
 
 ## Enumeration — Built-in Commands
