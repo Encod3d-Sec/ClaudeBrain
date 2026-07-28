@@ -74,7 +74,7 @@ az role assignment list --assignee <id>;  ScoutSuite azure
 gcloud projects get-iam-policy <proj>;  curl https://... (roadtools / ROADrecon for Entra)
 ```
 4. **IAM privesc:** AWS (`iam:PassRole`+lambda/ec2, `sts:AssumeRole`, policy version, `iam:CreateAccessKey`); Azure (Owner/Contributor on subscription, `Microsoft.Authorization/*`, managed identity abuse, Automation runbooks); GCP (`iam.serviceAccounts.actAs`, `setIamPolicy`, deployment manager, `actAs` chains).
-5. **Service loot:** S3/blob/GCS objects, Secrets Manager / Key Vault / Secret Manager, SSM parameters, Lambda/Function env, snapshots, EBS, Storage Account keys.
+5. **Service loot:** S3/blob/GCS objects, Secrets Manager / Key Vault / Secret Manager, SSM parameters, Lambda/Function env, snapshots, EBS, Storage Account keys. Azure: even plain **Reader** reads a VM extension's public settings - `az vm extension show ... -n CustomScriptExtension` leaks `commandToExecute`/`fileUris` (secrets, SAS URLs), no Contributor/RunCommand needed (see [[azure-services-virtual-machine]]).
 6. **Lateral / persistence (RoE-gated):** assume cross-account role, new access key, SSH key to instance metadata, service-account key creation, Automation account runbook.
 7. **Distill (when confirmed):** stage a GENERIC technique (no client host) to the most relevant cloud page: `python3 scripts/wiki-stage.py --kind technique --slug <slug> --target-page techniques/cloud/cloud-iam-attacks.md`. Full protocol in `hunt-core`.
 

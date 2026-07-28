@@ -97,3 +97,29 @@ Apply vendor baselines for logging, least privilege, patch cadence, and segmenta
 ## Sources
 
 - Swisskyrepo [InternalAllTheThings](https://github.com/swisskyrepo/InternalAllTheThings) (ingest slug `InternalAllTheThings`).
+
+## CustomScriptExtension public-settings disclosure (Reader-only)
+
+A VM's extensions are child resources whose **public `settings` block is world-readable to any
+principal with `Reader`** on the VM/resource-group - no Contributor, no RunCommand, no VM access.
+CustomScriptExtension stores its bootstrap command in `settings.commandToExecute` and any download
+URLs in `settings.fileUris`; operators routinely embed secrets, install commands, storage SAS URLs,
+or (in labs) flags there. Only the `protectedSettings` block is encrypted at rest - anything in the
+plain `settings` leaks.
+
+```bash
+# list a VM's extensions, then read the public settings of each
+az vm extension list -g <rg> --vm-name <vm> -o table
+az vm extension show -g <rg> --vm-name <vm> -n CustomScriptExtension -o jsonc
+# settings.commandToExecute / settings.fileUris are the loot; adminUsername also leaks from `az vm show`
+```
+
+Also surfaces via `az resource list` (a `Microsoft.Compute/virtualMachines/extensions` child object is
+the tell) and via the ARM template export. This is a passive read, not RunCommand execution: it needs
+only `Microsoft.Compute/virtualMachines/read` + `.../extensions/read`, which plain **Reader** grants.
+
+**Defence:** never put secrets in `settings`; use `protectedSettings` (encrypted, not returned by the
+management API) or a managed identity + Key Vault reference. Treat Reader on a subscription as able to
+read every extension's provisioning command.
+
+<!-- promoted-slug: azure-cse-public-settings-leak -->

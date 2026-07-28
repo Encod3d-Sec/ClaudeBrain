@@ -284,3 +284,23 @@ Key facts:
 See also [[scarecrow]] · [[privesc-exploit-arsenal]] · [[windows-amsi-bypass]] · [[endpoint-detection-and-response]] · [[peass]] (winPEAS-vs-Defender).
 
 <!-- promoted-slug: seimpersonate-defender-evasion-loader -->
+
+## accesschk writable-file/dir sweep (last resort when service/token vectors are dry)
+
+When SeImpersonate is absent (no Potato), you can't create or reconfigure a service, and no service
+binary is writable, don't stop - sweep for ANY file or directory a SYSTEM process executes that the
+current account can overwrite. The per-service `-uwcqv` check and the `schtasks + icacls` check both
+MISS a task whose action is a wrapper (`cmd /c script.bat`) or whose task XML you can't read:
+
+```cmd
+accesschk.exe /accepteula -uwqs  <user> C:\    REM every FILE <user> can write (recursive)
+accesschk.exe /accepteula -uwdqs <user> C:\    REM every DIRECTORY (DLL-plant / drop candidates)
+```
+
+Filter out the user's own profile and `%TEMP%`. A writable `.bat`/`.ps1`/`.vbs` under `C:\Windows\Tasks`,
+`C:\ProgramData`, or a program dir that a SYSTEM scheduled task runs is a direct SYSTEM foothold:
+overwrite it with your payload and wait for (or trigger) the task. Run the sweep from a context whose
+token can still enumerate the filesystem - a heavily-restricted service token may be blind, so run it
+from an earlier user in the chain if the escalated one returns nothing.
+
+<!-- promoted-slug: win-accesschk-writable-file-sweep -->

