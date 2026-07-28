@@ -306,11 +306,17 @@ def _wiki_excerpt(slugs):
         else:
             level = len(re.match(r"^(#+)", lines[start]).group(1))
             chunk = [lines[start]]
+            fenced = False
             for ln in lines[start + 1:]:
-                m = re.match(r"^(#{1,6})\s", ln)
+                if ln.lstrip().startswith("```"):
+                    fenced = not fenced
+                m = None if fenced else re.match(r"^(#{1,6})\s", ln)
                 # break only on a SAME-or-higher-level heading, so a "## Bypasses" section
                 # keeps its "### ..." children. Breaking on any heading returned the section
-                # title plus a blank line and nothing else.
+                # title plus a blank line and nothing else. Headings are only real OUTSIDE a
+                # code fence: a `# comment` on the first line of a ```bash/```powershell block
+                # is not a heading, and treating it as one truncated the excerpt to 2 lines on
+                # any page whose payload section opens with a commented command (i.e. most).
                 if m and len(m.group(1)) <= level:
                     break
                 chunk.append(ln)

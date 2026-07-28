@@ -1273,6 +1273,31 @@ def test_wiki_excerpt_keeps_subsections_and_resolves_path_form_refs(vault):
     assert "payload-twin" in text2 and rel2.endswith(os.path.join("payloads", "dupe.md"))
 
 
+def test_wiki_excerpt_ignores_headings_inside_code_fences(vault):
+    """A `# comment` on the first line of a ```bash/```powershell block is NOT a markdown
+    heading. Treating it as one broke on a live box: every wiki payload section that opens with
+    a commented command truncated to the section title + a blank line (2 lines). The excerpt
+    must only break on a real heading OUTSIDE a code fence."""
+    rc = _load_rc()
+    import _engagement
+    d = os.path.join(_engagement.VAULT, "wiki", "techniques", "ad")
+    os.makedirs(d, exist_ok=True)
+    open(os.path.join(d, "enum.md"), "w").write(
+        "---\ntitle: enum\n---\n\n"
+        "## Key payloads / examples\n\n"
+        "```powershell\n"
+        "# Rapid domain overview (this # is a comment, not a heading)\n"
+        "Get-ADUser -Filter *\n"
+        "# Another comment line\n"
+        "Get-ADComputer -Filter *\n"
+        "```\n\n"
+        "## Next real heading\ndropped\n")
+    text, rel = rc._wiki_excerpt(["enum"])
+    assert "Get-ADUser" in text and "Get-ADComputer" in text   # fence contents survive
+    assert "dropped" not in text                                # the real ## heading still ends it
+    assert len(text.splitlines()) > 4                           # not truncated to title+blank
+
+
 def test_gate1_unmet_only_claims_what_telemetry_proves(vault):
     """Per-skill escalation, and a routed skill counts as satisfied once it is invoked OR any
     wiki page is read. Never asserts 'not read' without the telemetry to back it."""

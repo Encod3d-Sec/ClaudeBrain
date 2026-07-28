@@ -58,6 +58,12 @@ rustscan -a $T --ulimit 5000 -g                        # seconds -> open-port CS
 # re-scans before the live IP surfaced). A quick `nc -zv $T 445`/`80` sanity-check beats another full rustscan.
 nmap -p<found> -sCV -Pn $T -oN nmap-svc.txt            # version/script scan on rustscan's hits
 nmap -p- --min-rate 2000 -T4 -Pn $T -oN nmap-all.txt   # full-TCP confirm (its own tmux tab)
+# DO NOT ROUTE (load a hunt skill) OFF THE RUSTSCAN LIST ALONE - it produces PHANTOM open ports.
+# rustscan's SYN speed misreads filtered/rate-limited ports as open: a box once showed 464(kpasswd)
+# + 9389(ADWS) in rustscan -> loaded hunt-ad as a "DC", but the full -p- showed 88/389 CLOSED and the
+# real door was redis/6379. The nmap -p- (and a `nc -zv $T <port>` on the 2-3 ports that decide the
+# route) is the ground truth. Fingerprint the OS/domain from an actual service banner (nxc smb, a
+# real 389/88 connect), never from the fast-sweep port numbers. Wait for -p- before committing a path.
 nc -nv $T <port>                 # manual banner / custom-proto services (chatbots, etc.)
 dig any @$T <domain>; dig axfr @$T <domain>   # DNS if 53 open / vhost hints
 # SMB (445 open) -> netexec (nxc), NOT a one-shot smbclient: nxc fires the fingerprint router,
