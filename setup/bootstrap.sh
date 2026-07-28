@@ -20,16 +20,7 @@ mkdir -p "$CLAUDE_DIR"
 echo "@$VAULT/CLAUDE.md" > "$CLAUDE_DIR/CLAUDE.md"
 echo "[ok] Created $CLAUDE_DIR/CLAUDE.md -> $VAULT/CLAUDE.md"
 
-# 2. Install obsidian skills
-SKILLS_SRC="$VAULT/skills/obsidian"
-SKILLS_DST="$CLAUDE_DIR/skills/obsidian"
-mkdir -p "$SKILLS_DST"
-cp "$SKILLS_SRC/"*.md "$SKILLS_DST/"
-cp "$SKILLS_SRC/_vault-root.sh" "$SKILLS_DST/"
-chmod +x "$SKILLS_DST/_vault-root.sh"
-echo "[ok] Installed obsidian skills to $SKILLS_DST"
-
-# 3. Symlink vault hooks into ~/.claude/vault-hooks
+# 2. Symlink vault hooks into ~/.claude/vault-hooks
 HOOKS_SRC="$VAULT/skills/hooks"
 HOOKS_DST="$CLAUDE_DIR/vault-hooks"
 ln -sf "$HOOKS_SRC" "$HOOKS_DST"
@@ -40,7 +31,7 @@ bash "$SCRIPT_DIR/install-hooks.sh"  || echo "[warn] install-hooks.sh failed (ru
 bash "$SCRIPT_DIR/install-skills.sh" || echo "[warn] install-skills.sh failed (run it manually)"
 echo "[ok] Hooks registered in settings.json + vault skills linked into ~/.claude/skills"
 
-# 4. Install qmd if missing
+# 3. Install qmd if missing
 if ! command -v qmd >/dev/null 2>&1; then
   echo "Installing bun + qmd..."
   curl -fsSL https://bun.sh/install | bash
@@ -51,7 +42,7 @@ else
   echo "[ok] qmd already installed: $(qmd --version 2>/dev/null || echo 'version unknown')"
 fi
 
-# 5. Install official Claude plugins
+# 4. Install official Claude plugins
 if command -v claude >/dev/null 2>&1; then
   echo "Installing official plugins..."
   for plugin in code-review frontend-design skill-creator claude-md-management; do
@@ -78,7 +69,7 @@ else
   echo "  claude plugins install ponytail@ponytail"
 fi
 
-# 6. Install caveman (output compression skill -- required on all machines)
+# 5. Install caveman (output compression skill -- required on all machines)
 NODE_MAJOR=$(node -e "process.stdout.write(process.version.split('.')[0].replace('v',''))" 2>/dev/null || echo "0")
 if [ "$NODE_MAJOR" -ge 18 ]; then
   echo "Installing caveman..."
@@ -89,7 +80,7 @@ else
   echo "  curl -fsSL https://raw.githubusercontent.com/JuliusBrussee/caveman/main/install.sh | bash"
 fi
 
-# 7. Register MCP servers (wiki-search + caveman-shrink wrapper)
+# 6. Register MCP servers (wiki-search + caveman-shrink wrapper)
 if command -v claude >/dev/null 2>&1; then
   echo "Registering MCP servers..."
 

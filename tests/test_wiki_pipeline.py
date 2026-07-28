@@ -319,7 +319,7 @@ def test_all_hunt_skills_footer_converted():
 
     vuln_class_skills = sorted(
         os.path.dirname(p) for p in glob.glob(os.path.join(REPO, "skills", "hunt", "hunt-*", "SKILL.md"))
-    ) + [os.path.join(REPO, "skills", "hunt", "wiki-recon")]
+    ) + [os.path.join(REPO, "skills", "workflow", "wiki-recon")]
 
     for skill_dir in vuln_class_skills:
         skill = os.path.basename(skill_dir)
@@ -338,8 +338,8 @@ def test_exploit_script_preservation_step_present():
     (Capture section) and screenshot (its capture-live lesson) must carry the
     poc/scripts step. New lines must not carry a U+2014 em-dash."""
     skills = (
-        os.path.join(REPO, "skills", "hunt", "ctf-box", "SKILL.md"),
-        os.path.join(REPO, "skills", "hunt", "screenshot", "SKILL.md"),
+        os.path.join(REPO, "skills", "workflow", "ctf-box", "SKILL.md"),
+        os.path.join(REPO, "skills", "workflow", "screenshot", "SKILL.md"),
     )
     for path in skills:
         text = open(path, encoding="utf-8").read()
@@ -354,7 +354,7 @@ def test_ctfbox_reframed_on_kill_chain_phases():
     """The ctf-box spine is the four cyber-kill-chain phases; it anchors on the
     killchain.md board, checks /opt/arsenal first, and captures evidence via capture.sh.
     The privesc discipline (pspy + linpeas) and exploit-script preservation are kept."""
-    text = open(os.path.join(REPO, "skills", "hunt", "ctf-box", "SKILL.md"), encoding="utf-8").read()
+    text = open(os.path.join(REPO, "skills", "workflow", "ctf-box", "SKILL.md"), encoding="utf-8").read()
     for phase in ("Recon", "Weaponize", "Deliver", "Exploit"):
         assert phase in text, "ctf-box missing kill-chain phase: %s" % phase
     assert "killchain.md" in text
@@ -371,8 +371,8 @@ def test_walkthrough_skill_exists_and_carries_required_steps():
     evidence reference (evidence is captured into poc/ during the engagement, not
     rendered from a staged drain). ASCII only, no em-dash, and image-free (no markdown
     image embeds -- vault skill docs never carry images)."""
-    path = os.path.join(REPO, "skills", "walkthrough", "SKILL.md")
-    assert os.path.isfile(path), "skills/walkthrough/SKILL.md is missing"
+    path = os.path.join(REPO, "skills", "workflow", "walkthrough", "SKILL.md")
+    assert os.path.isfile(path), "skills/workflow/walkthrough/SKILL.md is missing"
     text = open(path, encoding="utf-8").read()
 
     assert "name: walkthrough" in text
@@ -384,7 +384,7 @@ def test_walkthrough_skill_exists_and_carries_required_steps():
     assert "![" not in text, "skill doc must stay image-free"
     text.encode("ascii")                           # raises UnicodeEncodeError on any non-ASCII char
     for line in text.splitlines():
-        assert "—" not in line, "em-dash found in skills/walkthrough/SKILL.md: %r" % line
+        assert "—" not in line, "em-dash found in skills/workflow/walkthrough/SKILL.md: %r" % line
 
 
 def test_delta_yield_logged_generic(tmp_path):
