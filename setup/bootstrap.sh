@@ -21,10 +21,10 @@ echo "@$VAULT/CLAUDE.md" > "$CLAUDE_DIR/CLAUDE.md"
 echo "[ok] Created $CLAUDE_DIR/CLAUDE.md -> $VAULT/CLAUDE.md"
 
 # 2. Symlink vault hooks into ~/.claude/vault-hooks
-HOOKS_SRC="$VAULT/skills/hooks"
-HOOKS_DST="$CLAUDE_DIR/vault-hooks"
-ln -sf "$HOOKS_SRC" "$HOOKS_DST"
-echo "[ok] Symlinked vault hooks: $HOOKS_DST -> $HOOKS_SRC"
+# Owned by install-hooks.sh (step 3b): it clears a stale REAL directory at the
+# link path first. A bare `ln -sf` here would nest the link inside such a
+# directory instead of replacing it, leaving every hook command dead.
+echo "[..] vault-hooks symlink: handled by install-hooks.sh below"
 
 # 3b. Register hooks in settings.json + expose vault skills to /skills
 bash "$SCRIPT_DIR/install-hooks.sh"  || echo "[warn] install-hooks.sh failed (run it manually)"

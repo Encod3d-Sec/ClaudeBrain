@@ -21,8 +21,18 @@ echo "Settings: $SETTINGS"
 [ -d "$HOOKS_SRC" ] || { echo "ERROR: $HOOKS_SRC missing (vault code not synced here?)"; exit 1; }
 
 # 1. symlink ~/.claude/vault-hooks -> vault skills/hooks
+# A pre-existing REAL directory at $LINK makes `ln -sfn` drop the link INSIDE it
+# ($LINK/hooks) instead of replacing it, which leaves every hook command in
+# settings.json pointing at a missing file -- and a PreToolUse hook that cannot
+# start exits 2, which BLOCKS Bash/Write/Edit. Clear any non-symlink first, then
+# prove the link resolves before claiming success.
 mkdir -p "$HOME/.claude"
+if [ -e "$LINK" ] && [ ! -L "$LINK" ]; then
+  rm -rf "$LINK"
+  echo "removed stale non-symlink $LINK"
+fi
 ln -sfn "$HOOKS_SRC" "$LINK"
+[ -f "$LINK/scope-guard.py" ] || { echo "ERROR: $LINK does not resolve to $HOOKS_SRC"; exit 1; }
 echo "symlink ok"
 
 # 2. register hooks in this machine's settings.json (idempotent)
