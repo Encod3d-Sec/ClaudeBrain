@@ -66,6 +66,29 @@ fingerprint router routes to (apt-first; `bash scripts/vm-provision.sh --list` p
 and the final line prints a verify one-liner). It is per-package tolerant, so a name that is not
 in your Kali release's repo is reported `MISS` rather than aborting the run.
 
+## Driving a live browser (chrome-devtools MCP)
+
+`bash scripts/browser.sh start` runs chromium on the VM (headless, in the `browser:cdp` tmux
+window) and forwards its DevTools port to `127.0.0.1:9222` here over SSH, so the
+`chrome-devtools` MCP can drive it: navigate, click, read the DOM/accessibility tree, inspect
+network traffic, run JS in the page. `status` / `stop` manage it; `--headed` keeps a visible
+window when the VM has a desktop.
+
+Chromium runs on the VM for the same reason `shot.py` does: **that is where the VPN route to
+in-scope targets is**. A browser on Windows or in WSL cannot reach them.
+
+The DevTools port is **unauthenticated total control of the browser** - any page it has open,
+every cookie and session in it. So it is bound to `127.0.0.1` on the VM and reached only
+through `ssh -L` loopback-to-loopback; it is never offered to a network. If it ever seems
+unreachable, fix the tunnel - do not "fix" it with `--remote-debugging-address=0.0.0.0`.
+`tests/test_browser.py` guards against that flag reappearing.
+
+`--host windows` drives Windows Chrome instead (interactive: you can solve a login or MFA
+prompt by hand mid-flow), but needs WSL mirrored networking (`networkingMode=mirrored` in
+`.wslconfig` + `wsl --shutdown`); under default NAT the script refuses rather than exposing
+the port. Mirrored mode changes WSL networking broadly - do not flip it mid-engagement with
+Ligolo tunnels up.
+
 ## `/opt/arsenal` (canonical on-VM tool/script home)
 
 `/opt/arsenal` is the canonical home on the VM for OUR helpers and fetched offensive tools -
