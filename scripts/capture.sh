@@ -53,7 +53,7 @@ usage: capture.sh <mode> <eng> <slug> [args]
   snippet <eng> <slug> <url-or-file> [grep-pattern] [reveals-note]
   burp <eng> <slug> <host> <port> <https> <method> <path> [bodyfile] [tabname]
 
-  every mode writes BOTH poc/NN-slug.png and poc/NN-slug-source.md (verbatim transcript)
+  ev/req/cli/tmux/web pair poc/NN-slug.png with poc/NN-slug-source.md (verbatim transcript); burp is image-only
 U
   exit 2
 }
@@ -187,6 +187,9 @@ while IFS= read -r c || [ -n "$c" ]; do
   done
 done < /tmp/"$SESS".cmds
 python3 /tmp/shot.py --tmux "$SESS" --plain --history --maxlines 100000 -o "/tmp/poc/$PNG" >/dev/null 2>&1
+# Tee the REAL pane output (prompts + commands + their responses), not the uploaded cmdfile, so
+# the source card is a genuine transcript of what happened, not an echo of what was sent.
+tmux capture-pane -p -t "$SESS" -S -100000 > "/tmp/$SESS.out.log" 2>/dev/null || true
 tmux kill-session -t "$SESS" 2>/dev/null || true
 RUNNER_EOS
   sed -i "s|__SESS__|$SESS|g; s|__PNG__|$PNG|g" "$RUNNER"
@@ -195,7 +198,7 @@ RUNNER_EOS
 echo '$CB64' | base64 -d > /tmp/$SESS.cmds
 echo '$RB64' | base64 -d > /tmp/$SESS.run.sh
 bash /tmp/$SESS.run.sh" >&2
-  _pull_and_report "/tmp/poc/$PNG" "$SLUG" "/tmp/$SESS.cmds" "text"
+  _pull_and_report "/tmp/poc/$PNG" "$SLUG" "/tmp/$SESS.out.log" "text"
 }
 
 _mode_tmux_body() {
@@ -214,8 +217,11 @@ tmux resize-window -t $SESS -x 200 -y 200 2>/dev/null || true
 tmux send-keys -t $SESS 'clear; bash /tmp/$SESS.sh' C-m
 for i in \$(seq 1 60); do tmux capture-pane -p -t $SESS 2>/dev/null | grep -q POC-DONE && break; sleep 1; done
 python3 /tmp/shot.py --tmux $SESS --reqresp --history --maxlines 100000 -o /tmp/poc/$PNG >/dev/null 2>&1
+# Tee the REAL pane output (prompts + commands + their responses), not the uploaded script, so
+# the source card is a genuine transcript of what happened, not an echo of what was sent.
+tmux capture-pane -p -t $SESS -S -100000 > /tmp/$SESS.out.log 2>/dev/null || true
 tmux kill-session -t $SESS 2>/dev/null || true" >&2
-  _pull_and_report "/tmp/poc/$PNG" "$SLUG" "/tmp/$SESS.sh" "text"
+  _pull_and_report "/tmp/poc/$PNG" "$SLUG" "/tmp/$SESS.out.log" "text"
 }
 
 # web: render a LIVE target URL through chromium (browser-chrome frame + address bar) into poc/.
