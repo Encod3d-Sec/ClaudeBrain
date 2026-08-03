@@ -736,6 +736,21 @@ def test_close_out_silent_when_not_solved(vault):
     assert out.strip() == ""
 
 
+def test_close_out_reports_unpaired_poc_evidence(vault):
+    # a lone PNG with no NN-slug-source.md sibling -> Stop hook surfaces the gap so it is
+    # fixed while the request/response is still on hand, not re-derived at submission time
+    import shutil
+    eng = vault / "targets" / "acme"
+    (eng / "poc").mkdir(parents=True, exist_ok=True)
+    (eng / "poc" / "01-lonely.png").write_bytes(b"\x89PNG")
+    (vault / "scripts").mkdir(exist_ok=True)
+    shutil.copy(os.path.join(REPO, "scripts", "poc-pair-lint.py"),
+                str(vault / "scripts" / "poc-pair-lint.py"))
+    out = run_hook("close-out.py", {}, _env(vault)).stdout
+    assert "POC PAIR GAP" in out
+    assert "01-lonely.png" in out
+
+
 def test_close_out_nudges_learn_when_walkthrough_done(vault):
     # SOLVED + a real (non-stale) walkthrough + no .learn-done -> nudge to run learn
     eng = vault / "targets" / "acme"

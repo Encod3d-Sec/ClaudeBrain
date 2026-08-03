@@ -47,6 +47,22 @@ def main():
                            stdin=subprocess.DEVNULL, env=env, timeout=8)
     except Exception:
         pass
+    # Evidence completeness: RoE 3.1.8 rejects a report with no PoC, and a lone PNG with no verbatim
+    # request/response is half a PoC. Surfaced every turn so the gap is fixed while the session still
+    # has the request in hand, not at submission time when it must be re-derived.
+    try:
+        import importlib.util
+        _p = os.path.join(_engagement.VAULT, "scripts", "poc-pair-lint.py")
+        _s = importlib.util.spec_from_file_location("poc_pair_lint", _p)
+        _m = importlib.util.module_from_spec(_s)
+        _s.loader.exec_module(_m)
+        gaps = _m.lint_dir(os.path.join(d, "poc"))
+        if gaps:
+            print("POC PAIR GAP: %d unpaired evidence file(s): %s%s"
+                  % (len(gaps), ", ".join(f for f, _ in gaps[:3]),
+                     " ..." if len(gaps) > 3 else ""))
+    except Exception:
+        pass
     if not _engagement.is_solved(d):
         # During the box: state-discipline reflex. Loot captured but paths.md has no chain
         # rows -> nudge to write the attack path now, not at close-out. Deduped on the loot
