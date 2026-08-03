@@ -8,7 +8,26 @@ set -u
 ENG="${1:?usage: recon-web.sh <eng> <url>}"
 URL="${2:?usage: recon-web.sh <eng> <url>}"
 HOST="$(printf '%s' "$URL" | sed -E 's#^[a-z][a-z0-9+.-]*://##; s#[/:].*$##')"
+
+# Operator kill switch. `touch skills/hooks/.web-recon-off` stops every auto-launch at once without
+# editing the hook. Needed because the hook fires on tool OUTPUT, so a diagnostic command that merely
+# PRINTS a host relaunches the suite: investigating runaway scans re-triggers the scans.
+if [ -e "skills/hooks/.web-recon-off" ]; then
+  echo "recon-web: disabled by skills/hooks/.web-recon-off, not launching for $HOST" >&2
+  exit 0
+fi
+
+# Scope path. The caller may pass a NESTED engagement (`<program>/<site>`) or a bare site name. The
+# hook passes basename(active_dir), which for a nested engagement resolves to `targets/<site>/` and
+# does NOT exist, so `_roe` silently matched nothing and `no_dos: true` was ignored: nuclei and
+# feroxbuster launched against an estate whose RoE forbids both. Resolve the real file first, and
+# fail CLOSED (treat as passive_only) when no scope file can be found, because an unknown RoE must
+# never license an active scan.
 SCOPE="targets/$ENG/scope.md"
+if [ ! -f "$SCOPE" ]; then
+  _found="$(find targets -mindepth 1 -maxdepth 3 -type f -path "*/$(basename "$ENG")/scope.md" -print -quit 2>/dev/null || true)"
+  [ -n "$_found" ] && SCOPE="$_found"
+fi
 
 # ONE tmux session per PROGRAM, one window per tool PER HOST. A multi-site engagement is stored as
 # <program>/<site>, so the session is the leading path segment and the host goes in the window name.
@@ -19,8 +38,14 @@ HOSTSLUG="$(printf '%s' "$HOST" | tr './: ' '----')"
 
 _roe(){ grep -qiE "^[[:space:]]*$1:[[:space:]]*true" "$SCOPE" 2>/dev/null; }
 PASSIVE=0; NODOS=0
-_roe passive_only && PASSIVE=1
-_roe no_dos && NODOS=1
+if [ -f "$SCOPE" ]; then
+  _roe passive_only && PASSIVE=1
+  _roe no_dos && NODOS=1
+else
+  # No readable scope file: fail CLOSED. An unresolvable RoE is not permission to scan.
+  echo "recon-web: no scope.md resolved for '$ENG', treating as passive_only" >&2
+  PASSIVE=1; NODOS=1
+fi
 
 # Browser identity: a stock scanner User-Agent draws a blanket edge 403 on a WAF-fronted estate, so
 # every ACTIVE launch carries a real desktop Chrome UA + a matching Accept-Language. Defined once here.

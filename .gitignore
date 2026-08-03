@@ -51,3 +51,6 @@ __pycache__/
 # --- OS cruft ---------------------------------------------------------------
 .DS_Store
 Thumbs.db
+
+# web-recon operator kill switch (machine-local runtime state)
+.web-recon-off
