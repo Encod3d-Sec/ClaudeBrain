@@ -28,6 +28,32 @@ _NMAP_HTTP_RE = re.compile(r"\b(\d{2,5})/tcp\s+open\s+(?:ssl/)?(https?|http-alt|
 _URL_RE = re.compile(r"https?://[A-Za-z0-9._-]+(?::\d{2,5})?", re.I)
 _LOCATION_RE = re.compile(r"^\s*Location:\s*(https?://[A-Za-z0-9._-]+(?::\d{2,5})?)", re.I | re.M)
 
+_CF_RE = re.compile(r"^\s*(?:server:\s*cloudflare|cf-ray:\s*\S+)", re.I | re.M)
+_SERVER_RE = re.compile(r"^\s*server:\s*(\S+)", re.I | re.M)
+
+
+def _cf_verdict(blob, url):
+    """"cf" | "clear" | "unknown" -- is this surface fronted by Cloudflare?
+
+    Header evidence already present in the tool output is authoritative and free. Only when the
+    output carries no server evidence at all do we spend a bounded HEAD request. Under DRYRUN
+    (the test path) the probe is skipped, so the suite stays offline.
+    """
+    if _CF_RE.search(blob):
+        return "cf"
+    if _SERVER_RE.search(blob):
+        return "clear"
+    if os.environ.get("WEB_RECON_DRYRUN") == "1":
+        return "unknown"
+    try:
+        out = subprocess.run(["curl", "-sI", "-m", "3", url], capture_output=True,
+                             text=True, timeout=6).stdout
+    except Exception:
+        return "unknown"
+    if _CF_RE.search(out):
+        return "cf"
+    return "clear" if _SERVER_RE.search(out) else "unknown"
+
 
 def _response_text(data):
     r = data.get("tool_response")
@@ -98,8 +124,13 @@ def main():
     eng_name = os.path.basename(d)
     script = os.path.join(_engagement.VAULT, "scripts", "recon-web.sh")
     dry = os.environ.get("WEB_RECON_DRYRUN") == "1"
-    launched = []
+    launched, blocked = [], []
+    force = os.environ.get("WEB_RECON_FORCE") == "1"
+    blob = _response_text(data)
     for url in fresh:
+        if not force and _cf_verdict(blob, url) == "cf":
+            blocked.append(url)
+            continue
         if not dry:
             try:
                 subprocess.Popen(["bash", script, eng_name, url], cwd=_engagement.VAULT,
@@ -108,11 +139,23 @@ def main():
             except Exception:
                 continue
         launched.append(url)
+    # Ledger BOTH: a suppressed surface must not be re-probed on every later turn.
+    if launched or blocked:
+        with open(ledger, "a", encoding="utf-8") as f:
+            for u in launched + blocked:
+                f.write(u + "\n")
+    if blocked:
+        print(json.dumps({"hookSpecificOutput": {
+            "hookEventName": "PostToolUse",
+            "additionalContext": (
+                "CLOUDFLARE detected -- auto web-recon SUPPRESSED for: "
+                + ", ".join(blocked[:3])
+                + ". Scanners produce block-page artifacts here and risk a 1020 hard deny. "
+                  "Enumerate by READING the application's own JS bundle instead. "
+                  "WEB_RECON_FORCE=1 overrides."),
+        }}))
     if not launched:
         return
-    with open(ledger, "a", encoding="utf-8") as f:
-        for u in launched:
-            f.write(u + "\n")
     try:
         import _telemetry
         _telemetry.log_event("web-recon-launch", d=d, urls=launched)

@@ -69,3 +69,36 @@ def test_fail_open_on_garbage(vault):
     r = subprocess.run(["python3", HOOK], input="garbage", capture_output=True,
                        text=True, env=env, timeout=20)
     assert r.returncode == 0
+
+
+def test_suppresses_scan_when_output_shows_cloudflare(vault):
+    _scope(vault)
+    r = _run(_payload("curl -I https://10.0.0.5/",
+                      "HTTP/2 200\nserver: cloudflare\ncf-ray: a258e1f1ffe2c9d5-VNO"), vault)
+    assert "AUTO WEB-RECON" not in r.stdout
+    assert "CLOUDFLARE" in r.stdout
+    assert "http://10.0.0.5" in _ledger(vault) or "https://10.0.0.5" in _ledger(vault)
+
+
+def test_cf_ledger_entry_prevents_a_later_rescan(vault):
+    _scope(vault)
+    _run(_payload("curl -I https://10.0.0.5/", "HTTP/2 200\nserver: cloudflare"), vault)
+    r2 = _run(_payload("curl -I https://10.0.0.5/", "HTTP/2 200\nserver: nginx"), vault)
+    assert "AUTO WEB-RECON" not in r2.stdout
+
+
+def test_force_env_overrides_the_cf_gate(vault):
+    _scope(vault)
+    env = dict(os.environ, CLAUDEBRAIN_VAULT=str(vault),
+               WEB_RECON_DRYRUN="1", WEB_RECON_FORCE="1")
+    r = subprocess.run(["python3", HOOK],
+                       input=json.dumps(_payload("curl -I https://10.0.0.5/",
+                                                 "HTTP/2 200\nserver: cloudflare")),
+                       capture_output=True, text=True, env=env, timeout=20)
+    assert "AUTO WEB-RECON" in r.stdout
+
+
+def test_non_cloudflare_server_header_still_launches(vault):
+    _scope(vault)
+    r = _run(_payload("curl -I https://10.0.0.5/", "HTTP/2 200\nserver: nginx/1.24"), vault)
+    assert "AUTO WEB-RECON" in r.stdout
