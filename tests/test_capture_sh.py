@@ -22,6 +22,11 @@ def test_help_lists_web():
     assert "web  <eng> <slug> <url>" in r.stderr
 
 
+def test_help_documents_source_card_pairing():
+    r = _run("--help")
+    assert "-source.md" in r.stderr, "usage must document that every capture writes a source card"
+
+
 def test_recon_is_a_known_mode():
     # too few args -> the recon usage line, proving mode_recon is dispatched (not "unknown mode")
     r = _run("recon", "eng", "slug")  # 2 args reach mode_recon, which needs >=3

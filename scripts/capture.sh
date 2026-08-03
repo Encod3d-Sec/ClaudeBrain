@@ -52,6 +52,8 @@ usage: capture.sh <mode> <eng> <slug> [args]
   raw  <eng> <slug> <remote-file>
   snippet <eng> <slug> <url-or-file> [grep-pattern] [reveals-note]
   burp <eng> <slug> <host> <port> <https> <method> <path> [bodyfile] [tabname]
+
+  every mode writes BOTH poc/NN-slug.png and poc/NN-slug-source.md (verbatim transcript)
 U
   exit 2
 }
@@ -66,7 +68,7 @@ _poc_target() {   # $1=eng $2=slug
 
 # Pull a rendered PNG off the VM into poc/ (base64 through the pipe, not the caller's context)
 # and print the saved path + walkthrough ref. $ENG/$POC/$PNG are set by the caller.
-_pull_and_report() {   # $1=remote-png-path $2=caption
+_pull_and_report() {   # $1=remote-png-path $2=caption [$3=remote-transcript] [$4=fence-lang]
   # `|| true` so a failed pull (pipefail/set -e) does NOT abort before the empty-file cleanup below,
   # which would leave a 0-byte PNG on disk (a broken image the operator then sees in poc/).
   { bash "$VM_SH" "base64 -w0 '$1' 2>/dev/null" | base64 -d > "$POC/$PNG"; } 2>/dev/null || true
@@ -77,6 +79,15 @@ _pull_and_report() {   # $1=remote-png-path $2=caption
     rm -f "$POC/$PNG"
     echo "capture($MODE): no PNG produced (VM unreachable? tee the step output first?)" >&2
     exit 1
+  fi
+  # Every image gets its verbatim source card, so evidence is a PAIR by construction rather than
+  # by remembering. mode_web writes its own (page HTML); every other mode routes through here.
+  if [ -n "${3:-}" ]; then
+    local SRC="${PNG%.png}-source.md" LANG="${4:-text}"
+    { printf '# %s\n\n```%s\n' "$2" "$LANG"
+      bash "$VM_SH" "cat $(printf '%q' "$3") 2>/dev/null | head -c 300000"
+      printf '\n```\n'; } > "$POC/$SRC" 2>/dev/null || true
+    [ -s "$POC/$SRC" ] && echo "saved targets/$ENG/poc/$SRC (source card)"
   fi
 }
 
@@ -91,7 +102,7 @@ mode_ev() {
   local B64; B64=$(base64 -w0 "$VAULT/scripts/shot.py")
   bash "$VM_SH" "mkdir -p /tmp/poc; echo '$B64' | base64 -d > /tmp/shot.py
 python3 /tmp/shot.py --term '$LOG' --reqresp --cmd \"$CMD\" --url-bar \"$URL\" -o /tmp/poc/$PNG" >&2
-  _pull_and_report "/tmp/poc/$PNG" "$CMD"
+  _pull_and_report "/tmp/poc/$PNG" "$CMD" "$LOG" "text"
 }
 
 # req: curl request+response card, rendered like a real shell (dots-only title bar; `$ ` command
@@ -124,7 +135,7 @@ EOF
 echo '$RB64' | base64 -d > /tmp/reqshot_cmd.sh
 bash /tmp/reqshot_cmd.sh
 python3 /tmp/shot.py --term '$LOG' --reqresp --cmd '' --maxlines 600 -o /tmp/poc/$PNG" >&2
-  _pull_and_report "/tmp/poc/$PNG" "curl request+response - $SLUG"
+  _pull_and_report "/tmp/poc/$PNG" "curl request+response - $SLUG" "$LOG" "http"
 }
 
 # tmux: run a command-script in a real Kali tmux pane and grab the pane, so the evidence is an
@@ -184,7 +195,7 @@ RUNNER_EOS
 echo '$CB64' | base64 -d > /tmp/$SESS.cmds
 echo '$RB64' | base64 -d > /tmp/$SESS.run.sh
 bash /tmp/$SESS.run.sh" >&2
-  _pull_and_report "/tmp/poc/$PNG" "$SLUG"
+  _pull_and_report "/tmp/poc/$PNG" "$SLUG" "/tmp/$SESS.cmds" "text"
 }
 
 _mode_tmux_body() {
@@ -204,7 +215,7 @@ tmux send-keys -t $SESS 'clear; bash /tmp/$SESS.sh' C-m
 for i in \$(seq 1 60); do tmux capture-pane -p -t $SESS 2>/dev/null | grep -q POC-DONE && break; sleep 1; done
 python3 /tmp/shot.py --tmux $SESS --reqresp --history --maxlines 100000 -o /tmp/poc/$PNG >/dev/null 2>&1
 tmux kill-session -t $SESS 2>/dev/null || true" >&2
-  _pull_and_report "/tmp/poc/$PNG" "$SLUG"
+  _pull_and_report "/tmp/poc/$PNG" "$SLUG" "/tmp/$SESS.sh" "text"
 }
 
 # web: render a LIVE target URL through chromium (browser-chrome frame + address bar) into poc/.
