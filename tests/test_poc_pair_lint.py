@@ -42,3 +42,16 @@ def test_main_returns_1_on_issues_and_0_when_clean(tmp_path, capsys):
     assert ppl.main([str(tmp_path)]) == 1
     (tmp_path / "05-lonely-source.md").write_text("# card\n")
     assert ppl.main([str(tmp_path)]) == 0
+
+
+def test_foreign_md_files_are_ignored(tmp_path):
+    (tmp_path / "06-thing.png").write_bytes(b"\x89PNG")
+    (tmp_path / "06-thing-source.md").write_text("# card\n")
+    (tmp_path / "06-thing-snippet.md").write_text("# other\n")
+    assert ppl.lint_dir(tmp_path) == []
+
+
+def test_main_with_empty_argv_returns_2(capsys):
+    assert ppl.main([]) == 2
+    captured = capsys.readouterr()
+    assert "usage:" in captured.err
