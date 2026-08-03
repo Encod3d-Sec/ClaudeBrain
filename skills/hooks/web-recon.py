@@ -38,24 +38,31 @@ def _blob_host_spans(blob):
     return [(m.start(), _host(m.group(0))) for m in _URL_RE.finditer(blob)]
 
 
-def _attributed_blob(blob, host):
+def _attributed_blob(blob, host, hosts):
     """The slice of blob that is trustworthy evidence for `host`, or '' when it cannot be
-    attributed to `host` at all.
+    trusted at all for this invocation. `hosts` is every host being judged in the current
+    invocation (all of `fresh`), so this function can tell "one surface" from "several".
 
-    - No URL literal anywhere in blob (e.g. raw `curl -I` header output for a single
-      target): the whole blob is single-surface by construction, safe to use as-is.
-    - Exactly one distinct host is mentioned and it IS `host`: same case, use the whole
-      blob.
-    - Multiple distinct hosts are mentioned (e.g. concatenated httpx/nmap/multi-curl
-      output covering several surfaces in one command): only the slice from this host's
-      own mention up to the next DIFFERENT host's mention (or EOF) is trustworthy -- a
-      `server:`/`cf-ray:` line elsewhere in the blob belongs to another surface and must
-      never leak into this host's verdict.
+    - len(hosts) <= 1 (a single-surface invocation): the whole blob is unambiguous by
+      construction, even when it carries no URL literal at all -- a plain `curl -sI`
+      response never echoes its own request URL, yet there is only one surface this
+      command's output could possibly be about. Use it as-is. This is the case the six
+      pre-existing tests rely on.
+    - len(hosts) > 1 (a multi-surface invocation, e.g. concatenated httpx/nmap/chained-curl
+      output covering several targets in one command): header evidence is trustworthy ONLY
+      when the blob's own URL literals disambiguate EVERY host in `hosts`, not merely the
+      one being asked about right now. A blob with no literals at all (the common shape of
+      `curl -sI a ; curl -sI b`, which never echoes either URL), or literals for only some
+      of the hosts, proves nothing about which lines belong to which surface -- it is
+      UNATTRIBUTABLE for ALL of them. Trusting "the one host we happen to be able to
+      locate" here is exactly the cross-host leak this function exists to prevent.
     """
-    spans = _blob_host_spans(blob)
-    hosts = {h for _, h in spans}
-    if not hosts or hosts == {host}:
+    if len(hosts) <= 1:
         return blob
+    spans = _blob_host_spans(blob)
+    span_hosts = {h for _, h in spans}
+    if not hosts <= span_hosts:
+        return ""  # blob doesn't literally name every host in this invocation
     start = next((p for p, h in spans if h == host), None)
     if start is None:
         return ""  # this host isn't attributable at all in a multi-host blob
@@ -63,21 +70,25 @@ def _attributed_blob(blob, host):
     return blob[start:end]
 
 
-def _cf_verdict(blob, url):
+def _cf_verdict(blob, url, hosts=frozenset()):
     """"cf" | "clear" | "unknown" -- is this surface fronted by Cloudflare?
 
-    Header evidence already present in the tool output is authoritative and free, but ONLY
-    when it can be attributed to THIS url's host (see _attributed_blob): a blob covering
-    several hosts in one command's output must never let one host's server header decide
-    another host's verdict. Only when no attributable evidence exists do we spend a bounded
-    HEAD request. Under DRYRUN (the test path) the probe is skipped, so the suite stays
-    offline, and an unattributed multi-host blob with no probe available returns "unknown".
+    `hosts` is every host being judged in the current invocation (all of `fresh`); an
+    empty/singleton set means this url is the only surface in play. Header evidence
+    already present in the tool output is authoritative and free, but ONLY when it can be
+    attributed to THIS url's host (see _attributed_blob): an unattributable multi-host
+    blob skips BOTH header checks entirely -- it never decides "cf" OR "clear" from blob
+    text for any host in that invocation -- and falls straight through to the bounded
+    per-host probe. Under DRYRUN (the test path), or if the probe fails/is unreachable,
+    the result is "unknown".
     """
-    scoped = _attributed_blob(blob, _host(url))
-    if _CF_RE.search(scoped):
-        return "cf"
-    if _SERVER_RE.search(scoped):
-        return "clear"
+    host = _host(url)
+    scoped = _attributed_blob(blob, host, hosts or {host})
+    if scoped:
+        if _CF_RE.search(scoped):
+            return "cf"
+        if _SERVER_RE.search(scoped):
+            return "clear"
     if os.environ.get("WEB_RECON_DRYRUN") == "1":
         return "unknown"
     try:
@@ -159,12 +170,33 @@ def main():
     eng_name = os.path.basename(d)
     script = os.path.join(_engagement.VAULT, "scripts", "recon-web.sh")
     dry = os.environ.get("WEB_RECON_DRYRUN") == "1"
-    launched, blocked = [], []
+    launched, blocked, held = [], [], []
     force = os.environ.get("WEB_RECON_FORCE") == "1"
     blob = _response_text(data)
+    hosts_in_play = {_host(u) for u in fresh}
     for url in fresh:
-        if not force and _cf_verdict(blob, url) == "cf":
+        host = _host(url)
+        verdict = _cf_verdict(blob, url, hosts_in_play)
+        if not force and verdict == "cf":
             blocked.append(url)
+            continue
+        # A multi-host invocation where the blob carries server/cf-ray evidence
+        # SOMEWHERE but could not attribute ANY of it to this host (verdict fell all the
+        # way through to "unknown" with no live probe to back it, e.g. WEB_RECON_DRYRUN
+        # or a chained plain `curl -sI ...; curl -sI ...` that never echoes either URL)
+        # is NOT the same situation as an honest single-host "no evidence at all" -- that
+        # is precisely the cross-host bypass shape this hook exists to close. Hold rather
+        # than launch; a later turn with disambiguating output, or a live (non-DRYRUN)
+        # probe, resolves it. Gated on the raw blob actually carrying SOME header
+        # evidence: a multi-surface invocation whose blob has none at all (e.g. an
+        # nmap-derived target plus its own redirect destination, port-state text only)
+        # has nothing that could leak across hosts, so it stays on the ordinary
+        # "unknown launches" path -- this is what test_launches_on_inscope_redirect_vhost
+        # relies on.
+        if not force and verdict == "unknown" and len(hosts_in_play) > 1 \
+                and not _attributed_blob(blob, host, hosts_in_play) \
+                and (_CF_RE.search(blob) or _SERVER_RE.search(blob)):
+            held.append(url)
             continue
         if not dry:
             try:
@@ -174,13 +206,16 @@ def main():
             except Exception:
                 continue
         launched.append(url)
-    # Ledger BOTH: a suppressed surface must not be re-probed on every later turn.
+    # Ledger launched + blocked only: a confirmed surface (launched or CF-suppressed) must
+    # not be re-probed on every later turn. A held (ambiguous) surface stays OFF the ledger
+    # on purpose, so it gets a fresh, potentially disambiguating look on the next turn.
     if launched or blocked:
         with open(ledger, "a", encoding="utf-8") as f:
             for u in launched + blocked:
                 f.write(u + "\n")
     # One additionalContext per hook invocation (mirrors recon-capture.py's _emit(blocks)):
-    # a mixed-verdict run (some blocked, some launched) must not print two JSON objects.
+    # a mixed-verdict run (some blocked, some held, some launched) must not print several
+    # separate JSON objects.
     blocks = []
     if blocked:
         blocks.append(
@@ -189,6 +224,14 @@ def main():
             + ". Scanners produce block-page artifacts here and risk a 1020 hard deny. "
               "Enumerate by READING the application's own JS bundle instead. "
               "WEB_RECON_FORCE=1 overrides.")
+    if held:
+        blocks.append(
+            "AMBIGUOUS multi-host output -- auto web-recon HELD (not launched) for: "
+            + ", ".join(held[:3])
+            + ". Server headers in this shared output could not be attributed to a "
+              "specific host, so none of the candidates were scanned (one may be "
+              "Cloudflare-fronted). Re-run with per-host output, or let a live probe "
+              "resolve it. WEB_RECON_FORCE=1 overrides.")
     if launched:
         try:
             import _telemetry

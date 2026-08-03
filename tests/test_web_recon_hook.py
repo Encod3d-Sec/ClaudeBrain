@@ -129,3 +129,35 @@ def test_multi_host_blob_evidence_is_not_cross_attributed(vault):
     ledger = _ledger(vault)
     assert "a.acme.internal" in ledger
     assert "b.acme.internal" in ledger
+
+
+def test_single_host_no_literal_blob_still_launches(vault):
+    # Companion to the multi-host bypass test below: a SINGLE in-scope host, plain `curl -sI`
+    # output that carries no URL literal and no server evidence at all. This is exactly the
+    # shape all six pre-existing tests already use (a single surface per invocation), and it
+    # must keep launching under "unknown" -- the multi-host attribution fix must not make a
+    # single-surface invocation any more conservative than it already was.
+    _scope(vault)
+    r = _run(_payload("curl -sI https://10.0.0.5/", "HTTP/2 200\ndate: Mon\n"), vault)
+    assert "AUTO WEB-RECON" in r.stdout
+    assert "https://10.0.0.5" in _ledger(vault)
+
+
+def test_multi_host_no_literal_blob_does_not_launch_either_host(vault):
+    # The reviewer's exact bypass reproduction: TWO in-scope hosts probed by a chained plain
+    # `curl -sI a ; curl -sI b`, neither of which echoes its own URL into stdout. The blob's
+    # only header evidence (`server: nginx`) cannot be attributed to either host. Neither may
+    # launch: not the "plain" one (we don't actually know that) and certainly not the one that
+    # may be Cloudflare-fronted. This must fail against the pre-fix _cf_verdict, which searched
+    # the whole blob regardless of host and would have returned "clear" for both, launching
+    # scanners straight at a possibly-Cloudflare-fronted target.
+    (vault / "targets" / "acme" / "scope.md").write_text(
+        "## In scope\n- cf.acme.internal\n- plain.acme.internal\n\n## Out of scope\n- 10.0.0.1\n",
+        encoding="utf-8")
+    cmd = "curl -sI https://cf.acme.internal/ ; curl -sI https://plain.acme.internal/"
+    out = "HTTP/2 200\ndate: Mon\n\nHTTP/2 200\nserver: nginx\n"
+    r = _run(_payload(cmd, out), vault)
+    assert "AUTO WEB-RECON" not in r.stdout
+    ledger = _ledger(vault)
+    assert "cf.acme.internal" not in ledger
+    assert "plain.acme.internal" not in ledger
