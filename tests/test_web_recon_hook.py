@@ -102,3 +102,30 @@ def test_non_cloudflare_server_header_still_launches(vault):
     _scope(vault)
     r = _run(_payload("curl -I https://10.0.0.5/", "HTTP/2 200\nserver: nginx/1.24"), vault)
     assert "AUTO WEB-RECON" in r.stdout
+
+
+def test_multi_host_blob_evidence_is_not_cross_attributed(vault):
+    # One command's output covers TWO distinct in-scope hosts (e.g. a multi-target curl/httpx
+    # run): host a is Cloudflare-fronted, host b is plain nginx. A's header must not leak
+    # into b's verdict (over-suppression) and b's header must not leak into a's (a false
+    # "clear" that would let a scanner hit the CF-fronted host).
+    (vault / "targets" / "acme" / "scope.md").write_text(
+        "## In scope\n- a.acme.internal\n- b.acme.internal\n\n## Out of scope\n- 10.0.0.1\n",
+        encoding="utf-8")
+    cmd = "curl -I https://a.acme.internal/ ; curl -I https://b.acme.internal/"
+    out = (
+        "https://a.acme.internal/\n"
+        "HTTP/2 200\n"
+        "server: cloudflare\n"
+        "cf-ray: a258e1f1ffe2c9d5-VNO\n"
+        "\n"
+        "https://b.acme.internal/\n"
+        "HTTP/2 200\n"
+        "server: nginx\n"
+    )
+    r = _run(_payload(cmd, out), vault)
+    assert "CLOUDFLARE detected" in r.stdout
+    assert "AUTO WEB-RECON" in r.stdout
+    ledger = _ledger(vault)
+    assert "a.acme.internal" in ledger
+    assert "b.acme.internal" in ledger

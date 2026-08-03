@@ -32,16 +32,51 @@ _CF_RE = re.compile(r"^\s*(?:server:\s*cloudflare|cf-ray:\s*\S+)", re.I | re.M)
 _SERVER_RE = re.compile(r"^\s*server:\s*(\S+)", re.I | re.M)
 
 
+def _blob_host_spans(blob):
+    """(position, host) for every URL literal found in blob, in appearance order. Used to
+    tell whether a shared tool-output blob carries evidence for one host or several."""
+    return [(m.start(), _host(m.group(0))) for m in _URL_RE.finditer(blob)]
+
+
+def _attributed_blob(blob, host):
+    """The slice of blob that is trustworthy evidence for `host`, or '' when it cannot be
+    attributed to `host` at all.
+
+    - No URL literal anywhere in blob (e.g. raw `curl -I` header output for a single
+      target): the whole blob is single-surface by construction, safe to use as-is.
+    - Exactly one distinct host is mentioned and it IS `host`: same case, use the whole
+      blob.
+    - Multiple distinct hosts are mentioned (e.g. concatenated httpx/nmap/multi-curl
+      output covering several surfaces in one command): only the slice from this host's
+      own mention up to the next DIFFERENT host's mention (or EOF) is trustworthy -- a
+      `server:`/`cf-ray:` line elsewhere in the blob belongs to another surface and must
+      never leak into this host's verdict.
+    """
+    spans = _blob_host_spans(blob)
+    hosts = {h for _, h in spans}
+    if not hosts or hosts == {host}:
+        return blob
+    start = next((p for p, h in spans if h == host), None)
+    if start is None:
+        return ""  # this host isn't attributable at all in a multi-host blob
+    end = next((p for p, h in spans if p > start and h != host), len(blob))
+    return blob[start:end]
+
+
 def _cf_verdict(blob, url):
     """"cf" | "clear" | "unknown" -- is this surface fronted by Cloudflare?
 
-    Header evidence already present in the tool output is authoritative and free. Only when the
-    output carries no server evidence at all do we spend a bounded HEAD request. Under DRYRUN
-    (the test path) the probe is skipped, so the suite stays offline.
+    Header evidence already present in the tool output is authoritative and free, but ONLY
+    when it can be attributed to THIS url's host (see _attributed_blob): a blob covering
+    several hosts in one command's output must never let one host's server header decide
+    another host's verdict. Only when no attributable evidence exists do we spend a bounded
+    HEAD request. Under DRYRUN (the test path) the probe is skipped, so the suite stays
+    offline, and an unattributed multi-host blob with no probe available returns "unknown".
     """
-    if _CF_RE.search(blob):
+    scoped = _attributed_blob(blob, _host(url))
+    if _CF_RE.search(scoped):
         return "cf"
-    if _SERVER_RE.search(blob):
+    if _SERVER_RE.search(scoped):
         return "clear"
     if os.environ.get("WEB_RECON_DRYRUN") == "1":
         return "unknown"
@@ -144,30 +179,31 @@ def main():
         with open(ledger, "a", encoding="utf-8") as f:
             for u in launched + blocked:
                 f.write(u + "\n")
+    # One additionalContext per hook invocation (mirrors recon-capture.py's _emit(blocks)):
+    # a mixed-verdict run (some blocked, some launched) must not print two JSON objects.
+    blocks = []
     if blocked:
-        print(json.dumps({"hookSpecificOutput": {
-            "hookEventName": "PostToolUse",
-            "additionalContext": (
-                "CLOUDFLARE detected -- auto web-recon SUPPRESSED for: "
-                + ", ".join(blocked[:3])
-                + ". Scanners produce block-page artifacts here and risk a 1020 hard deny. "
-                  "Enumerate by READING the application's own JS bundle instead. "
-                  "WEB_RECON_FORCE=1 overrides."),
-        }}))
-    if not launched:
-        return
-    try:
-        import _telemetry
-        _telemetry.log_event("web-recon-launch", d=d, urls=launched)
-    except Exception:
-        pass
-    print(json.dumps({"hookSpecificOutput": {
-        "hookEventName": "PostToolUse",
-        "additionalContext": (
+        blocks.append(
+            "CLOUDFLARE detected -- auto web-recon SUPPRESSED for: "
+            + ", ".join(blocked[:3])
+            + ". Scanners produce block-page artifacts here and risk a 1020 hard deny. "
+              "Enumerate by READING the application's own JS bundle instead. "
+              "WEB_RECON_FORCE=1 overrides.")
+    if launched:
+        try:
+            import _telemetry
+            _telemetry.log_event("web-recon-launch", d=d, urls=launched)
+        except Exception:
+            pass
+        blocks.append(
             "AUTO WEB-RECON launched (parallel feroxbuster/nuclei/whatweb + page render) for: "
             + ", ".join(launched[:3])
-            + ". Read the cards as they finish (recon/); do not hand-probe what a scanner covers."),
-    }}))
+            + ". Read the cards as they finish (recon/); do not hand-probe what a scanner covers.")
+    if blocks:
+        print(json.dumps({"hookSpecificOutput": {
+            "hookEventName": "PostToolUse",
+            "additionalContext": "\n\n".join(blocks),
+        }}))
 
 
 try:
