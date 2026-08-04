@@ -905,9 +905,27 @@ def ensure_state_files():
     walkthrough/Deadends), skipping the Vuln-index/oob severity machinery that is dead
     across CTF rooms; pentest/bugbounty heal the full set. poc/ is scaffolded for
     every type; Vulns/ is created lazily on the first FIND, never here. Returns the
-    created names. Idempotent: never overwrites an existing file."""
+    created names. Idempotent: never overwrites an existing file.
+
+    ONCE-ONLY. The heal runs on an engagement's FIRST session and then never again unless
+    explicitly asked for. Before this gate it ran at every SessionStart, so deleting an empty
+    `poc/` or `ingest/` from a finished engagement just meant it reappeared next session, forever
+    (git does not track empty dirs, so nothing recorded them as intentional). It also had no
+    lifecycle awareness and would happily rewrite engagements already filed under `2. DEAD`,
+    `3. TESTED` or `7. OutOfScope`, i.e. work that is finished and should never be mutated.
+
+    Gate: a `.heal-done` marker in the engagement dir. Set `ENGAGEMENT_HEAL=1` to force a heal
+    (the "only when prompted" path, e.g. after adding a file type to the template set)."""
     d = active_dir()
     if not d:
+        return []
+    forced = os.environ.get("ENGAGEMENT_HEAL") == "1"
+    # Finished engagements are never healed, forced or not: they are a record, not live state.
+    if any(("/%s/" % seg) in (d.replace(os.sep, "/") + "/")
+           for seg in ("2. DEAD", "3. TESTED", "5. PDF", "7. OutOfScope")):
+        return []
+    marker = os.path.join(d, ".heal-done")
+    if os.path.exists(marker) and not forced:
         return []
     name = os.path.basename(d)
     today = date.today().isoformat()
@@ -942,4 +960,11 @@ def ensure_state_files():
         if not os.path.isdir(p):
             os.makedirs(p, exist_ok=True)
             created.append(sub + "/")
+    # Stamp the marker so this never runs again for this engagement unless ENGAGEMENT_HEAL=1.
+    # Written even when nothing was created, so an already-complete engagement also stops re-healing.
+    try:
+        with open(marker, "w", encoding="utf-8") as fh:
+            fh.write("healed %s\n" % today)
+    except Exception:
+        pass
     return created
