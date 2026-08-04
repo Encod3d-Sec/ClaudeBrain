@@ -33,57 +33,65 @@ _SERVER_RE = re.compile(r"^\s*server:\s*(\S+)", re.I | re.M)
 
 
 def _blob_host_spans(blob):
-    """(position, host) for every URL literal found in blob, in appearance order. Used to
-    tell whether a shared tool-output blob carries evidence for one host or several."""
-    return [(m.start(), _host(m.group(0))) for m in _URL_RE.finditer(blob)]
+    """(position, authority) for every URL literal found in blob, in appearance order.
+    `authority` keeps the port (see _authority) -- two surfaces that share a hostname but
+    differ only by port (e.g. probing an alternate origin port while the edge fronts
+    :443, a standard Cloudflare-bypass recon technique) must be tracked as distinct
+    spans, never collapsed into one. Used to tell whether a shared tool-output blob
+    carries evidence for one surface or several."""
+    return [(m.start(), _authority(m.group(0))) for m in _URL_RE.finditer(blob)]
 
 
-def _attributed_blob(blob, host, hosts):
-    """The slice of blob that is trustworthy evidence for `host`, or '' when it cannot be
-    trusted at all for this invocation. `hosts` is every host being judged in the current
-    invocation (all of `fresh`), so this function can tell "one surface" from "several".
+def _attributed_blob(blob, authority, authorities):
+    """The slice of blob that is trustworthy evidence for `authority` (host[:port]), or
+    '' when it cannot be trusted at all for this invocation. `authorities` is every
+    authority being judged in the current invocation (all of `fresh`), keyed on host AND
+    port, so this function can tell "one surface" from "several" -- two URLs sharing a
+    hostname but differing only by port are two surfaces, not one.
 
-    - len(hosts) <= 1 (a single-surface invocation): the whole blob is unambiguous by
-      construction, even when it carries no URL literal at all -- a plain `curl -sI`
+    - len(authorities) <= 1 (a single-surface invocation): the whole blob is unambiguous
+      by construction, even when it carries no URL literal at all -- a plain `curl -sI`
       response never echoes its own request URL, yet there is only one surface this
       command's output could possibly be about. Use it as-is. This is the case the six
       pre-existing tests rely on.
-    - len(hosts) > 1 (a multi-surface invocation, e.g. concatenated httpx/nmap/chained-curl
-      output covering several targets in one command): header evidence is trustworthy ONLY
-      when the blob's own URL literals disambiguate EVERY host in `hosts`, not merely the
-      one being asked about right now. A blob with no literals at all (the common shape of
-      `curl -sI a ; curl -sI b`, which never echoes either URL), or literals for only some
-      of the hosts, proves nothing about which lines belong to which surface -- it is
-      UNATTRIBUTABLE for ALL of them. Trusting "the one host we happen to be able to
-      locate" here is exactly the cross-host leak this function exists to prevent.
+    - len(authorities) > 1 (a multi-surface invocation, e.g. concatenated httpx/nmap/
+      chained-curl output covering several targets -- including the same hostname probed
+      on two different ports -- in one command): header evidence is trustworthy ONLY
+      when the blob's own URL literals disambiguate EVERY authority in `authorities`, not
+      merely the one being asked about right now. A blob with no literals at all (the
+      common shape of `curl -sI a ; curl -sI b`, which never echoes either URL), or
+      literals for only some of the authorities, proves nothing about which lines belong
+      to which surface -- it is UNATTRIBUTABLE for ALL of them. Trusting "the one
+      authority we happen to be able to locate" here is exactly the cross-surface leak
+      this function exists to prevent.
     """
-    if len(hosts) <= 1:
+    if len(authorities) <= 1:
         return blob
     spans = _blob_host_spans(blob)
-    span_hosts = {h for _, h in spans}
-    if not hosts <= span_hosts:
-        return ""  # blob doesn't literally name every host in this invocation
-    start = next((p for p, h in spans if h == host), None)
+    span_authorities = {a for _, a in spans}
+    if not authorities <= span_authorities:
+        return ""  # blob doesn't literally name every authority in this invocation
+    start = next((p for p, a in spans if a == authority), None)
     if start is None:
-        return ""  # this host isn't attributable at all in a multi-host blob
-    end = next((p for p, h in spans if p > start and h != host), len(blob))
+        return ""  # this authority isn't attributable at all in a multi-surface blob
+    end = next((p for p, a in spans if p > start and a != authority), len(blob))
     return blob[start:end]
 
 
-def _cf_verdict(blob, url, hosts=frozenset()):
+def _cf_verdict(blob, url, authorities=frozenset()):
     """"cf" | "clear" | "unknown" -- is this surface fronted by Cloudflare?
 
-    `hosts` is every host being judged in the current invocation (all of `fresh`); an
-    empty/singleton set means this url is the only surface in play. Header evidence
-    already present in the tool output is authoritative and free, but ONLY when it can be
-    attributed to THIS url's host (see _attributed_blob): an unattributable multi-host
-    blob skips BOTH header checks entirely -- it never decides "cf" OR "clear" from blob
-    text for any host in that invocation -- and falls straight through to the bounded
-    per-host probe. Under DRYRUN (the test path), or if the probe fails/is unreachable,
-    the result is "unknown".
+    `authorities` is every host[:port] being judged in the current invocation (all of
+    `fresh`); an empty/singleton set means this url is the only surface in play. Header
+    evidence already present in the tool output is authoritative and free, but ONLY when
+    it can be attributed to THIS url's authority (see _attributed_blob): an
+    unattributable multi-surface blob skips BOTH header checks entirely -- it never
+    decides "cf" OR "clear" from blob text for any surface in that invocation -- and
+    falls straight through to the bounded per-surface probe. Under DRYRUN (the test
+    path), or if the probe fails/is unreachable, the result is "unknown".
     """
-    host = _host(url)
-    scoped = _attributed_blob(blob, host, hosts or {host})
+    authority = _authority(url)
+    scoped = _attributed_blob(blob, authority, authorities or {authority})
     if scoped:
         if _CF_RE.search(scoped):
             return "cf"
@@ -110,6 +118,17 @@ def _response_text(data):
 
 def _host(url):
     return re.sub(r"^https?://", "", url, flags=re.I).split("/")[0].split(":")[0].lower()
+
+
+def _authority(url):
+    """host[:port] identity for `url` (scheme and path stripped, port KEPT -- unlike
+    _host()). Used only for CF-attribution surface identity: two URLs that share a
+    hostname but differ by port are two distinct surfaces (probing an alternate origin
+    port while the edge fronts :443 is a standard Cloudflare-bypass recon technique), so
+    they must never collapse into a false singleton for attribution purposes. Scope
+    matching stays on _host() everywhere else -- a port never changes whether a host is
+    in scope."""
+    return re.sub(r"^https?://", "", url, flags=re.I).split("/")[0].lower()
 
 
 def _in_scope(host, sc, eng):
@@ -173,28 +192,32 @@ def main():
     launched, blocked, held = [], [], []
     force = os.environ.get("WEB_RECON_FORCE") == "1"
     blob = _response_text(data)
-    hosts_in_play = {_host(u) for u in fresh}
+    # Keyed on host[:port] (_authority), not bare host (_host): two surfaces sharing a
+    # hostname but differing only by port (probing an alternate origin port while the
+    # edge fronts :443) must count as two, never collapse into a false singleton that
+    # would trust the shared blob unconditionally for both.
+    authorities_in_play = {_authority(u) for u in fresh}
     for url in fresh:
-        host = _host(url)
-        verdict = _cf_verdict(blob, url, hosts_in_play)
+        authority = _authority(url)
+        verdict = _cf_verdict(blob, url, authorities_in_play)
         if not force and verdict == "cf":
             blocked.append(url)
             continue
-        # A multi-host invocation where the blob carries server/cf-ray evidence
-        # SOMEWHERE but could not attribute ANY of it to this host (verdict fell all the
-        # way through to "unknown" with no live probe to back it, e.g. WEB_RECON_DRYRUN
+        # A multi-surface invocation where the blob carries server/cf-ray evidence
+        # SOMEWHERE but could not attribute ANY of it to this surface (verdict fell all
+        # the way through to "unknown" with no live probe to back it, e.g. WEB_RECON_DRYRUN
         # or a chained plain `curl -sI ...; curl -sI ...` that never echoes either URL)
-        # is NOT the same situation as an honest single-host "no evidence at all" -- that
-        # is precisely the cross-host bypass shape this hook exists to close. Hold rather
-        # than launch; a later turn with disambiguating output, or a live (non-DRYRUN)
-        # probe, resolves it. Gated on the raw blob actually carrying SOME header
-        # evidence: a multi-surface invocation whose blob has none at all (e.g. an
+        # is NOT the same situation as an honest single-surface "no evidence at all" --
+        # that is precisely the cross-surface bypass shape this hook exists to close.
+        # Hold rather than launch; a later turn with disambiguating output, or a live
+        # (non-DRYRUN) probe, resolves it. Gated on the raw blob actually carrying SOME
+        # header evidence: a multi-surface invocation whose blob has none at all (e.g. an
         # nmap-derived target plus its own redirect destination, port-state text only)
-        # has nothing that could leak across hosts, so it stays on the ordinary
+        # has nothing that could leak across surfaces, so it stays on the ordinary
         # "unknown launches" path -- this is what test_launches_on_inscope_redirect_vhost
         # relies on.
-        if not force and verdict == "unknown" and len(hosts_in_play) > 1 \
-                and not _attributed_blob(blob, host, hosts_in_play) \
+        if not force and verdict == "unknown" and len(authorities_in_play) > 1 \
+                and not _attributed_blob(blob, authority, authorities_in_play) \
                 and (_CF_RE.search(blob) or _SERVER_RE.search(blob)):
             held.append(url)
             continue

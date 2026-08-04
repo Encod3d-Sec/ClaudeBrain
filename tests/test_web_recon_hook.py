@@ -161,3 +161,24 @@ def test_multi_host_no_literal_blob_does_not_launch_either_host(vault):
     ledger = _ledger(vault)
     assert "cf.acme.internal" not in ledger
     assert "plain.acme.internal" not in ledger
+
+
+def test_port_variants_of_same_host_are_distinct_surfaces(vault):
+    # Round-2 re-review's bypass: TWO genuinely different surfaces sharing a hostname but
+    # differing only by port (probing an alternate origin port while the edge fronts :443
+    # is a standard Cloudflare-bypass recon technique) must not collapse into a false
+    # singleton just because _host() strips the port. Only one leg answered with real
+    # (unattributable) headers; the :443 (presumed Cloudflare-fronted) surface must not
+    # inherit a "clear" verdict from the shared blob. This must fail against the pre-fix
+    # host-keyed (not authority-keyed) hosts_in_play, which collapses both URLs to the
+    # single host "cf.acme.internal" and trusts the whole blob unconditionally for both.
+    (vault / "targets" / "acme" / "scope.md").write_text(
+        "## In scope\n- cf.acme.internal\n\n## Out of scope\n- 10.0.0.1\n",
+        encoding="utf-8")
+    cmd = "curl -sI https://cf.acme.internal:8080/ ; curl -sI https://cf.acme.internal:443/"
+    out = "HTTP/1.1 200 OK\nserver: nginx\n"
+    r = _run(_payload(cmd, out), vault)
+    assert "AUTO WEB-RECON" not in r.stdout
+    ledger = _ledger(vault)
+    assert "cf.acme.internal:443" not in ledger
+    assert "cf.acme.internal:8080" not in ledger
