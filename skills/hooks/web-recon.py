@@ -122,21 +122,28 @@ def _attributed_blob(blob, key, keys):
 def _cf_verdict(blob, url, keys=frozenset()):
     """"cf" | "clear" | "unknown" -- is this surface fronted by Cloudflare?
 
+    Blob text may SUPPRESS but may never CLEAR. A Cloudflare marker attributed to this
+    surface (see _attributed_blob) still fast-paths to "cf", because that is the safe
+    direction: it stops a scan. Nothing in the blob may produce "clear", because the blob
+    only records what some command actually talked to, which is not necessarily the
+    surface a scanner will hit:
+
+        curl -sI --resolve h:443:<origin-ip> https://h/
+
+    answers from a raw origin while the scanner resolves h through DNS to the Cloudflare
+    edge. That is ONE url literal, so it is a genuine singleton by any surface count and
+    no amount of attribution logic can catch it. Only the live probe below, which requests
+    the exact url the scanner would be handed, may clear a surface.
+
     `keys` is every surface key (see _surface_key) this one command touched; an
-    empty/singleton set means this url is the only surface in play. Header evidence already present in the tool output is authoritative and free, but ONLY
-    when it can be attributed to THIS url's surface (see _attributed_blob): an
-    unattributable multi-surface blob skips BOTH header checks entirely -- it never
-    decides "cf" OR "clear" from blob text for any surface in that invocation -- and
-    falls straight through to the bounded per-surface probe. Under DRYRUN (the test
-    path), or if the probe fails/is unreachable, the result is "unknown".
+    empty/singleton set means this url is the only surface in play. Under DRYRUN (the test
+    path) the probe is skipped and the result is "unknown", which launches, unchanged. A
+    probe that fails or is unreachable is likewise "unknown" (pre-existing policy).
     """
     key = _surface_key(url)
     scoped = _attributed_blob(blob, key, keys or {key})
-    if scoped:
-        if _CF_RE.search(scoped):
-            return "cf"
-        if _SERVER_RE.search(scoped):
-            return "clear"
+    if scoped and _CF_RE.search(scoped):
+        return "cf"
     if os.environ.get("WEB_RECON_DRYRUN") == "1":
         return "unknown"
     try:

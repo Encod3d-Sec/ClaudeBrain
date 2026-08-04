@@ -287,3 +287,38 @@ def test_port_variants_of_same_host_are_distinct_surfaces(vault):
     ledger = _ledger(vault)
     assert "cf.acme.internal:443" not in ledger
     assert "cf.acme.internal:8080" not in ledger
+
+
+def test_blob_headers_never_clear_a_surface_only_a_live_probe_can(vault, tmp_path):
+    # `curl --resolve h:443:<origin-ip>` silently points the TCP connection at a raw origin,
+    # so the nginx header in the blob describes the ORIGIN while a scanner would resolve h
+    # through DNS and hit the Cloudflare edge. There is ONE url literal, so the invocation
+    # is a genuine singleton by the hook's own surface count and no attribution logic can
+    # catch it. The only defence is the rule itself: blob text may suppress ("cf") but may
+    # never clear -- a surface is cleared only by a live probe of the exact url a scanner
+    # would be handed.
+    #
+    # This runs WITHOUT WEB_RECON_DRYRUN because that is the only mode where the rule is
+    # observable: under DRYRUN the probe is skipped, so a removed blob-"clear" simply
+    # becomes "unknown", and "clear" and "unknown" both launch. `curl` is stubbed to answer
+    # the way the real edge does; recon-web.sh is stubbed to a no-op so a regression here
+    # launches nothing real.
+    (vault / "targets" / "acme" / "scope.md").write_text(
+        "## In scope\n- cf.acme.internal\n\n## Out of scope\n- 10.0.0.1\n", encoding="utf-8")
+    (vault / "scripts").mkdir(parents=True, exist_ok=True)
+    (vault / "scripts" / "recon-web.sh").write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    stub_dir = tmp_path / "stub-bin"
+    stub_dir.mkdir()
+    curl = stub_dir / "curl"
+    curl.write_text("#!/bin/sh\nprintf 'HTTP/2 200\\r\\nserver: cloudflare\\r\\n'\n",
+                    encoding="utf-8")
+    curl.chmod(0o755)
+    env = dict(os.environ, CLAUDEBRAIN_VAULT=str(vault),
+               PATH=str(stub_dir) + os.pathsep + os.environ["PATH"])
+    env.pop("WEB_RECON_DRYRUN", None)
+    r = subprocess.run(["python3", HOOK], input=json.dumps(_payload(
+        "curl -sI --resolve cf.acme.internal:443:203.0.113.9 https://cf.acme.internal/",
+        "HTTP/1.1 200 OK\nserver: nginx\n")),
+        capture_output=True, text=True, env=env, timeout=30)
+    assert "AUTO WEB-RECON" not in r.stdout
+    assert "CLOUDFLARE" in r.stdout
