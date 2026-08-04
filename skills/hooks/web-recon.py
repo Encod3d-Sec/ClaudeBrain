@@ -32,66 +32,106 @@ _CF_RE = re.compile(r"^\s*(?:server:\s*cloudflare|cf-ray:\s*\S+)", re.I | re.M)
 _SERVER_RE = re.compile(r"^\s*server:\s*(\S+)", re.I | re.M)
 
 
+_DEFAULT_PORT = {"http": "80", "https": "443"}
+
+
+def _surface_key(url):
+    """THE canonical identity of a real network surface: "scheme://host:port", lowercased,
+    with the scheme's default port made explicit (http -> 80, https -> 443).
+
+    This is the ONE key used everywhere CF-attribution identity is computed (blob spans,
+    attributed slice, verdict, main()'s in-play set and ledger). Attribution bugs in this
+    hook have all been one shape: an identity built by stripping components by hand, so
+    two genuinely DIFFERENT real surfaces collapse into one string and the whole shared
+    output blob gets trusted for both. Scheme AND port are part of what makes a surface
+    real, so both are part of the key:
+
+        https://h  ==  https://h:443     (one surface, spelled two ways)
+        http://h   !=  https://h         (plaintext :80 vs the TLS/CDN edge -- two)
+        https://h  !=  https://h:8080    (edge vs an alternate origin port -- two)
+
+    Anything unparseable gets its own key (the raw string): over-fragmentation is the SAFE
+    failure direction here -- one real surface treated as two only means "hold, launch
+    nothing", while two surfaces treated as one is the false-clear that scans a
+    Cloudflare-fronted host. When in doubt, fragment.
+
+    NOT a replacement for _host(): scope matching is deliberately keyed on the bare
+    hostname (neither scheme nor port changes whether a host is in scope) and keeps using
+    _host() unchanged.
+    """
+    s = url.strip()
+    m = re.match(r"^(https?)://", s, re.I)
+    if not m:
+        return s.lower()  # no scheme to canonicalize -> its own key, never merged
+    scheme = m.group(1).lower()
+    host, _, port = s[m.end():].split("/")[0].lower().partition(":")
+    if not host:
+        return s.lower()
+    return "%s://%s:%s" % (scheme, host, port or _DEFAULT_PORT[scheme])
+
+
 def _blob_host_spans(blob):
-    """(position, authority) for every URL literal found in blob, in appearance order.
-    `authority` keeps the port (see _authority) -- two surfaces that share a hostname but
-    differ only by port (e.g. probing an alternate origin port while the edge fronts
-    :443, a standard Cloudflare-bypass recon technique) must be tracked as distinct
-    spans, never collapsed into one. Used to tell whether a shared tool-output blob
-    carries evidence for one surface or several."""
-    return [(m.start(), _authority(m.group(0))) for m in _URL_RE.finditer(blob)]
+    """(position, surface key) for every URL literal found in blob, in appearance order.
+    Keyed by _surface_key, so two literals differing only by scheme or port are tracked as
+    the distinct surfaces they are. Used to tell whether a shared tool-output blob carries
+    evidence for one surface or several."""
+    return [(m.start(), _surface_key(m.group(0))) for m in _URL_RE.finditer(blob)]
 
 
-def _attributed_blob(blob, authority, authorities):
-    """The slice of blob that is trustworthy evidence for `authority` (host[:port]), or
-    '' when it cannot be trusted at all for this invocation. `authorities` is every
-    authority being judged in the current invocation (all of `fresh`), keyed on host AND
-    port, so this function can tell "one surface" from "several" -- two URLs sharing a
-    hostname but differing only by port are two surfaces, not one.
+def _attributed_blob(blob, key, keys):
+    """The slice of blob that is trustworthy evidence for surface `key`, or '' when it
+    cannot be trusted at all for this invocation. `keys` is every real surface this one
+    command touched (see main()), so this function can tell "one surface" from "several"
+    -- see _surface_key for what counts as one.
 
-    - len(authorities) <= 1 (a single-surface invocation): the whole blob is unambiguous
-      by construction, even when it carries no URL literal at all -- a plain `curl -sI`
+    - len(keys) <= 1 (a single-surface invocation): the whole blob is unambiguous by
+      construction, even when it carries no URL literal at all -- a plain `curl -sI`
       response never echoes its own request URL, yet there is only one surface this
       command's output could possibly be about. Use it as-is. This is the case the six
       pre-existing tests rely on.
-    - len(authorities) > 1 (a multi-surface invocation, e.g. concatenated httpx/nmap/
-      chained-curl output covering several targets -- including the same hostname probed
-      on two different ports -- in one command): header evidence is trustworthy ONLY
-      when the blob's own URL literals disambiguate EVERY authority in `authorities`, not
-      merely the one being asked about right now. A blob with no literals at all (the
+    - len(keys) > 1 (a multi-surface invocation, e.g. concatenated httpx/nmap/
+      chained-curl output covering several targets in one command): header evidence is
+      trustworthy ONLY when the blob's own URL literals disambiguate EVERY key in `keys`,
+      not merely the one being asked about right now. A blob with no literals at all (the
       common shape of `curl -sI a ; curl -sI b`, which never echoes either URL), or
-      literals for only some of the authorities, proves nothing about which lines belong
-      to which surface -- it is UNATTRIBUTABLE for ALL of them. Trusting "the one
-      authority we happen to be able to locate" here is exactly the cross-surface leak
-      this function exists to prevent.
+      literals for only some of the keys, proves nothing about which lines belong to which
+      surface -- it is UNATTRIBUTABLE for ALL of them. Trusting "the one surface we happen
+      to be able to locate" here is exactly the cross-surface leak this function exists to
+      prevent.
+
+    Slicing forward from a URL literal assumes the layout "URL, then the headers it
+    labels". Some tools emit the reverse ("curl -sI $u; echo $u"), where slicing forward
+    would hand each surface the NEXT one's headers -- a false clear. Header evidence
+    sitting ahead of the very first URL literal is the tell, and makes the whole blob
+    unattributable rather than mis-sliced.
     """
-    if len(authorities) <= 1:
+    if len(keys) <= 1:
         return blob
     spans = _blob_host_spans(blob)
-    span_authorities = {a for _, a in spans}
-    if not authorities <= span_authorities:
-        return ""  # blob doesn't literally name every authority in this invocation
-    start = next((p for p, a in spans if a == authority), None)
+    if not keys <= {k for _, k in spans}:
+        return ""  # blob doesn't literally name every surface in this invocation
+    if _CF_RE.search(blob[:spans[0][0]]) or _SERVER_RE.search(blob[:spans[0][0]]):
+        return ""  # headers precede the URL labelling them: forward slicing is wrong here
+    start = next((p for p, k in spans if k == key), None)
     if start is None:
-        return ""  # this authority isn't attributable at all in a multi-surface blob
-    end = next((p for p, a in spans if p > start and a != authority), len(blob))
+        return ""  # this surface isn't attributable at all in a multi-surface blob
+    end = next((p for p, k in spans if p > start and k != key), len(blob))
     return blob[start:end]
 
 
-def _cf_verdict(blob, url, authorities=frozenset()):
+def _cf_verdict(blob, url, keys=frozenset()):
     """"cf" | "clear" | "unknown" -- is this surface fronted by Cloudflare?
 
-    `authorities` is every host[:port] being judged in the current invocation (all of
-    `fresh`); an empty/singleton set means this url is the only surface in play. Header
-    evidence already present in the tool output is authoritative and free, but ONLY when
-    it can be attributed to THIS url's authority (see _attributed_blob): an
+    `keys` is every surface key (see _surface_key) this one command touched; an
+    empty/singleton set means this url is the only surface in play. Header evidence already present in the tool output is authoritative and free, but ONLY
+    when it can be attributed to THIS url's surface (see _attributed_blob): an
     unattributable multi-surface blob skips BOTH header checks entirely -- it never
     decides "cf" OR "clear" from blob text for any surface in that invocation -- and
     falls straight through to the bounded per-surface probe. Under DRYRUN (the test
     path), or if the probe fails/is unreachable, the result is "unknown".
     """
-    authority = _authority(url)
-    scoped = _attributed_blob(blob, authority, authorities or {authority})
+    key = _surface_key(url)
+    scoped = _attributed_blob(blob, key, keys or {key})
     if scoped:
         if _CF_RE.search(scoped):
             return "cf"
@@ -118,17 +158,6 @@ def _response_text(data):
 
 def _host(url):
     return re.sub(r"^https?://", "", url, flags=re.I).split("/")[0].split(":")[0].lower()
-
-
-def _authority(url):
-    """host[:port] identity for `url` (scheme and path stripped, port KEPT -- unlike
-    _host()). Used only for CF-attribution surface identity: two URLs that share a
-    hostname but differ by port are two distinct surfaces (probing an alternate origin
-    port while the edge fronts :443 is a standard Cloudflare-bypass recon technique), so
-    they must never collapse into a false singleton for attribution purposes. Scope
-    matching stays on _host() everywhere else -- a port never changes whether a host is
-    in scope."""
-    return re.sub(r"^https?://", "", url, flags=re.I).split("/")[0].lower()
 
 
 def _in_scope(host, sc, eng):
@@ -178,11 +207,22 @@ def main():
     if not d:
         return
     sc = _engagement.scope(d)
-    surfaces = _surfaces(cmd, _response_text(data), sc, _engagement)
+    # Canonicalize discovered URLs to surface keys ONCE, here: everything downstream
+    # (ledger identity, freshness, the in-play set, attribution, the launch target) then
+    # speaks the same single identity, instead of each site re-deriving its own by
+    # stripping components off a raw URL string. Two spellings of one real surface
+    # (https://h, https://h:443) dedupe here; two real surfaces that merely look alike
+    # (http://h vs https://h) stay separate.
+    surfaces = {_surface_key(u) for u in _surfaces(cmd, _response_text(data), sc, _engagement)}
     if not surfaces:
         return
     ledger = os.path.join(d, ".web-surfaces")
-    seen = set(open(ledger, encoding="utf-8").read().split()) if os.path.exists(ledger) else set()
+    # Canonicalize on READ as well as write, so an entry written in any older spelling
+    # (bare "https://h" for what is now keyed "https://h:443") still suppresses its own
+    # surface. A CF-blocked surface that stopped matching its own ledger line would be
+    # re-judged from scratch and could launch on a later turn's thinner evidence.
+    seen = {_surface_key(u) for u in open(ledger, encoding="utf-8").read().split()} \
+        if os.path.exists(ledger) else set()
     fresh = [u for u in sorted(surfaces) if u not in seen]
     if not fresh:
         return
@@ -192,14 +232,18 @@ def main():
     launched, blocked, held = [], [], []
     force = os.environ.get("WEB_RECON_FORCE") == "1"
     blob = _response_text(data)
-    # Keyed on host[:port] (_authority), not bare host (_host): two surfaces sharing a
-    # hostname but differing only by port (probing an alternate origin port while the
-    # edge fronts :443) must count as two, never collapse into a false singleton that
-    # would trust the shared blob unconditionally for both.
-    authorities_in_play = {_authority(u) for u in fresh}
+    # Every real surface this ONE command touched, by canonical key. A false singleton here
+    # is what makes _attributed_blob trust the whole shared blob, so this must count real
+    # surfaces, not judged ones: the COMMAND's own URLs are unioned in, including surfaces
+    # that never reached `fresh` because they are out of scope or already ledgered. Their
+    # responses are still in this blob, and their `server:` line must not decide a verdict
+    # for an in-scope surface. Blob literals are deliberately NOT unioned in: a URL in a
+    # response header (Location, Link, CSP) is a reference, not a probed surface, and
+    # counting those would hold nearly every curl-derived launch, which just trains the
+    # operator to run with WEB_RECON_FORCE=1 and lose the gate entirely.
+    keys_in_play = set(fresh) | {_surface_key(u) for u in _URL_RE.findall(cmd)}
     for url in fresh:
-        authority = _authority(url)
-        verdict = _cf_verdict(blob, url, authorities_in_play)
+        verdict = _cf_verdict(blob, url, keys_in_play)
         if not force and verdict == "cf":
             blocked.append(url)
             continue
@@ -216,8 +260,8 @@ def main():
         # has nothing that could leak across surfaces, so it stays on the ordinary
         # "unknown launches" path -- this is what test_launches_on_inscope_redirect_vhost
         # relies on.
-        if not force and verdict == "unknown" and len(authorities_in_play) > 1 \
-                and not _attributed_blob(blob, authority, authorities_in_play) \
+        if not force and verdict == "unknown" and len(keys_in_play) > 1 \
+                and not _attributed_blob(blob, url, keys_in_play) \
                 and (_CF_RE.search(blob) or _SERVER_RE.search(blob)):
             held.append(url)
             continue

@@ -163,6 +163,111 @@ def test_multi_host_no_literal_blob_does_not_launch_either_host(vault):
     assert "plain.acme.internal" not in ledger
 
 
+def _canon(url):
+    """The canonical surface identity restated independently from the requirement
+    (scheme + host + port, default port made explicit) rather than imported from the hook,
+    so the matrix below asserts against the spec and not against whatever the hook
+    currently computes."""
+    scheme, _, rest = url.partition("://")
+    host, _, port = rest.partition(":")
+    return "%s://%s:%s" % (scheme, host, port or ("443" if scheme == "https" else "80"))
+
+
+# Every spelling of one real surface, plus a second genuinely distinct host. Rows 1-3 and
+# 4-6 each name ONE real surface twice (omitted vs explicit default port) and one truly
+# different one (non-default port); rows 1-3 vs 4-6 differ by scheme, which is a different
+# real surface (plaintext :80 vs the TLS/CDN edge on :443).
+_SURFACE_VARIANTS = [
+    "http://cf.acme.internal",        # http,  port omitted        -> :80
+    "http://cf.acme.internal:80",     # http,  explicit default    -> :80
+    "http://cf.acme.internal:8080",   # http,  non-default port
+    "https://cf.acme.internal",       # https, port omitted        -> :443
+    "https://cf.acme.internal:443",   # https, explicit default    -> :443
+    "https://cf.acme.internal:8443",  # https, non-default port
+    "https://plain.acme.internal",    # a second, distinct host
+]
+
+
+def test_surface_variant_matrix_never_launches_on_foreign_evidence(vault):
+    # The CLASS test, not a fourth pairwise repro. Every one of the previous bypasses was
+    # the same defect: an attribution identity built by stripping components by hand
+    # (hostname, then port, then scheme), so two genuinely different real surfaces
+    # collapsed into one string and the whole shared output blob was trusted for both.
+    # This enumerates the full variant matrix -- scheme x (omitted / explicit default /
+    # non-default port) x a second host -- and pins BOTH halves of the canonical identity
+    # at once, so no single axis can be point-patched into passing:
+    #   different real surfaces  -> the shared header may decide NOTHING for either
+    #                               (never launch a possibly-Cloudflare-fronted surface on
+    #                               evidence that belongs to a different one)
+    #   same real surface twice  -> must NOT fragment into a phantom multi-surface hold
+    # The blob is the shape that matters in production: chained plain `curl -sI`, which
+    # never echoes its own request URL, with exactly one leg answering.
+    (vault / "targets" / "acme" / "scope.md").write_text(
+        "## In scope\n- cf.acme.internal\n- plain.acme.internal\n\n## Out of scope\n- 10.0.0.1\n",
+        encoding="utf-8")
+    ledger = vault / "targets" / "acme" / ".web-surfaces"
+    # Collect every violation instead of failing on the first, so a broken identity
+    # function reports the whole shape of what it got wrong, both directions at once.
+    violations = []
+    for a in _SURFACE_VARIANTS:
+        for b in _SURFACE_VARIANTS:
+            if a == b:
+                continue
+            if ledger.exists():
+                ledger.unlink()  # each combination judged from a clean slate
+            r = _run(_payload("curl -sI %s/ ; curl -sI %s/" % (a, b),
+                              "HTTP/1.1 200 OK\nserver: nginx\n"), vault)
+            launched = "AUTO WEB-RECON" in r.stdout
+            if _canon(a) == _canon(b):
+                if not launched:
+                    violations.append(
+                        "FRAGMENTED one real surface into two (held, should launch): "
+                        "%s + %s" % (a, b))
+            elif launched:
+                violations.append(
+                    "LAUNCHED on another surface's evidence (the dangerous direction): "
+                    "%s + %s" % (a, b))
+            elif ledger.exists():
+                violations.append(
+                    "LEDGERED an undecided surface (a later turn can no longer "
+                    "re-judge it): %s + %s -> %s" % (a, b, ledger.read_text().split()))
+    assert not violations, "%d/%d combinations wrong:\n%s" % (
+        len(violations), len(_SURFACE_VARIANTS) * (len(_SURFACE_VARIANTS) - 1),
+        "\n".join(violations))
+
+
+def test_out_of_scope_leg_of_the_command_still_counts_as_a_surface(vault):
+    # Same whole-blob shortcut, reached from the other side: the blob covers BOTH legs of
+    # the command, but only the in-scope one is ever judged, so counting surfaces from the
+    # judged list alone makes a genuinely two-surface invocation look like one. The third
+    # party's `server: nginx` must not decide the in-scope (possibly Cloudflare-fronted)
+    # surface's verdict just because the leg that produced it was filtered out of scope.
+    (vault / "targets" / "acme" / "scope.md").write_text(
+        "## In scope\n- cf.acme.internal\n\n## Out of scope\n- 10.0.0.1\n", encoding="utf-8")
+    r = _run(_payload("curl -sI https://cf.acme.internal/ ; curl -sI https://thirdparty.example/",
+                      "HTTP/1.1 200 OK\nserver: nginx\n"), vault)
+    assert "AUTO WEB-RECON" not in r.stdout
+    assert "cf.acme.internal" not in _ledger(vault)
+
+
+def test_headers_printed_before_their_own_url_are_unattributable(vault):
+    # Attribution slices forward from a URL literal, which assumes the layout "URL, then
+    # the headers it labels". A loop like `curl -sI $u; echo $u` emits the reverse, so
+    # forward slicing hands each surface the NEXT one's headers: here the Cloudflare host's
+    # slice would pick up the plain host's `server: nginx` and launch scanners at the CDN.
+    (vault / "targets" / "acme" / "scope.md").write_text(
+        "## In scope\n- a.acme.internal\n- b.acme.internal\n\n## Out of scope\n- 10.0.0.1\n",
+        encoding="utf-8")
+    cmd = "for u in https://a.acme.internal https://b.acme.internal; do curl -sI $u; echo $u; done"
+    out = ("HTTP/2 200\nserver: cloudflare\ncf-ray: a258e1f1ffe2c9d5-VNO\n"
+           "https://a.acme.internal\n"
+           "HTTP/2 200\nserver: nginx\n"
+           "https://b.acme.internal\n")
+    r = _run(_payload(cmd, out), vault)
+    assert "AUTO WEB-RECON" not in r.stdout
+    assert _ledger(vault).strip() == ""
+
+
 def test_port_variants_of_same_host_are_distinct_surfaces(vault):
     # Round-2 re-review's bypass: TWO genuinely different surfaces sharing a hostname but
     # differing only by port (probing an alternate origin port while the edge fronts :443
