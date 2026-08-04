@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # recon-web.sh <eng> <url> -- fan out the parallel web-recon suite on a discovered URL.
-# Auto-launched by the web-recon.py hook when a web surface is discovered; also runnable by hand.
+# Run BY HAND. Nothing auto-launches it any more: the web-recon.py hook that did was removed
+# 2026-08-04 (it fired on tool OUTPUT, so merely printing a hostname relaunched scans + a page
+# render against hosts already retired).
 # Each tool gets its own tmux window (via vm-scan.sh) so scans run in parallel and get carded.
-# RoE-aware from targets/<eng>/scope.md: passive_only -> render+whatweb only; no_dos -> drop ferox+nuclei.
+# RoE-aware from targets/<eng>/scope.md: passive_only or no_dos -> whatweb only (no ferox/nuclei).
 # RECON_WEB_DRYRUN=1 -> print the launches instead of running them (offline / testable).
 set -u
 ENG="${1:?usage: recon-web.sh <eng> <url>}"
@@ -25,16 +27,10 @@ _launch(){ # <window> <scan-cmd>
   fi
 }
 
-# Render the LIVE page into poc/ via the harness chromium render (capture.sh web) -- NOT a scan tab.
-# A tmux-tab "render" only cards terminal text, not the rendered page; and `shot.py --web` was wrong
-# (shot.py takes the URL positionally, there is no --web flag). capture.sh web renders via chromium on
-# the VM and PULLS the PNG into targets/<eng>/poc/ (+ saves page source). Passive-safe -> always fire.
-RENDER_SLUG="web-$(printf '%s' "$HOST" | tr './: ' '----')"
-if [ "${RECON_WEB_DRYRUN:-0}" = "1" ]; then
-  printf 'recon-web: render -> capture.sh web %s %s %s\n' "$ENG" "$RENDER_SLUG" "$URL"
-else
-  bash scripts/capture.sh web "$ENG" "$RENDER_SLUG" "$URL" >/dev/null 2>&1 &
-fi
+# NO page render here. This used to fire `capture.sh web` (chromium render + page source into
+# targets/<eng>/poc/) on every launch; it produced empty poc/ dirs instead of evidence and, being a
+# side effect of scanning, scaffolded poc/ under host dirs that were already retired. Render
+# deliberately, when a page is worth evidencing: `Skill(screenshot)` / `scripts/capture.sh web`.
 # whatweb fingerprint (passive-safe) -> its own tmux tab (carded by autocard)
 _launch whatweb "whatweb -a3 '$URL'"
 
