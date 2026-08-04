@@ -54,3 +54,9 @@ Thumbs.db
 
 # web-recon operator kill switch (machine-local runtime state)
 .web-recon-off
+
+# Engagement codenames: belt-and-braces on top of targets/* above, so a codename
+# can never enter the repo via a path outside targets/ (a stray note, an export, a log).
+tier1*
+*tier1-critical*
+.sdd-ledger-*
