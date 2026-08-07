@@ -70,7 +70,15 @@ normal edit+test loop; larger -> record as a proposed item for operator approval
 Append a dated section to `docs/superpowers/harness-retro.md` (create if missing): the drifts
 found, their root cause, and the harness change made or proposed. This doc is about the HARNESS,
 so it is generic and tracked - describe failures generically ("on a web box ffuf was skipped"),
-never with client host/IP/cred; refer to the engagement by its (codename) dir name only.
+never with client host/IP/cred.
+
+**Naming the engagement in this tracked file:** use its dir name ONLY when that name is a neutral
+codename (`<platform>_<boxname>`). Many engagement dirs are named after the target itself (a host, a
+product, a client short-name) - writing one of those into `harness-retro.md` publishes a client
+marker, and `check-leaks.sh` derives its marker list from `targets/` dir names, so it WILL fail the
+gate. When the dir name is target-derived, describe the engagement generically instead ("a Symfony
+API target", "a single-host web bug-bounty campaign") and name nothing. Run `bash
+scripts/check-leaks.sh` after writing the retro; a FAIL here almost always means the dir name leaked.
 
 ### 0d. Fill the engagement's agent eval (per-engagement, gitignored)
 `targets/$ENG/eval.md` (self-healed from `_eval.md`) has two halves - auto (real data) and judgement (you):

@@ -72,12 +72,30 @@ def all_page_paths() -> dict[str, list[str]]:
     return out
 
 
+def _targets(text: str) -> set[str]:
+    """Every [[link]] body, plus its bare basename.
+
+    A link resolves in three shapes: bare (`[[recon]]`), wiki-relative
+    (`[[cheatsheets/recon]]`, matched by _rel_noext), and VAULT-relative
+    (`[[wiki/cheatsheets/recon]]`). Obsidian writes the third itself -- with
+    `alwaysUpdateLinks` on, moving or renaming a page rewrites every inbound
+    link to a full path -- so a page wired only by such links read as an orphan
+    even though it surfaces fine. Emit both forms and all three resolve."""
+    out = set()
+    for m in WIKILINK.findall(text):
+        t = m.strip().lower()
+        if t:
+            out.add(t)
+            out.add(t.rsplit("/", 1)[-1])
+    return out
+
+
 def links_in(path: str) -> set[str]:
     try:
         text = open(path, encoding="utf-8", errors="ignore").read()
     except OSError:
         return set()
-    return {m.strip().lower() for m in WIKILINK.findall(text)}
+    return _targets(text)
 
 
 def _rel_noext(path: str) -> str:
@@ -109,7 +127,7 @@ def links_outside_fences(path: str) -> set[str]:
     except OSError:
         return set()
     text = _INLINE_RE.sub("", _FENCE_RE.sub("", text))
-    return {m.strip().lower() for m in WIKILINK.findall(text)}
+    return _targets(text)
 
 
 def twin_link_violations(pages: dict[str, list[str]]) -> list[dict]:

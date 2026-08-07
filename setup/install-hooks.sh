@@ -42,11 +42,40 @@ echo "symlink ok"
 [ -f "$SETTINGS" ] || echo '{}' > "$SETTINGS"
 cp "$SETTINGS" "$SETTINGS.bak-$(date +%s)"
 
-python3 - "$SETTINGS" <<'PY'
-import json, sys
+python3 - "$SETTINGS" "$HOOKS_SRC" <<'PY'
+import json, os, sys
 p = sys.argv[1]
+hooks_src = sys.argv[2]
 d = json.load(open(p))
 h = d.setdefault("hooks", {})
+
+# 2a. PRUNE hooks whose script no longer exists.
+# This installer only ever ADDED, so a hook DELETED upstream stayed registered
+# on every already-provisioned device -- pointing at a file the next `git pull`
+# removed. That is not silent: a PostToolUse entry then errors on every matching
+# tool call, and a PreToolUse one exits 2 and BLOCKS Bash/Write/Edit. Prune by
+# existence, so removing a hook needs no list kept in sync here.
+present = set(os.listdir(hooks_src))
+
+def _dead(hk):
+    cmd = hk.get("command", "") if isinstance(hk, dict) else ""
+    return any("vault-hooks/" in t and t.rsplit("/", 1)[-1] not in present
+               for t in cmd.split())
+
+for event in list(h):
+    groups = []
+    for g in h.get(event, []):
+        dead = [hk for hk in g.get("hooks", []) if _dead(hk)]
+        for hk in dead:
+            print("pruned %s %s (script no longer in skills/hooks)"
+                  % (event, hk.get("command", "").rsplit("/", 1)[-1]))
+            g["hooks"].remove(hk)
+        if g.get("hooks"):          # drop a group left with no hooks
+            groups.append(g)
+    if groups:
+        h[event] = groups
+    else:
+        del h[event]
 
 def has(event, needle, matcher=None):
     for g in h.get(event, []):

@@ -20,12 +20,12 @@ GATE 1 (wiki): no hand-rolled exploit until its Weaponize wiki item is `[x]`.
 GATE 2 (poc):  no exploit step goes `[~]`->`[x]` without a poc/ image.
 GATE 3 (loop): a vector exhausted -> mark `[!]`, one Deadends line, move to the next open item. Never re-run `[!]`.
 
-## 1. Recon  ([[web-attack-surface]] · [[recon]])
+## 1. Recon  ([[web-attack-surface]] · [[wiki/cheatsheets/recon]])
 - [ ] subfinder + amass + dnsx (subdomains) -> [[subfinder]] [[amass]] [[dnsx]]
-- [ ] httpx probe + gowitness               -> [[httpx]] [[gowitness]]
+- [ ] httpx probe + gowitness               -> [[wiki/tools/httpx]] [[gowitness]]
 - [ ] gau + katana crawl (urls, .js)        -> [[gau]] [[katana]] [[javascript-source-map-exploitation]]
 - [ ] arjun param mining                     -> [[arjun]]
-- [ ] nuclei                                 -> [[nuclei]] [[nuclei-arsenal]]
+- [ ] nuclei                                 -> [[wiki/tools/nuclei]] [[nuclei-arsenal]]
 - [ ] trufflehog / .git / secrets            -> [[trufflehog]] [[git-exposure]] [[secret-hunting]]
 - [ ] wiki-query EACH fingerprinted tech/version   <-- GATE 1 source
 
@@ -37,7 +37,7 @@ GATE 3 (loop): a vector exhausted -> mark `[!]`, one Deadends line, move to the 
 ## 3. Deliver  ([[burp-mcp]] · [[api-security]])
 - [ ] deliver via burp repeater / curl       -> [[burp-mcp]]
 - [ ] token / cookie / cred reuse            -> loot.md
-- [ ] fuzz params / request items            -> [[ffuf]] [[arjun]]
+- [ ] fuzz params / request items            -> [[wiki/tools/ffuf]] [[arjun]]
 
 ## 4. Exploit
 

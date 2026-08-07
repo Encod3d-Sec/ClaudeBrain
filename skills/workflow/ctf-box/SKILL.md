@@ -395,7 +395,7 @@ Load `Skill(hunt-idor)`/`Skill(hunt-ssrf)`/`Skill(hunt-api)`. Owned via app-logi
 - [[arjun]]
 - [[dalfox]]
 - [[swaks]]
-- [[recon]]
+- [[wiki/cheatsheets/recon]]
 - [[nuclei-arsenal]]
 - [[wordlists]]
 - [[network-services]]

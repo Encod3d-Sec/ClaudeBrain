@@ -103,6 +103,9 @@ def harness_maintenance():
         miss = _ch.missing_hooks()
         if miss:
             tags.append("hook-drift: " + ",".join(miss) + " (install-hooks.sh)")
+        stale = _ch.stale_hooks()
+        if stale:
+            tags.append("stale-hook: " + ",".join(stale) + " (install-hooks.sh)")
         if _ch.missing_skills():
             tags.append("skill-drift (install-skills.sh)")
     except Exception:

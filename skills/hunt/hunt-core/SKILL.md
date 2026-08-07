@@ -67,6 +67,15 @@ owns the specific "NOT confirmation / IS confirmation" list. Universal rules:
 
 Failed 1-3 is a Deadend, not a "probably real but hard to prove."
 
+[[wiki/techniques/methodology/safe-probing-and-controls]] carries the other half of this gate: how to probe destructive or
+sensitive surface without touching a real record (use an identifier proven not to exist), and how
+to fire a control so a NEGATIVE result means something instead of being assumed.
+
+When the hunt spans many hosts, sessions, or parallel agents, the coordination layer adds failure
+modes this gate does not cover: claims nobody re-checked, requests nobody counted, the same finding
+filed twice, and severity drifting upward as work is summarised. See
+[[wiki/techniques/methodology/multi-agent-campaign-orchestration]].
+
 ## Enumeration limits
 
 **Prove the boundary is missing, not how much is behind it.**

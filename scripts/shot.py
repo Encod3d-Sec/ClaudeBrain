@@ -183,6 +183,11 @@ def cook_terminal(text):
     on '\\n' ONLY (never '\\r' -- that's the overwrite signal, not a line break).
     Fail-safe: never raises; returns the original text unchanged on any internal error."""
     try:
+        # CRLF -> LF first. HTTP headers (curl -I / -i) are CRLF-terminated, and a surviving
+        # bare '\r' is both an overwrite signal here AND a line break to CSS white-space:pre-wrap,
+        # so every header line silently rendered as two rows and pushed the tail of the card out
+        # of the viewport. Bare '\r' (progress bars) keeps its overwrite meaning below.
+        text = text.replace("\r\n", "\n")
         stripped = _strip_non_sgr(text)
         return "\n".join(_overlay_line(ln) for ln in stripped.split("\n"))
     except Exception:
@@ -257,6 +262,11 @@ def term_body(text, maxlines=120, cols=175):
     count estimates wrapped rows (a long obfuscated-JS/scan line wraps to several visual
     rows) so term_height doesn't under-size and crop the card (the reveal was getting cut)."""
     lines = text.splitlines()
+    # Drop trailing blank lines. A tmux pane is a fixed grid (often 200 rows), so a short
+    # session captures as its output plus ~150 empty rows, and term_height then sizes the
+    # card for all of them -- a transcript with a screenful of dead space under it.
+    while lines and not _ANSI_STRIP.sub("", lines[-1]).strip():
+        lines.pop()
     truncated = 0
     if len(lines) > maxlines:
         truncated = len(lines) - maxlines
@@ -265,12 +275,31 @@ def term_body(text, maxlines=120, cols=175):
     return ansi_to_html("\n".join(lines)), visual, truncated
 
 
-def term_html(body_html, cmd, truncated=0, url=None):
+def term_html(body_html, cmd, truncated=0, url=None, plain=False):
     """Wrap converted output in a self-contained dark terminal card. `url` adds a browser
     address-bar row so a card of a fetched web resource (a source/log/.md file) shows the
-    URL it came from -- the source is self-identifying evidence, not an anonymous blob."""
+    URL it came from -- the source is self-identifying evidence, not an anonymous blob.
+
+    `plain` drops the window chrome entirely (no traffic-light dots, no title bar): the card
+    is then just the terminal text, the way a Linux CLI transcript actually looks. Use it
+    whenever the `$ command` lines are already in the captured body -- a decorative title bar
+    naming a wrapper script is noise the reviewer has to look past."""
     foot = ('\n<span class="tr">... (+%d lines truncated)</span>' % truncated) if truncated else ""
     addr = ("<div class='addr'>%s</div>" % _html.escape(url)) if url else ""
+    if plain:
+        return (
+            "<!doctype html><html><head><meta charset='utf-8'><style>"
+            "html,body{margin:0;background:#0d1117}"
+            ".body{padding:16px 18px;color:#d7dae0;white-space:pre-wrap;word-break:break-word;"
+            "font:13px/1.45 ui-monospace,Menlo,Consolas,monospace}"
+            ".tr{color:#57606f}"
+            "</style></head><body>%s<div class='body'>%s%s</div></body></html>"
+            % (addr, body_html, foot)
+        )
+    # An empty --cmd leaves the title bar as dots only. Use that when the command is already
+    # the first line of the captured body, where colorize_session paints it like a real shell
+    # (bold cyan `$ `, cyan `> ` request, blue `< ` response) instead of flat title-bar text.
+    cmd_html = ("<span class='cmd'>$ %s</span>" % _html.escape(cmd)) if cmd else ""
     return (
         "<!doctype html><html><head><meta charset='utf-8'><style>"
         "html,body{margin:0;background:#0d1117}"
@@ -289,16 +318,49 @@ def term_html(body_html, cmd, truncated=0, url=None):
         ".tr{color:#57606f}"
         "</style></head><body><div class='win'>"
         "<div class='bar'><span class='dot r'></span><span class='dot y'></span>"
-        "<span class='dot g'></span><span class='cmd'>$ %s</span></div>"
+        "<span class='dot g'></span>%s</div>"
         "%s<div class='body'>%s%s</div></div></body></html>"
-        % (_html.escape(cmd or ""), addr, body_html, foot)
+        % (cmd_html, addr, body_html, foot)
     )
 
 
-def term_height(nlines, truncated=0):
+def autocrop_bottom(path, bg=(13, 17, 23), pad=16):
+    """Trim uniform background off the BOTTOM of a rendered card.
+
+    The row-count height estimate can only ever approximate what the browser lays out, and it
+    fails in both directions: too small silently CROPS the payoff line, too large leaves a
+    screenful of dead space. So render deliberately tall and cut the slack here, where the
+    real pixels are. No-op (and never fatal) if Pillow is missing or the image is all
+    background."""
+    try:
+        from PIL import Image
+    except Exception:
+        return
+    try:
+        im = Image.open(path).convert("RGB")
+        w, h = im.size
+        px = im.load()
+        last = 0
+        for y in range(h - 1, -1, -1):
+            if any(px[x, y] != bg for x in range(0, w, 4)):
+                last = y
+                break
+        if last and last + pad < h:
+            im.crop((0, 0, w, min(h, last + pad))).save(path)
+    except Exception:
+        pass
+
+
+def term_height(nlines, truncated=0, plain=False):
     """Viewport height so chromium's fixed window doesn't crop the card. Bottom pad is
-    generous: the last line is usually the payoff (a flag, a cred) and must never clip."""
+    generous: the last line is usually the payoff (a flag, a cred) and must never clip.
+    `plain` has no title bar and a tighter margin, so it needs less headroom."""
     rows = nlines + (1 if truncated else 0)
+    if plain:
+        # No title bar, and the row estimate tracks the real line box (13px * 1.45 = 18.85px)
+        # rather than the padded 20px the chrome card uses, so the transcript is not followed
+        # by a screenful of empty background.
+        return 24 + int(rows * 19) + 28
     return 90 + rows * 20 + 64
 
 
@@ -485,6 +547,10 @@ def main(argv=None):
     ap.add_argument("--term", help="render raw tool output (a file, or - for stdin) as a terminal card")
     ap.add_argument("--tmux", help="capture a live tmux pane (session:name or @id) as a terminal card")
     ap.add_argument("--screen", action="store_true", help="grab the whole :0 desktop (scrot)")
+    ap.add_argument("--plain", action="store_true",
+                    help="--term/--tmux: render with NO window chrome (no traffic-light dots, no "
+                         "title bar), just the terminal text -- use when the `$ command` lines are "
+                         "already in the captured body")
     ap.add_argument("--window", help="grab a GUI window by name (xdotool+import), else full screen")
     ap.add_argument("--cmd", default="", help="command string shown in the terminal-card title bar")
     ap.add_argument("--maxlines", type=int, default=120, help="cap rendered lines (--term/--tmux)")
@@ -501,7 +567,8 @@ def main(argv=None):
     ap.add_argument("--slug", help="short slug for NN-slug.png naming")
     ap.add_argument("--dir", help="output dir when using --step/--slug (default .)")
     ap.add_argument("--width", type=int, default=1440)
-    ap.add_argument("--height", type=int, default=900)
+    ap.add_argument("--height", type=int, default=None,
+                    help="explicit viewport height; --term/--tmux auto-size when omitted")
     ap.add_argument("--wait", type=int, default=0, help="ms to let the page settle (virtual time)")
     ap.add_argument("--caption", default="")
     a = ap.parse_args(argv)
@@ -528,9 +595,15 @@ def main(argv=None):
                 raw = colorize_session(raw)                          # comment/command/response coloring
             raw = apply_highlight(raw, a.highlight)
             body, nlines, truncated = term_body(raw, a.maxlines)
-            proc = capture(html_str=term_html(body, a.cmd or a.tmux, truncated, url=a.url_bar),
+            proc = capture(html_str=term_html(body, a.cmd or a.tmux, truncated, url=a.url_bar,
+                                              plain=a.plain),
                            out=out, width=a.width,
-                           height=term_height(nlines, truncated) + (44 if a.url_bar else 0), wait=a.wait)
+                           height=(a.height or
+                                   int(term_height(nlines, truncated, a.plain) * 1.6)
+                                   + (44 if a.url_bar else 0)),
+                           wait=a.wait)
+            if not a.height:
+                autocrop_bottom(out)
         elif a.term:
             raw = sys.stdin.read() if a.term == "-" else \
                 open(a.term, encoding="utf-8", errors="ignore").read()
@@ -541,9 +614,14 @@ def main(argv=None):
                 raw = colorize_session(raw)
             raw = apply_highlight(raw, a.highlight)
             body, nlines, truncated = term_body(raw, a.maxlines)
-            proc = capture(html_str=term_html(body, a.cmd, truncated, url=a.url_bar),
+            proc = capture(html_str=term_html(body, a.cmd, truncated, url=a.url_bar, plain=a.plain),
                            out=out, width=a.width,
-                           height=term_height(nlines, truncated) + (44 if a.url_bar else 0), wait=a.wait)
+                           height=(a.height or
+                                   int(term_height(nlines, truncated, a.plain) * 1.6)
+                                   + (44 if a.url_bar else 0)),
+                           wait=a.wait)
+            if not a.height:
+                autocrop_bottom(out)
         else:
             addr = a.url or a.url_bar          # URL to show in the address bar
             if addr and not a.no_bar:
@@ -551,14 +629,14 @@ def main(argv=None):
                     page = open(a.html, encoding="utf-8", errors="ignore").read()
                     if a.base:
                         page = rewrite_assets(page, a.base)
-                    frame = browser_frame(addr, page, is_srcdoc=True, height=a.height)
+                    frame = browser_frame(addr, page, is_srcdoc=True, height=a.height or 900)
                 else:                          # live page -> iframe src=url
-                    frame = browser_frame(addr, a.url, is_srcdoc=False, height=a.height)
-                proc = capture(html_str=frame, out=out, width=a.width, height=a.height + 70,
+                    frame = browser_frame(addr, a.url, is_srcdoc=False, height=a.height or 900)
+                proc = capture(html_str=frame, out=out, width=a.width, height=(a.height or 900) + 70,
                                wait=a.wait or 400)
             else:
                 proc = capture(url=a.url, html=a.html, out=out, base=a.base,
-                               width=a.width, height=a.height, wait=a.wait)
+                               width=a.width, height=(a.height or 900), wait=a.wait)
     except Exception as e:
         print("shot: FAILED: %s" % e, file=sys.stderr)
         return 1

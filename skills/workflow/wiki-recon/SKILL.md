@@ -106,5 +106,5 @@ If nuclei finds CRITICAL or HIGH severity issues: create a FIND-XXX entry immedi
 - [[dnsx]]
 - [[gau]]
 - [[gowitness]]
-- [[httpx]]
+- [[wiki/tools/httpx]]
 - [[katana]]

@@ -14,7 +14,7 @@ limits, stop conditions, wiki protocol, FIND output, and Deadends. Do not re-der
 qmd_query "SSRF server-side request forgery cloud metadata" via wiki-search MCP
 ```
 
-Hub: [[web-moc]] (live web index). Primary page: [[ssrf]]. Payload arsenal: `wiki/payloads/ssrf.md`.
+Hub: [[web-moc]] (live web index). Primary page: [[wiki/payloads/ssrf]]. Payload arsenal: `wiki/payloads/ssrf.md`.
 Bypass variants: [[dns-rebinding]] (hostname re-resolution TOCTOU past an allowlist),
 [[open-redirect]] (chain a trusted redirect to an internal target).
 

@@ -18,6 +18,11 @@ Technical reference for **Bug Hunting Methodology** collected from InternalAllTh
 
 Bug hunting follows a structured recon-then-exploit cycle: passive recon maps the attack surface using search engines, Shodan, favicon hashing, and DNS enumeration before any direct interaction with the target. Active recon then probes discovered endpoints for common web vulnerabilities (IDOR, SSRF, XSS, SQLi, authentication bypasses) using manual testing and automated scanners, prioritizing endpoints that handle user-controlled input or internal service calls. Tracking all discovered assets, tested endpoints, and potential findings in a structured format prevents duplicate work and ensures complete coverage of the defined scope.
 
+This page covers hunting a single target. When the same cycle runs across many hosts, sessions, or
+agents at once, the coordination layer has its own failure modes (unverified claims, uncounted
+requests, duplicate filings, severity drift): see [[multi-agent-campaign-orchestration]]. For keeping
+an individual probe safe by construction, see [[safe-probing-and-controls]].
+
 ## Attack phases
 
 - **Exploitation**: primary phase for this note (credential and control-plane abuse)

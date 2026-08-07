@@ -89,6 +89,37 @@ def vault_root():
     return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
+def stale_hooks(settings_path=None, hooks_root=None):
+    """Return registered vault-hook scripts that no longer exist in skills/hooks.
+
+    The mirror image of missing_hooks(). settings.json is machine-local and the
+    installer only ADDS, so a hook DELETED upstream stays registered on every
+    already-provisioned device, pointing at a file the next `git pull` removed.
+    That is not silent: the hook cannot start, so a PostToolUse entry errors on
+    every matching tool call (and a PreToolUse one exits 2, which BLOCKS
+    Bash/Write/Edit). Detect by name, not by an EXPECTED list, so a removal
+    needs no bookkeeping. Fails open: unreadable settings/hooks dir -> [].
+    """
+    if settings_path is None:
+        settings_path = default_settings_path()
+    if hooks_root is None:
+        hooks_root = os.path.join(vault_root(), "skills", "hooks")
+    try:
+        with open(settings_path, encoding="utf-8") as f:
+            settings = json.load(f)
+        present = set(os.listdir(hooks_root))
+    except Exception:
+        return []  # fail open: cannot assert drift without both sides
+
+    stale = []
+    for cmd in _registered_commands(settings):
+        for token in cmd.split():
+            name = token.rsplit("/", 1)[-1]
+            if "vault-hooks/" in token and name not in present:
+                stale.append(name)
+    return sorted(set(stale))
+
+
 def default_skills_dest():
     return os.path.expanduser("~/.claude/skills")
 
@@ -137,6 +168,12 @@ def main():
         rc = 1
     else:
         print("all %d vault hooks registered" % len(EXPECTED_HOOKS))
+    stale_h = stale_hooks()
+    if stale_h:
+        print("Stale vault hooks (script deleted upstream, still registered): "
+              + ", ".join(stale_h))
+        print("Run: bash setup/install-hooks.sh")
+        rc = 1
     miss_s = missing_skills()
     if miss_s:
         print("Unregistered vault skills: " + ", ".join(miss_s))

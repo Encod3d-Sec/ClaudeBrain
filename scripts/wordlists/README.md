@@ -33,3 +33,28 @@ engagement name, a flag, or a filesystem path (etc/home/root/...). It only SUGGE
 These files are tracked/shippable -> **generic methodology only**. Never paste a client hostname,
 IP, real route name that identifies a target, cred, or flag. When in doubt, leave it out.
 `scripts/check-leaks.sh` scans for active-engagement markers before sharing.
+
+## sensitive-artifacts.txt
+
+Artifact paths that should never be reachable in production: VCS internals, framework debug
+endpoints, config and backup files, dev leftovers. Fuzzing target for exposed-artifact
+sweeps; not a general directory list.
+
+Built from four sources, assembled with `sort -u` (1247 entries):
+1. `harness-paths.txt` (this directory)
+2. A seclists slice filtered to artifact-shaped names (`raft-large-files.txt`,
+   `UnixDotfiles.fuzz.txt`, `Common-DB-Backups.txt`), kept only where the entry ends in a
+   backup/config/archive extension, ends in `~`, or starts with a dot
+3. An authored stack-specific core: CMSMS, WordPress, Symfony/Laravel, ABP/.NET, GWT,
+   Directus, Node/Next, CI and editor leftovers
+4. Non-English (Lithuanian) artifact and app names, permuted against artifact extensions
+
+Deliberately not a `raft-large` dump: at an RoE-safe rate across a large estate that is days
+of scanning with poor signal for this bug class, and WAFs wholesale-block sustained fuzzing.
+
+The non-English set is evidence-backed: on a non-English-language app an English-only
+wordlist returned nothing while a targeted native-language sweep found the real endpoints.
+Keep it when regenerating.
+
+Entries carry no leading slash (they are appended to a URL already ending in `/`), and the
+list is filtered of domain-shaped and IP-shaped tokens so it stays publishable.

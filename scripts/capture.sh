@@ -10,13 +10,25 @@
 # pipeline to work the box? Re-run the clean single command for the card. Inline any env var on the
 # one command (`KRB5CCNAME=/tmp/x.ccache impacket-... `), never a separate `export`.
 #
+# CARD MODE RULE (2026-08-03): `cli` is the DEFAULT AND ONLY mode for a finding's PoC card.
+# `tmux` is RETIRED for PoC cards - it renders window chrome (title bar, traffic lights) and it
+# takes a SCRIPT, which invites the two failures that produced a bad FIND-011 card: a wrapper
+# invocation (`clear; bash /tmp/poc_xxx.sh`) standing in for the real command, and a hand-written
+# pseudo-command that was never run. `cli` takes a cmdfile of REAL commands, types each at a live
+# `$ ` prompt, and skips `#` lines entirely - so a card can only ever show commands that actually
+# executed. Reserve `tmux` for `recon` scan panes, never for a finding's evidence.
+#
 # Modes:
 #   ev   <eng> <slug> <request-url> <cmd-label> [logfile]   terminal card (cmd + url) from a tee'd log
 #   req  <eng> <slug> [--] <curl-args...>                   real `curl -iv` request/response card
-#   tmux <eng> <slug> <local-script.sh>                     run a script in a real tmux pane, grab the pane
+#   cli  <eng> <slug> <cmdfile>                             USE THIS FOR EVERY POC CARD: run each
+#                                                           command at a real `$ ` prompt, no chrome
+#   tmux <eng> <slug> <local-script.sh>                     RETIRED for PoC cards (chrome + wrapper
+#                                                           risk); scan panes only
 #   web  <eng> <slug> <url> [--no-bar] [width height]        render a LIVE page via chromium (address-bar frame)
 #   recon <eng> <slug> <tmux-tab> [session=<eng>]            card a scan tmux tab (nmap/ffuf/...) into recon/
 #   log  <eng> <slug> <remote-logfile>                      save a long text log (linpeas/pspy) to poc/NN.md
+#   raw  <eng> <slug> <remote-file>                         pull RAW scan output verbatim -> recon/raw/<slug>
 #   snippet <eng> <slug> <url-or-file> [grep-pattern] [note] fenced source excerpt (app.js/HTML) -> poc/NN-<slug>-snippet.md
 #   burp <eng> <slug> <host> <port> <https> <method> <path> [bodyfile] [tabname]
 #                                                           Burp Repeater request/response grab (via MCP)
@@ -32,10 +44,12 @@ usage() {
 usage: capture.sh <mode> <eng> <slug> [args]
   ev   <eng> <slug> <request-url> <cmd-label> [logfile]
   req  <eng> <slug> [--] <curl-args...>
+  cli  <eng> <slug> <cmdfile>            (preferred: clean `$ cmd` transcript, no chrome)
   tmux <eng> <slug> <local-script.sh>
   web  <eng> <slug> <url> [--no-bar] [width height]
   recon <eng> <slug> <tmux-tab> [session=<eng>]
   log  <eng> <slug> <remote-logfile>
+  raw  <eng> <slug> <remote-file>
   snippet <eng> <slug> <url-or-file> [grep-pattern] [reveals-note]
   burp <eng> <slug> <host> <port> <https> <method> <path> [bodyfile] [tabname]
 U
@@ -67,29 +81,40 @@ _pull_and_report() {   # $1=remote-png-path $2=caption
 }
 
 # ev: terminal card showing BOTH the command and the request URL, from a log you tee'd on the VM.
+# --reqresp colorizes the log like a real shell (`$ ` bold cyan, `> ` request cyan, `< ` response
+# blue, `# ` comment green). Pass an EMPTY cmd-label to leave the title bar as dots only, and put
+# the `$ command` line in the log itself -- that renders coloured instead of flat title-bar text.
 mode_ev() {
   [ $# -ge 4 ] || { echo "usage: capture.sh ev <eng> <slug> <request-url> <cmd-label> [logfile]" >&2; exit 2; }
   ENG="$1"; local SLUG="$2" URL="$3" CMD="$4" LOG="${5:-/tmp/poc/$2.log}"
   _poc_target "$ENG" "$SLUG"
   local B64; B64=$(base64 -w0 "$VAULT/scripts/shot.py")
   bash "$VM_SH" "mkdir -p /tmp/poc; echo '$B64' | base64 -d > /tmp/shot.py
-python3 /tmp/shot.py --term '$LOG' --cmd \"$CMD\" --url-bar \"$URL\" -o /tmp/poc/$PNG" >&2
+python3 /tmp/shot.py --term '$LOG' --reqresp --cmd \"$CMD\" --url-bar \"$URL\" -o /tmp/poc/$PNG" >&2
   _pull_and_report "/tmp/poc/$PNG" "$CMD"
 }
 
-# req: full-fidelity curl -iv request+response card. base64-wraps the remote script so a
-# forged body (+ / = / & / quotes) survives SSH transport.
+# req: curl request+response card, rendered like a real shell (dots-only title bar; `$ ` command
+# bold cyan, `> ` request cyan, `< ` response blue via --reqresp).
+#
+# Uses `curl -v`, NOT `-iv`: -v already prints the `< ` response headers, so -i printed the whole
+# header block a SECOND time in the body. The TLS handshake, certificate chain and HTTP/2 framing
+# are filtered out too -- they are never the evidence and they buried the payload (a real card went
+# from 2794px to 858px). Set CAPTURE_FULL=1 to keep -iv and the unfiltered transcript.
+# base64-wraps the remote script so a forged body (+ / = / & / quotes) survives SSH transport.
 mode_req() {
   [ $# -ge 3 ] || { echo "usage: capture.sh req <eng> <slug> [--] <curl-args...>" >&2; exit 2; }
   ENG="$1"; local SLUG="$2"; shift 2
   [ "${1:-}" = "--" ] && shift
   [ $# -ge 1 ] || { echo "capture(req): no curl args given" >&2; exit 2; }
   _poc_target "$ENG" "$SLUG"
-  local LOG="/tmp/poc/$SLUG.reqresp" CURL="curl -sS -iv" a
+  local LOG="/tmp/poc/$SLUG.reqresp" a
+  local CURL="curl -sS -v" NOISE='^\*|^\{ \[|^\} \[|^  '
+  [ -n "${CAPTURE_FULL:-}" ] && { CURL="curl -sS -iv"; NOISE='^$a^'; }   # never matches
   for a in "$@"; do CURL+=" $(printf '%q' "$a")"; done
   local REMOTE; REMOTE=$(cat <<EOF
 mkdir -p /tmp/poc
-{ echo "\$ $CURL"; echo; $CURL ; } > "$LOG" 2>&1 || true
+{ echo "\$ $CURL"; $CURL 2>&1 | grep -vE '$NOISE' ; } > "$LOG" 2>&1 || true
 EOF
 )
   local RB64 SHOT_B64
@@ -98,7 +123,7 @@ EOF
   bash "$VM_SH" "echo '$SHOT_B64' | base64 -d > /tmp/shot.py
 echo '$RB64' | base64 -d > /tmp/reqshot_cmd.sh
 bash /tmp/reqshot_cmd.sh
-python3 /tmp/shot.py --term '$LOG' --reqresp --cmd 'curl -iv  (request + response)' --maxlines 600 -o /tmp/poc/$PNG" >&2
+python3 /tmp/shot.py --term '$LOG' --reqresp --cmd '' --maxlines 600 -o /tmp/poc/$PNG" >&2
   _pull_and_report "/tmp/poc/$PNG" "curl request+response - $SLUG"
 }
 
@@ -107,6 +132,62 @@ python3 /tmp/shot.py --term '$LOG' --reqresp --cmd 'curl -iv  (request + respons
 # them, and end with `echo POC-DONE`.
 mode_tmux() {
   [ $# -ge 3 ] || { echo "usage: capture.sh tmux <eng> <slug> <local-script.sh>" >&2; exit 2; }
+  _mode_tmux_body "$@"
+}
+
+# cli: the CLEAN evidence card. Runs each command in a real shell at a real `$ ` prompt and
+# renders with NO window chrome, so the image reads exactly like a Linux terminal transcript:
+#   $ dig +short A www.example.com
+#   93.184.216.34
+# Prefer this over `tmux` for anything a reviewer will read. `tmux` runs a WRAPPER SCRIPT, so its
+# card is headed by `bash /tmp/poc_<slug>.sh` plus a decorative title bar -- the reviewer sees a
+# script name instead of the commands, which is exactly the noise this mode removes.
+# <cmdfile> is one shell command per line; blank lines and `#` comments are skipped.
+mode_cli() {
+  [ $# -ge 3 ] || { echo "usage: capture.sh cli <eng> <slug> <cmdfile>" >&2; exit 2; }
+  ENG="$1"; local SLUG="$2" CMDFILE="$3"
+  [ -f "$CMDFILE" ] || { echo "capture(cli): no such cmdfile $CMDFILE" >&2; exit 2; }
+  _poc_target "$ENG" "$SLUG"
+  local SESS="poc_${SLUG//[^a-zA-Z0-9]/_}" CB64 SHOTB64 RUNNER RB64
+  CB64=$(base64 -w0 "$CMDFILE")
+  SHOTB64=$(base64 -w0 "$VAULT/scripts/shot.py")
+  # Built locally then shipped base64 so no quoting survives the SSH hop to be mangled.
+  RUNNER=$(mktemp)
+  cat > "$RUNNER" <<'RUNNER_EOS'
+set -u
+SESS="__SESS__"; PNG="__PNG__"
+mkdir -p /tmp/poc
+tmux kill-session -t "$SESS" 2>/dev/null || true
+tmux new-session -d -s "$SESS" -x 200 -y 200
+tmux set-option -t "$SESS" window-size manual 2>/dev/null || true
+tmux resize-window -t "$SESS" -x 200 -y 200 2>/dev/null || true
+# A bare `$ ` prompt, then clear, so the card opens on the first real command.
+tmux send-keys -t "$SESS" "PS1='$ '" C-m; sleep 1
+tmux send-keys -t "$SESS" clear C-m; sleep 1
+# Drop the PS1/clear setup from the scrollback so the card opens on the first real command.
+tmux clear-history -t "$SESS" 2>/dev/null || true
+while IFS= read -r c || [ -n "$c" ]; do
+  case "$c" in ""|\#*) continue ;; esac
+  tmux send-keys -t "$SESS" "$c" C-m
+  # Wait for the prompt to come back (command finished) rather than a blind sleep.
+  for _ in $(seq 1 180); do
+    sleep 1
+    [ "$(tmux capture-pane -p -t "$SESS" | grep -v '^[[:space:]]*$' | tail -1)" = '$' ] && break
+  done
+done < /tmp/"$SESS".cmds
+python3 /tmp/shot.py --tmux "$SESS" --plain --history --maxlines 100000 -o "/tmp/poc/$PNG" >/dev/null 2>&1
+tmux kill-session -t "$SESS" 2>/dev/null || true
+RUNNER_EOS
+  sed -i "s|__SESS__|$SESS|g; s|__PNG__|$PNG|g" "$RUNNER"
+  RB64=$(base64 -w0 "$RUNNER"); rm -f "$RUNNER"
+  bash "$VM_SH" "echo '$SHOTB64' | base64 -d > /tmp/shot.py
+echo '$CB64' | base64 -d > /tmp/$SESS.cmds
+echo '$RB64' | base64 -d > /tmp/$SESS.run.sh
+bash /tmp/$SESS.run.sh" >&2
+  _pull_and_report "/tmp/poc/$PNG" "$SLUG"
+}
+
+_mode_tmux_body() {
   ENG="$1"; local SLUG="$2" SCRIPT="$3"
   [ -f "$SCRIPT" ] || { echo "capture(tmux): no such script $SCRIPT" >&2; exit 2; }
   _poc_target "$ENG" "$SLUG"
@@ -158,6 +239,8 @@ python3 /tmp/shot.py $(printf '%q' "$URL") $BAR --width $W --height $H -o /tmp/p
 mode_recon() {
   [ $# -ge 3 ] || { echo "usage: capture.sh recon <eng> <slug> <tmux-tab> [session=<eng>]" >&2; exit 2; }
   ENG="$1"; local SLUG="$2" TAB="$3" SESS="${4:-$1}"
+  # must match vm-scan.sh's sanitize EXACTLY, or we address a session tmux never created
+  SESS="$(printf '%s' "$SESS" | tr './: ' '----')"
   local RECON="$VAULT/targets/$ENG/recon"; mkdir -p "$RECON"
   local last NN; last=$(ls "$RECON" 2>/dev/null | grep -oE '^[0-9]{2}' | sort -n | tail -1 || true)
   NN=$(printf "%02d" $(( 10#${last:-00} + 1 ))); PNG="$NN-$SLUG.png"
@@ -195,6 +278,32 @@ mode_log() {
     "$SLUG" "$RLOG" "$BODY" > "$POC/$MD"
   echo "saved targets/$ENG/poc/$MD ($(wc -l < "$POC/$MD") lines)"
   echo "md: [$SLUG](poc/$MD)"
+}
+
+# raw: pull a scan's RAW output off the VM verbatim into targets/<eng>/recon/raw/<slug>. Unlike `log`
+# (one file rendered into poc/ as fenced markdown, ANSI stripped) this preserves the MACHINE-readable
+# artifact -- nmap -oN/-oX, ffuf -of json, nuclei -je, httpx -json -- so hits can be walked one at a
+# time with jq and a scan can be traced back to exactly one host. <slug> IS the filename: keep the real
+# extension (ffuf.json, nmap-svc.txt) so downstream tooling can still parse it. Pair it with the
+# `recon` mode: `recon` gives the operator the visual card, `raw` gives the reusable data.
+mode_raw() {
+  [ $# -ge 3 ] || { echo "usage: capture.sh raw <eng> <slug> <remote-file>" >&2; exit 2; }
+  ENG="$1"; local SLUG="$2" RFILE="$3"
+  local RAW="$VAULT/targets/$ENG/recon/raw"; mkdir -p "$RAW"
+  # Written as .md with the payload FENCED: Obsidian only previews .md and images in the GUI, so a
+  # bare .json/.txt in the vault is unreadable there. Content is preserved verbatim inside the fence
+  # (extract with: sed '1,/^```/d; /^```$/,$d' <file>.md).
+  local BASE="${SLUG%.*}" EXT="${SLUG##*.}" DEST LANG BODY
+  case "$EXT" in json) LANG=json ;; xml) LANG=xml ;; sh) LANG=sh ;; *) LANG=text ;; esac
+  DEST="$RAW/$BASE.md"
+  BODY=$(bash "$VM_SH" "base64 -w0 '$RFILE' 2>/dev/null" | base64 -d 2>/dev/null | sed -r 's/\x1B\[[0-9;]*[mGKHhl]//g' || true)
+  if [ -z "$BODY" ]; then
+    echo "capture(raw): '$RFILE' empty/unreachable on the VM (redirect the tool to a file first)" >&2
+    exit 1
+  fi
+  printf '# %s\n\nRaw scan output. Source on the VM: `%s`\n\n```%s\n%s\n```\n' \
+    "$SLUG" "$RFILE" "$LANG" "$BODY" > "$DEST"
+  echo "saved targets/$ENG/recon/raw/$BASE.md ($(wc -c < "$DEST") bytes)"
 }
 
 # snippet: extract the LOAD-BEARING lines of a website source (app.js, an inline script, a source map,
@@ -340,11 +449,13 @@ MODE="${1:-}"; [ -n "$MODE" ] || usage
 shift || true
 case "$MODE" in
   ev)   mode_ev "$@" ;;
+  cli)  mode_cli "$@" ;;
   req)  mode_req "$@" ;;
   tmux) mode_tmux "$@" ;;
   web)  mode_web "$@" ;;
   recon) mode_recon "$@" ;;
   log)  mode_log "$@" ;;
+  raw)  mode_raw "$@" ;;
   snippet) mode_snippet "$@" ;;
   burp) mode_burp "$@" ;;
   -h|--help|help) usage ;;

@@ -20,17 +20,17 @@ GATE 1 (wiki): no hand-rolled exploit until its Weaponize wiki item is `[x]`.
 GATE 2 (poc):  no exploit step goes `[~]`->`[x]` without a poc/ image.
 GATE 3 (loop): a vector exhausted -> mark `[!]`, one Deadends line, move to the next open item. Never re-run `[!]`.
 
-## 1. Recon  ([[recon]] · [[service-enumeration]] · [[network-services]])
-- [ ] rustscan all ports                 -> [[rustscan]]
+## 1. Recon  ([[wiki/cheatsheets/recon]] · [[service-enumeration]] · [[network-services]])
+- [ ] rustscan all ports                 -> [[wiki/tools/rustscan]]
 - [ ] nmap -sCV on open ports            -> [[nmap]]
 - [ ] service enum per port              -> [[service-enumeration]]
-- [ ] DNS enum (dig any / axfr)          -> [[recon]]
+- [ ] DNS enum (dig any / axfr)          -> [[wiki/cheatsheets/recon]]
 - [ ] wiki-query EACH fingerprinted tech/version   <-- GATE 1 source
   (web, per http port:)
-- [ ] whatweb + httpx + screenshot       -> [[whatweb]] [[httpx]] + Skill(screenshot)
-- [ ] ffuf/feroxbuster dirs + vhosts     -> [[ffuf]] [[feroxbuster]] [[gobuster]] [[wordlists]]
+- [ ] whatweb + httpx + screenshot       -> [[wiki/tools/whatweb]] [[wiki/tools/httpx]] + Skill(screenshot)
+- [ ] ffuf/feroxbuster dirs + vhosts     -> [[wiki/tools/ffuf]] [[feroxbuster]] [[gobuster]] [[wordlists]]
 - [ ] arjun param mining                 -> [[arjun]]
-- [ ] nuclei                             -> [[nuclei]] [[nuclei-arsenal]]
+- [ ] nuclei                             -> [[wiki/tools/nuclei]] [[nuclei-arsenal]]
 - [ ] nikto ; wpscan (if WordPress)      -> [[nikto]] [[wpscan]]
 - [ ] katana/gau crawl, then READ each .js / inline `<script>` / button `onclick` / `href` END-TO-END (open the file, do not grep - the initial vector hides in a handler grep skips)  -> [[katana]] [[gau]] [[javascript-source-map-exploitation]]
 - [ ] trufflehog / .git exposure         -> [[trufflehog]] [[git-exposure]]
@@ -48,7 +48,7 @@ GATE 3 (loop): a vector exhausted -> mark `[!]`, one Deadends line, move to the 
 - [ ] deliver payload (burp repeater / curl / upload) -> [[burp-mcp]] [[file-upload]]
 - [ ] get a shell (reverse / bind) + stable PTY       -> [[reverse-shells]]
 - [ ] cred reuse tried before new creds               -> loot.md [[default-credentials]]
-- [ ] fuzz params / request items                     -> [[ffuf]] [[arjun]]
+- [ ] fuzz params / request items                     -> [[wiki/tools/ffuf]] [[arjun]]
 
 ## 4. Exploit
 

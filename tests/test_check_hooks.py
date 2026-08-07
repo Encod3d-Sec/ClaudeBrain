@@ -139,3 +139,25 @@ def test_docs_hook_count_matches_expected():
     setup = open(os.path.join(root, "docs", "setup.md"), encoding="utf-8").read()
     m = re.search(r"(\d+)\s+hook commands", setup)
     assert m and int(m.group(1)) == len(ch.EXPECTED_HOOKS) == 10
+
+
+def test_stale_hook_detected(tmp_path):
+    """A hook deleted upstream but still registered must be flagged.
+
+    The mirror of test_missing_hook_detected: install-hooks.sh only ever added,
+    so a removed hook (web-recon.py, 2026-08-04) stayed registered on every
+    already-provisioned device and errored on every matching tool call.
+    """
+    ch = _load("scripts/check-hooks.py", "check_hooks_stale")
+    hooks_dir = tmp_path / "hooks"
+    hooks_dir.mkdir()
+    (hooks_dir / "scope-guard.py").write_text("")
+    p = tmp_path / "settings.json"
+    p.write_text(json.dumps(_settings_with(["scope-guard.py", "web-recon.py"])))
+    stale = ch.stale_hooks(str(p), str(hooks_dir))
+    assert stale == ["web-recon.py"]
+
+
+def test_stale_hooks_fails_open(tmp_path):
+    ch = _load("scripts/check-hooks.py", "check_hooks_stale_open")
+    assert ch.stale_hooks(str(tmp_path / "nope.json"), str(tmp_path)) == []
