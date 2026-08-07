@@ -47,6 +47,6 @@ httpx -l hosts.txt -favicon                        # favicon hash -> fingerprint
 - Chain order: `subfinder/amass -> httpx -> nuclei/gowitness`. Capture output into `targets/<eng>/` for the engagement state.
 
 ## Related techniques
-[[web-attack-surface]], [[service-enumeration]]; pairs with [[nuclei]], [[ffuf]].
+[[web-attack-surface]], [[service-enumeration]]; pairs with [[wiki/tools/nuclei]], [[wiki/tools/ffuf]].
 
 ## Sources

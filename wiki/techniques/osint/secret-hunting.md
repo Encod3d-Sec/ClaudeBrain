@@ -572,6 +572,45 @@ nuclei -t token-spray/ -var token=token_list.txt
 
 ---
 
+## The custom-wrapper blind spot (why secret scanners miss real credentials)
+
+Signature-based scanners (gitleaks, trufflehog rules) key on two shapes: `NAME = "value"` assignments,
+and calls to **standard** credential APIs (`ftp_connect`, `mysqli_connect`, `new PDO`, `CURLOPT_USERPWD`).
+Both miss the most common real-world leak in legacy codebases: a credential passed as a **positional
+argument to a project-specific wrapper function**.
+
+```php
+// invisible to key=value rules AND to standard-API rules:
+uploadToFTP($file, 'ftp.example.net', 'svcuser', 'Sup3rSecret');
+//          ^arg1   ^host             ^user      ^password
+```
+
+No ruleset can know that `uploadToFTP` takes a password in position 4. Widening the regex to "any
+function with two adjacent quoted literals" drowns in false positives (every `str_replace`, `Array(...)`,
+every i18n call).
+
+**The method that actually works, in order:**
+
+1. **Enumerate the project's own function definitions first**, then grep for *calls* to those names
+   carrying quoted literals:
+   ```bash
+   git grep -hoE '^[[:space:]]*function[[:space:]]+([A-Za-z_][A-Za-z0-9_]*)' | awk '{print $2}' | sort -u > /tmp/fns
+   git log -p --all | grep -oiE "($(paste -sd'|' /tmp/fns))\([^)]*'[^']{3,40}'[^)]*'[^']{3,40}'"
+   ```
+2. **Mine deletion commits by message, not by content.** Commits named `*credential*`, `*secret*`,
+   `*password*`, `*remove*key*` are a direct index of what once existed. `git log --all --oneline
+   --grep='credential\|secret\|password\|token' -i` then read each diff's `-` lines. A "removal" commit
+   without a history rewrite means the secret is still in every clone.
+3. **`git log --all -S'<string>'`** (pickaxe) is far faster than `git log -p --all | grep` on large repos,
+   and finds the commit that introduced *or* removed a literal.
+
+**Always validate a secret scanner against a KNOWN positive before trusting a zero result.** If the
+scanner cannot rediscover a credential you already know is in the history, its clean verdict carries no
+information. A prior "repo is credential-clean" conclusion reached with an unvalidated scanner should be
+treated as untested, not as closed.
+
+---
+
 ## Sources
 
 - `raw/git/Claude-OSINT/` — ElementalSoul claude-osint skills v2.1 (offensive-osint §17–19, §23–24; example 04-secret-hunting.md)

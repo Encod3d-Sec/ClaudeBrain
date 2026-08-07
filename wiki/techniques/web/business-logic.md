@@ -406,6 +406,20 @@ Steps:
 
 ---
 
+## Cross-tenant catalog-id resolution as a free-checkout primitive
+
+Watch for order/booking flows with TWO linked identifiers: one names the product actually shown on the checkout page, and a second names the service/item that is actually created and priced. If the server resolves the second id against a backend table shared by every tenant on the platform, rather than the calling site's own public catalogue, a caller can submit an id belonging to a DIFFERENT tenant.
+
+Entries belonging to other tenants are often priced 0.00 because that tenant is billed out-of-band under its own contract. Submitting one of those ids makes the order created, priced at 0.00, and self-activate with no payment redirect.
+
+Method: hold the visible product id constant and sweep the hidden/secondary id across a small numeric range, diffing the account's resulting entitlement list after each request. This pattern reproduced identically across two independent deployments of the same commerce platform, confirming it is platform-level, not a one-off misconfiguration.
+
+## Move implemented as copy is a silent overwrite primitive
+
+Whenever a file/object API exposes a move or rename operation, verify its actual semantics: call it, then request BOTH the source key and the target key afterward. If the source key still returns the original content, the operation is a copy, not a relocation, and because the target key is typically fully caller-controlled with no existence/ownership check, this converts an apparently benign organize-my-files feature into the ability to overwrite ANY existing key with attacker-chosen content while leaving no obvious gap where the original stood.
+
+This matters for triage/impact framing: a missing file prompts someone to ask where it went; a file silently replaced under its original name is opened and trusted by whatever process reads it next. State integrity impact against the SUBSTITUTION scenario explicitly, not just "arbitrary write", since reviewers reasonably discount write primitives that only touch attacker-created keys.
+
 ## See also
 
 - [[race-conditions]] — concurrent-request exploitation of single-use resources
@@ -416,3 +430,7 @@ Steps:
 
 <!-- auto-wired: context-reachable sub-technique pages -->
 - [[hpp-attacks]]
+
+<!-- promoted-slug: a-checkout-booking-flow-that-resolves-a-secondary-object-id -->
+
+<!-- promoted-slug: a-storage-file-move-or-rename-api-operation-that-is-implemen -->

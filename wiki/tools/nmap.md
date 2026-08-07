@@ -182,9 +182,9 @@ sudo nmap --max-retries 1 target             # Reduce retransmissions
 
 ## Related Techniques
 
-- [[rustscan]] — Ultra-fast port scanner that passes results to Nmap for service detection
-- [[recon]] — Combined quick reference for full recon workflow
-- [[recon]] — Active reconnaissance including banner grabbing and service enumeration
+- [[wiki/tools/rustscan]] — Ultra-fast port scanner that passes results to Nmap for service detection
+- [[wiki/cheatsheets/recon]] — Combined quick reference for full recon workflow
+- [[wiki/cheatsheets/recon]] — Active reconnaissance including banner grabbing and service enumeration
 
 ## Sources
 

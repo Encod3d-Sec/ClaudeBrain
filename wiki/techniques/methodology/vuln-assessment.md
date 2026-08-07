@@ -609,6 +609,42 @@ Web applications often contain hidden or undocumented parameters (API fields, de
 
 ---
 
+## Verify CVE applicability against the live build, not the banner
+
+Product-plus-version-in-range is necessary but not sufficient before claiming a CVE:
+
+- Prefer the target's own self-disclosed build/version/commit metadata (a status/version endpoint,
+  a client bundle's build-info block) over a generic banner or CPE guess.
+- Many CVEs carry a precondition beyond version (a config flag, a mode, a hosting model, a feature
+  later removed). Confirm it empirically wherever the product exposes any reflecting endpoint.
+- A hosting-model self-report (on-prem vs cloud flag) is itself just a config value the app
+  returns, not proof of real deployment topology; caveat it as such.
+- A vendor's fix can be REVERTED in a later release. Diffing against one known-fixed tag is not
+  enough; check whether the fix still holds at the CURRENT latest release. If not, this is a live
+  upstream regression, not just an unpatched deployment.
+- Match branch/major-version numbers exactly; a plausible in-range CVE can target a different
+  product line than the one deployed.
+
+## Fingerprint a hidden version from a stack trace
+
+A thrown, unhandled exception on a Java (or similarly compiled/typed) web app can leak internal
+`ClassName.java:LINE` references even when the product's normal version-disclosure endpoint sits
+behind auth or another gate.
+
+Match those line numbers against every tagged release of the upstream open-source project (or a
+vendored library inside a closed product) to bound the deployed version to a narrow window, without
+ever seeing a version banner. Enough on its own to rule two or more CVEs in or out of range.
+
+Works best when the same class/line is stable across a small number of adjacent tags; confirm the
+line actually moved between candidate tags before trusting the bound.
+
+
+## Fingerprint a fronting proxy's version via a write-free route-existence oracle
+
+When a reverse-proxy/gateway component (not the app behind it) has no version banner, probe several routes known to exist only in specific upstream release ranges, using a request shape that returns 405 (route exists, wrong method) versus 404 (route does not exist) or falls through to the backend. A matched-but-wrong-method route never reaches handler logic, so the probe is read-only and side-effect-free. Combining 2-3 such routes bounds the version to a narrow release window without ever seeing a version string, and without assuming the deployed version from a vendor's published image tag, which can be pinned older than the tag name implies.
+
+Distinct from bounding a version off a JSON config's key-set or a stack trace's file:line references: this variant works even when the component returns no body at all.
+
 ## Sources
 
 - HTB/CPTS Module 108 — Vulnerability Assessments (Security Assessments, CVSS, CVE, Nessus, OpenVAS, Reporting)
@@ -618,3 +654,9 @@ Web applications often contain hidden or undocumented parameters (API fields, de
 - FIRST CVSS specification: `first.org/cvss/`
 - Tenable Nessus plugins database: `tenable.com/plugins`
 - Greenbone OpenVAS documentation: `docs.greenbone.net`
+
+<!-- promoted-slug: a-cve-reported-as-present-must-be-checked-against-the-exact -->
+
+<!-- promoted-slug: when-a-product-s-version-banner-is-gated-behind-authenticati -->
+
+<!-- promoted-slug: a-fronting-proxy-gateway-component-with-no-version-banner-ca -->

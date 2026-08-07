@@ -83,3 +83,8 @@ A subdomain takeover occurs when a DNS record (typically CNAME) points to an ext
 - `dnsx` — bulk DNS resolution and CNAME chasing
 - `subjack` / `nuclei` (subdomain-takeover templates) — automated dangling CNAME detection
 - `can-i-take-over-xyz` (EdOverflow) — reference list of vulnerable service fingerprints
+
+## Broken-link hijacking severity depends on the HTML tag, not just DNS status
+When an outbound-link sweep finds an unregistered or expiring domain, do not treat every hit as the same low-severity phishing bug. Separately extract every `<script src>` and stylesheet `<link href>` pointing at an external domain, not just `<a href>` anchors, and check each one's registration/expiry status. A dead `<a href>` only enables phishing on a user click (UI required, impact capped low). A dead-or-soon-to-expire `<script src>`/`<link>` domain is the SAME primitive as a dangling-CNAME subdomain takeover: whoever registers it gets arbitrary script execution in the including site's own origin, no click required. Prioritize expiring `<script src>` hosts by WHOIS expiry date over any dead `<a href>` found in the same sweep, and flag them well ahead of the expiry date rather than waiting for lapse.
+
+<!-- promoted-slug: broken-link-hijacking-severity-depends-on-which-html-tag-ref -->

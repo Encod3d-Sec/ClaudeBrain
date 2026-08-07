@@ -392,7 +392,7 @@ Test focus: confirm sender-constraining is actually enforced end to end. A DPoP-
 ## Tools
 
 - [[burp-suite]] — intercept OAuth flows, manipulate parameters
-- [[ffuf]] — enumerate OAuth endpoint paths
+- [[wiki/tools/ffuf]] — enumerate OAuth endpoint paths
 - Python `requests` — script token exchange flows
 
 ## PortSwigger Labs

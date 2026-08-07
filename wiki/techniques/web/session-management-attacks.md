@@ -224,8 +224,27 @@ Defence: reject `$Version`/legacy cookie syntax at the edge; normalise Unicode a
 - OWASP ZAP — active scan for session management weaknesses
 - Browser DevTools — inspect cookie attributes in the Application tab
 
+## Proving a fixated session is real, not just accepted
+
+A server returning no `Set-Cookie` when handed an unknown client-supplied session id shows only that the value was adopted syntactically. To prove it is a genuinely live, stateful server-side session: fetch something under that id that writes state server-side (e.g. a CAPTCHA image, which stores its expected answer keyed to the session), then submit that value back under the same attacker-chosen id and confirm it validates. Acceptance proves the session is real and attacker-controlled, not merely tolerated.
+
+Also test URL-based fixation delivery (`?PHPSESSID=...` / `session.use_trans_sid`) as a SEPARATE, independently-disableable vector from cookie-based fixation: a server can reject the URL form while still accepting the cookie form, which changes the realistic delivery mechanism (needs a cookie-write primitive like XSS or a lenient SameSite, not a bare link).
+
+
+## HSTS `max-age=0` is a worse-than-absent policy, not a missing one
+
+`Strict-Transport-Security: max-age=0` does not merely fail to enable HSTS, it actively instructs the browser to FORGET any HSTS policy it previously cached for that host. A user who was previously protected loses that protection on their very next visit. Combined with `includeSubDomains`, the same forget-instruction propagates to every sibling host under the domain.
+
+Chained with a session cookie issued without `Secure`, this becomes a demonstrable cleartext-exposure primitive rather than a theoretical one: the browser has no upgrade instruction, so it attaches the cookie to a plaintext `http://` request, and the server's eventual redirect to HTTPS arrives after the `Cookie:` header already crossed the network. Prove it live: `curl -sI https://host/` for the header, `curl -s -c jar https://host/` then grep the jar for `secure=FALSE`, then `curl -s -b jar -v http://host/` and show the `Cookie:` line inside the plaintext transcript.
+
+Audit takeaway: grep security-header scans specifically for `max-age=0`, not just header presence/absence; a scanner checking presence alone reports this host as compliant.
+
 ## Sources
 
 - TryHackMe: Session Management room
 - Axel Chong / PortSwigger, "Cookie Chaos: how to bypass __Host- and __Secure- cookie prefixes" (2025) (slug: portswigger-cookie-chaos).
 - PortSwigger, "Bypassing WAFs with the phantom $Version cookie" (2025) (slug: portswigger-phantom-version-cookie).
+
+<!-- promoted-slug: to-prove-a-session-fixation-primitive-is-genuinely-live-and -->
+
+<!-- promoted-slug: hsts-max-age-0-is-not-a-missing-policy-but-an-actively-worse -->

@@ -815,3 +815,16 @@ with `capture.sh snippet` so the walkthrough cites the code, not just "the JS re
 [[javascript-source-map-exploitation]] and [[api-testing]].
 
 <!-- promoted-slug: js-api-map-scanners-blind -->
+
+## `<product>-<component>-<env>.<apex>` gives you the whole family
+
+Find one host of the form `<product>-<component>-<env>.<apex>` and you can enumerate the rest by substitution: `<component>` over the backing tools (the API gateway, the workflow engine, the GitOps controller, the dashboards, the front end, the database) and `<env>` over `dev`, `tst`, `qa`, `staging`, `prod`. A sibling family is usually fronted by ONE identity proxy, so they all return the same challenge page and you can clear the set in a handful of requests.
+
+What matters is the posture DIFFERENTIAL, not the gate:
+
+- The `-tst` twin of a gated product commonly has self-registration enabled where production returns a registration-disabled error. Confirm behaviourally (submit a malformed-but-present address and see whether it reaches field validation) rather than trusting a config flag.
+- Test instances publish API plans and specs that production does not, including keyless plans over back-end operations that would be Critical if the back end were healthy.
+
+Gotcha: a gated instance is a genuine hardening win worth citing as a positive control in the report - especially for products that are normally found wide open. Do not grind on the gate.
+
+<!-- promoted-slug: one-dev-staging-naming-convention-enumerates-a-whole-product -->

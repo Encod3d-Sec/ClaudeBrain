@@ -19,12 +19,12 @@ Top-level hub. Each domain has its own MOC linking every page.
 - [[forensics-moc|Forensics]] (2)
 - [[linux-moc|Linux]] (10)
 - [[macos-moc|Macos]] (19)
-- [[methodology-moc|Methodology]] (10)
+- [[methodology-moc|Methodology]] (12)
 - [[mobile-iot-moc|Mobile Iot]] (5)
 - [[network-moc|Network]] (19)
 - [[osint-moc|Osint]] (7)
 - [[red-team-moc|Red Team]] (15)
-- [[web-moc|Web]] (81)
+- [[web-moc|Web]] (83)
 
 ## Reference
 
@@ -69,7 +69,7 @@ Top-level hub. Each domain has its own MOC linking every page.
 - [[session]]
 - [[smuggling]]
 - [[sqli]]
-- [[wiki/payloads/ssrf]]
+- [[ssrf]]
 - [[ssti]]
 - [[web-cache]]
 - [[webauthn-passkey]]

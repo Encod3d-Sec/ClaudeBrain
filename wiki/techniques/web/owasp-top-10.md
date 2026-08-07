@@ -50,7 +50,7 @@ Default creds, verbose errors, exposed admin/debug, missing headers, open cloud 
 Known-CVE dependencies and unpatched products.
 - **Real-world:** Equifax (2017) - unpatched Struts CVE-2017-5638, 147M records; Log4Shell across the internet.
 - **CVEs:** the whole [[cve-arsenal]] (perimeter + app-server + collaboration).
-- **Find/exploit:** [[trivy]]/grype (deps), [[nuclei]] (`-tags cve,kev`), [[cve-arsenal]], [[nday-patch-diffing]].
+- **Find/exploit:** [[trivy]]/grype (deps), [[wiki/tools/nuclei]] (`-tags cve,kev`), [[cve-arsenal]], [[nday-patch-diffing]].
 - **Pages:** [[supply-chain-attacks]], [[cms-exploitation]]. **Skills:** `hunt-rce`, `nday`.
 
 ## A07 - Identification and Authentication Failures

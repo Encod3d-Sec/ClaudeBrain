@@ -239,7 +239,7 @@ sqlmap -u "http://TARGET_IP/ai/includes/user_login.php?email=test%40chatai.com&p
 ## Related Techniques
 
 - [[sql-injection]]
-- [[recon]]
+- [[wiki/cheatsheets/recon]]
 - [[path-traversal-lfi]]
 
 ## Sources

@@ -188,8 +188,8 @@ grep -E '^.{6,}$' jane.txt | grep -E '[A-Z]' | grep -E '[a-z]' | \
 ## Related Techniques
 
 - [[medusa]] — Alternative parallel brute-forcer with module-based design
-- [[ffuf]] — Can also brute-force web form passwords via POST fuzzing
-- [[recon]] — Identify login forms and authentication endpoints before brute forcing
+- [[wiki/tools/ffuf]] — Can also brute-force web form passwords via POST fuzzing
+- [[wiki/cheatsheets/recon]] — Identify login forms and authentication endpoints before brute forcing
 
 ## Sources
 

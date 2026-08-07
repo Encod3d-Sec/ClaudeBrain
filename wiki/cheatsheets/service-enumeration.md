@@ -581,7 +581,7 @@ ldapsearch -x -H ldap://$target -D "<user>@<domain>" -w "<pass>" \
 - [[pass-the-hash]] — NTLM credential reuse
 - [[password-cracking]] — offline hash cracking
 - [[ad-cheatsheet|Active Directory cheatsheet]] — LDAP/SMB/WinRM/RDP in AD context
-- [[recon]] — passive recon before enumeration
+- [[wiki/cheatsheets/recon]] — passive recon before enumeration
 
 ## Fingerprint -> Exploit: the searchsploit + Metasploit quick-win reflex
 

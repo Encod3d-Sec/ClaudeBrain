@@ -60,8 +60,14 @@ Self-XSS, missing security headers alone, clickjacking on non-sensitive pages, r
 - Lead with impact, not methodology. Triagers skim.
 - Evidence redaction is mandatory before submit - cookies, tokens, PII, internal IPs.
 
+
+## Build a self-contained, verbatim-clone PoC harness a triager can re-run offline
+For a DOM/XSS sink found in a live app's own JS, avoid re-triggering it repeatedly on production for evidence. Copy the exact vulnerable function(s) verbatim out of the live bundle into a small standalone local HTML file, feed them the same malicious data shape captured from the live app, and point the payload's side effects (an `<img>`/`background-image` load, a `fetch`, an event-handler callback) at a throwaway loopback HTTP server. Render the file with a headless browser (`chromium --headless --dump-dom`); the loopback server's request log is the callback evidence. This reproduces the bug with a byte-for-byte copy of the app's real sink, touches nothing on the target after the initial capture, and lets any triager independently re-run it and see the callback land, with no target access or credentials needed.
+
 ## Sources
 
 - HackerOne disclosure guidelines (slug: hackerone-disclosure-guidelines) (`https://docs.hackerone.com`).
 - Bugcrowd Vulnerability Rating Taxonomy (slug: bugcrowd-vrt) (`https://bugcrowd.com/vulnerability-rating-taxonomy`).
 - FIRST CVSS calculator (slug: firstcvss) (`https://www.first.org/cvss/calculator/3.1`).
+
+<!-- promoted-slug: for-a-dom-xss-sink-discovered-in-a-live-app-s-own-js-a-verba -->

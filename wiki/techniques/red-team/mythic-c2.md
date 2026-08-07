@@ -114,7 +114,7 @@ Apply vendor baselines for logging, least privilege, patch cadence, and segmenta
 
 ## Tools
 
-- [[httpx]]
+- [[wiki/tools/httpx]]
 - [[medusa]]
 
 ## Sources

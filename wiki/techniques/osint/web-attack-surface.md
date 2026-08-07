@@ -196,8 +196,8 @@ Apply vendor baselines for logging, least privilege, patch cadence, and segmenta
 
 ## Tools
 
-- [[httpx]]
-- [[nuclei]]
+- [[wiki/tools/httpx]]
+- [[wiki/tools/nuclei]]
 - [[subfinder]]
 
 ## Sources

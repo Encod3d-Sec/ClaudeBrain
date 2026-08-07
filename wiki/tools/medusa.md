@@ -130,7 +130,7 @@ Hydra has slightly broader protocol support and is more commonly used. Medusa's 
 ## Related Techniques
 
 - [[hydra]] — More widely used alternative with similar capabilities and broader protocol support
-- [[recon]] — Identify login interfaces before brute forcing
+- [[wiki/cheatsheets/recon]] — Identify login interfaces before brute forcing
 
 ## Sources
 

@@ -74,8 +74,20 @@ success.
 - Flask session cookies are signed-but-readable (base64); decode them to confirm auth state
   (`{"logged_in":true,"username":...}`) without the secret.
 
+## CAPTCHA answer not invalidated after consumption
+
+A CAPTCHA can be genuinely validated server-side (wrong/missing/no-session all correctly rejected) and still fail completely if the expected value is left in the session after a correct check instead of being cleared. One human solve then authorises unlimited further requests for as long as the session stays alive.
+
+Test: solve the CAPTCHA once, then replay the SAME answer against the same endpoint changing only the target parameter. If every replay succeeds, the control is a single-use gate implemented as a session flag that is set but never unset.
+
+Also test the negative: submit a WRONG answer on the same session, then replay the ORIGINAL correct answer again. If it still works, a bad guess does not burn the stored value either, which is worse than simple non-invalidation.
+
+Combine with an absent rate limit for full impact: no per-request or per-session throttling on top of the CAPTCHA turns one solve into a bulk-enumeration primitive.
+
 ## Related
 
 - [[authentication-attacks]] (login attacks, brute force)
 - [[burp-mcp]] (driving the attack through Burp)
 - [[password-cracking]] (wordlist mutation when a provided list misses)
+
+<!-- promoted-slug: an-anti-automation-captcha-whose-solved-answer-is-never-clea -->

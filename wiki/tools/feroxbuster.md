@@ -172,4 +172,4 @@ This happens before enumeration begins and eliminates thousands of false positiv
 
 Synthesised from 0xdf HTB writeups: agile, alert, analytics, artificial, backend, backendtwo, barrier, blurry, boardlight, bolt, bountyhunter, broscience, busqueda, cap, cat, driver.
 
-Cross-reference: [[ffuf]] covers subdomain/VHost fuzzing, GET/POST parameter fuzzing, and response matching/filtering. Use ffuf when you need DNS-based subdomain enumeration or fine-grained matcher logic. Use feroxbuster when you need automatic recursion or API path tree discovery.
+Cross-reference: [[wiki/tools/ffuf]] covers subdomain/VHost fuzzing, GET/POST parameter fuzzing, and response matching/filtering. Use ffuf when you need DNS-based subdomain enumeration or fine-grained matcher logic. Use feroxbuster when you need automatic recursion or API path tree discovery.

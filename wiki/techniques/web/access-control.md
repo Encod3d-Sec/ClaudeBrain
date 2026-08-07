@@ -417,7 +417,7 @@ curl -H "Authorization: Bearer $USER_TOKEN" https://api.example.com/api/v1/users
 ## Tools
 
 - [[burp-suite]] — Intruder for IDOR enumeration, Repeater for manual parameter manipulation
-- [[ffuf]] — directory/endpoint brute force
+- [[wiki/tools/ffuf]] — directory/endpoint brute force
 - dirsearch — recursive directory enumeration
 - [[burp-suite]] Autorize extension — automated detection of horizontal/vertical access control failures across roles
 - [[burp-suite]] Authz and AuthMatrix extensions — further IDOR and access control testing
@@ -623,3 +623,105 @@ authorizes but a static/object store (S3-style bucket, image CDN, download host)
 Reassemble segments with `ffmpeg -i all.ts ...` to review the content. Related: [[idor]], [[wiki/techniques/web/ssrf]].
 
 <!-- promoted-slug: media-origin-bfla -->
+
+MASS ASSIGNMENT: success:true DOES NOT MEAN WRITTEN. Frameworks commonly allowlist server-side and silently DISCARD unknown or non-editable fields while still returning success. Treating that reply as confirmation yields a false-positive report, which triage rejects.
+
+CONFIRM AGAINST RENDERED STATE, NOT THE RESPONSE:
+1. Control: set a legitimately editable field to a unique marker, submit, re-read the page, confirm the marker appears. Proves the endpoint works and that you can observe changes.
+2. Test a field the UI marks readonly. NOTE: readonly inputs ARE still submitted by the browser, so the server already receives them and must be choosing to ignore them. (disabled inputs are NOT submitted - a different test.)
+3. Only then inject the privilege field (RoleId, isAdmin, roles[], UserId).
+4. Read the effect from an INDEPENDENT oracle, never the endpoint's own reply. Many apps render the session role object inline into every page (role = {admin:false,...}): server-rendered and unfakeable by the update response.
+
+A clean negative from this ladder is worth recording: it proves the allowlist and stops the next engagement re-testing the class.
+
+<!-- promoted-slug: verify-writes-against-rendered-state -->
+
+ZONE-PREFIXED MODEL NAMES ARE A FREE ACCESS-CONTROL ORACLE. When an app exposes a generic remote-model endpoint (POST /remote/{model}/search) and its model names carry a ZONE or ROLE PREFIX (e.g. _<ZONE>_Mega_<Name>, customer zone vs staff back office), any model whose prefix does not match the caller's zone yet is still served to that caller is an authorization defect by the vendor's own naming.
+
+METHOD (pure read, no writes):
+1. Harvest every page's HTML; collect all data-remote= / model-name attributes.
+2. Group by prefix; note which prefix matches the zone you are authenticated in.
+3. Call the endpoint per model and COUNT results. Never read personal records.
+4. Compare against what your account actually owns.
+
+WHY THE CONTRAST MATTERS: testing only the mismatched model proves nothing, since a reviewer can argue the list is public by design. Testing the same-zone models alongside it shows the platform scopes correctly when configured to, converting 'this list looks broad' into 'this is a configuration defect'. Report the contrast table, not the single result.
+
+ALSO: an encrypted filter parameter travelling beside the model name (an opaque _where token) may be inert. Test with it supplied AND omitted; byte-identical responses prove the filter is not what scopes the query.
+
+THREE FAILURE MODES THAT TURN THIS INTO A FALSE POSITIVE. Added after this exact technique produced a
+finding that adversarial verification refuted. Check all three BEFORE writing anything up:
+
+(a) A 403 ON THE ANONYMOUS CONTROL MAY BE A CSRF REJECTION, NOT AN AUTH BOUNDARY. If the endpoint
+    requires an anti-CSRF header, an anonymous request sent without one measures "no token", not "no
+    session". Many apps hand a fresh session cookie AND a fresh CSRF token to any caller on a single
+    GET of the home page. The correct control is: mint a token anonymously, then replay WITH the
+    anonymous cookie and token. If that returns the same body, there is no privilege boundary at all
+    and the finding evaporates. Distinguish an app-generated 403 (small body, app's own request-id
+    header) from an edge/WAF 403 (large body, CDN ray-id markers).
+
+(b) EMPTY IS NOT SCOPED. A same-zone model returning 0 rows proves nothing if the test account owns
+    zero of that object. The contrast is only valid against a model where the account DEMONSTRABLY
+    owns rows. Likewise, a model returning a row whose id is not the caller's id is relationship-
+    scoped, not self-scoped: it is a "related to me" view, and contrasting it with a global picker
+    demonstrates nothing.
+
+(c) CHARACTERISE THE RECORDS BEFORE CLAIMING A DATA-EXPOSURE CLASS. Counting rows is not enough.
+    Run a character-class histogram over the identifier field: it costs nothing, needs no personal
+    data to be read, and settles whether the rows are natural persons or companies. Example: a
+    Lithuanian legal-entity code is 9 digits, a personal code is 11. A list of company names plus
+    public registry codes is not a personal-data disclosure, and a picker dataset the application
+    itself preloads into every user's browser is not an access-control defect.
+
+Before reporting, ask: does the app's OWN UI load this model for this user? If a form on a page the
+user can reach declares `data-remote=<model> data-preloaded=1`, the data is intended for that user and
+the finding is about the endpoint's authentication, not its authorization.
+
+<!-- promoted-slug: zone-prefixed-model-names-authz-smell -->
+
+## A client-side redirect is not an access control
+
+A page that dispatches a `window.location` redirect from inline JavaScript when a session is
+missing, rather than the server issuing a 302 before any HTML is sent, is exposing its
+unauthenticated partials directly. Request the underlying include/template-partial or AJAX
+endpoint straight with curl, which never executes JS, and it renders or executes normally.
+
+Recognise the shape: a directory of small server-side includes (`/inc/*.php`, `/partials/*`,
+`/_fragments/*`) paired with a page that only LOOKS gated in a browser. Enumerate every file in
+that directory with a short curated name list (login/register/remember/account forms, cart/
+template fragments) and probe each with both GET and POST.
+
+One member of the family is disproportionately valuable: a data/debug include never meant to be
+hit standalone (`*_userdata.php`, `*_debug.php`) frequently throws a fatal error when called
+without the variables the parent page would have set, leaking the absolute server filesystem path.
+
+<!-- promoted-slug: a-js-window-location-redirect-on-page-load-is-not-a-server-s -->
+
+## Sibling access surfaces evade uniform authz enforcement
+
+A rule written for `/product/ServiceAPI/` is frequently never copied to `/product/OtherService/` or `/product/AdminUI/` on the same host, and the same gap shows up when identical handler logic is registered under a second URL mount (a public zone plus staff-zone prefixes). It also shows up one layer down: a UI often has a dedicated lightweight endpoint (mention/user-search/typeahead widget, a machine-facing SOAP login) that reaches the same data or identity as a properly-gated canonical route, but was built outside the same authz middleware.
+
+Recurred across independent products: an integration API protected while a sibling survey/config API on the same box was open; an admin-UI import subsystem open while its sibling API directory was gated; a versioned widget API left unauthenticated while older versions on the identical host required Basic auth; a file-upload route gated under staff-zone prefixes but ungated under its bare public-zone prefix; an unauthenticated mentions/user-search endpoint sitting beside a correctly-gated canonical `/users` route; a SOAP login skipping the web form's CAPTCHA/lockout/audit entirely.
+
+Method: once you find ANY authenticated or blocked surface, (1) enumerate every other top-level path segment under the app root and search for a second mount serving the identical handler (other prefixes in a route table, other files sharing a WSDL/OpenAPI operation set); (2) grep JS bundles for autocomplete/search/typeahead/mention-shaped calls and any alternate login/API-spec primitive reaching the same identity. Probe each with a bare unauthenticated request, diffing status/body against the canonical route with the same identifier in the same session. Check whether a sibling search endpoint's `limit`/`count` param is honored past the UI's rendered count; an uncapped count turns a search box into a bulk-export primitive.
+
+<!-- promoted-slug: a-protective-control-auth-gate-authz-rule-or-the-main-api-au -->
+
+## One Ant-pattern segment does not cover the whole prefix
+
+Spring Security's Ant-style path matcher is depth-sensitive: a rule authored for one path shape
+secures exactly that shape, and adjacent paths one segment shorter or longer under the same
+logical prefix can fall completely outside it. On a REST tree where most endpoints correctly 401,
+sweep sibling depths under a nominally-gated prefix rather than accepting the first denial as proof
+the whole prefix is closed:
+
+```
+GET /rest/documents/0     -> 401 (gated)
+GET /rest/documents       -> 500, real app JSON error (unauthenticated)
+GET /rest/officeCases     -> 500, real app JSON error (unauthenticated)
+```
+
+Gotcha: a 401 does not prove the path exists either, a security filter commonly answers before the
+framework's own routing does. Pair every finding with a genuine negative-control path under the
+same filter before treating it as confirmation.
+
+<!-- promoted-slug: a-spring-security-ant-style-gate-written-for-one-path-depth -->

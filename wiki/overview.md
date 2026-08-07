@@ -40,7 +40,7 @@ sources: []
 
 | Phase | Status | Pages |
 |-------|--------|-------|
-| Recon & OSINT | Complete | [[recon]] cheatsheet, [[nmap]], [[ffuf]], [[gobuster]], [[nikto]], [[rustscan]] |
+| Recon & OSINT | Complete | [[wiki/cheatsheets/recon]] cheatsheet, [[nmap]], [[wiki/tools/ffuf]], [[gobuster]], [[nikto]], [[wiki/tools/rustscan]] |
 | Service enumeration | Complete | [[service-enumeration]], [[service-enumeration]] cheatsheet |
 | Web exploitation | Complete | 20+ technique pages (see Web section below) |
 | Network exploitation | Complete | [[network-service-attacks]], [[network-services]] cheatsheet |
@@ -104,7 +104,7 @@ sources: []
 
 ## Tools
 
-[[nmap]] · [[rustscan]] · [[ffuf]] · [[gobuster]] · [[nikto]] · [[httpx]] · [[nuclei]] · [[hydra]] · [[medusa]] · [[hashcat]] · [[wpscan]] · [[metasploit]] · [[burp-suite]] · [[sqlmap]] · [[netexec]] · [[impacket]] · [[certipy]] · [[evil-winrm]] · [[tshark]] · [[gdb-gef]] · [[radare2]] · [[ghidra]] · [[pwntools]] · [[angr]] · [[volatility]] · [[binwalk]] · [[aflplusplus]] · [[libfuzzer]] · [[semgrep]] · [[codeql]] · [[trivy]] · [[bloodhound]] · [[responder]] · [[subfinder]] · [[gowitness]] · [[ligolo-ng]] · [[frida]] · [[john]] · [[scoutsuite]] · [[pacu]] · [[roadtools]] · [[apktool]] · [[jadx]]
+[[nmap]] · [[wiki/tools/rustscan]] · [[wiki/tools/ffuf]] · [[gobuster]] · [[nikto]] · [[wiki/tools/httpx]] · [[wiki/tools/nuclei]] · [[hydra]] · [[medusa]] · [[hashcat]] · [[wpscan]] · [[metasploit]] · [[burp-suite]] · [[sqlmap]] · [[netexec]] · [[impacket]] · [[certipy]] · [[evil-winrm]] · [[tshark]] · [[gdb-gef]] · [[radare2]] · [[ghidra]] · [[pwntools]] · [[angr]] · [[volatility]] · [[binwalk]] · [[aflplusplus]] · [[libfuzzer]] · [[semgrep]] · [[codeql]] · [[trivy]] · [[bloodhound]] · [[responder]] · [[subfinder]] · [[gowitness]] · [[ligolo-ng]] · [[frida]] · [[john]] · [[scoutsuite]] · [[pacu]] · [[roadtools]] · [[apktool]] · [[jadx]]
 
 ---
 
@@ -147,7 +147,7 @@ sources: []
 - **0xdf HTB ingest complete** aside from evergreen maintenance; future passes can mine remaining Insane writeups individually when a technique page needs depth
 - **Binary exploitation cheatsheet**: [[binary-exploitation]] is now comprehensive (stack, heap, ROP, SEH, bad chars); a dedicated cheatsheet page would be the logical next step
 - **Windows privilege escalation**: now covered, [[windows-privesc]] cheatsheet: Potato attacks, SeBackupPrivilege, service exploitation, UAC bypass, credential harvesting
-- **OSINT deep-dive**: [[recon]] cheatsheet covers basics; no dedicated OSINT technique page
+- **OSINT deep-dive**: [[wiki/cheatsheets/recon]] cheatsheet covers basics; no dedicated OSINT technique page
 - **Kubernetes**: [[kubernetes-attacks]] now covers advanced cluster attacks (etcd direct dump, kubelet API, RBAC escalation verbs, node escape)
 - **IoT / firmware**: [[iot-attacks]] (MQTT) + [[firmware-hardware]] (binwalk extraction, UART/JTAG/SPI, firmware emulation) now covered
 - **CTF + cloud + mobile expansion (2026-06-16)**: added crypto/RE/forensics/stego + GCP + protocol attacks + iOS; hunt skills `hunt-ad`/`hunt-cloud`/`hunt-deserialization` + `ctf-category` router. Remaining: OSINT deep-dive, classical/lattice crypto depth, Azure attack (non-AD) skill

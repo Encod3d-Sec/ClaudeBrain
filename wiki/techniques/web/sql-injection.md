@@ -152,9 +152,9 @@ Replace each NULL with a string literal until visible output changes:
 | DBMS | Syntax | Notes |
 |------|--------|-------|
 | MSSQL | `'foo'+'bar'` | `+` operator |
-| PostgreSQL | `'foo'||'bar'` | `\|\|` operator |
+| PostgreSQL | `'foo'\|\|'bar'` | `\|\|` operator |
 | MySQL | `'foo' 'bar'` or `CONCAT('foo','bar')` | space or CONCAT |
-| Oracle | `'foo'||'bar'` | `\|\|` operator |
+| Oracle | `'foo'\|\|'bar'` | `\|\|` operator |
 
 ---
 
@@ -1107,3 +1107,11 @@ def sval(e,maxlen=128):
 
 Do not name the script `enum.py` (shadows stdlib `enum` -> `import requests` circular-import crash).
 On the box this came from, creds were stored **plaintext** and reused for SSH (port 22).
+
+## Arithmetic-only payload as a WAF-transparent execution proof
+
+When `sleep()`, `or 1=1`, and named SQL functions are all WAF-blocked, send pure arithmetic with no SQL keyword: `'||(2*3)||'` (executes, harmless) vs `'||(1/0)||'` (executes far enough to hit a runtime division-by-zero, distinct error). Both payloads are syntactically inert to a signature-based WAF, but only the database's own evaluation explains the differing outcome, proving real execution without extracting any data.
+
+Confirm the WAF gap explicitly: send both the arithmetic payload and a `sleep()`/`or 1=1` payload side by side and diff which one gets edge-blocked versus reaches the database.
+
+<!-- promoted-slug: a-pure-arithmetic-payload-with-no-function-name-or-boolean-k -->

@@ -203,6 +203,12 @@ Apply vendor baselines for logging, least privilege, patch cadence, and segmenta
 
 Tool references are inline in **Methodology**; see the `tools/` pages for CLI usage.
 
+
+## Disambiguate "created a bucket" from "wrote a key" using S3 naming rules alone
+S3/MinIO bucket names must be 3-63 characters, lowercase, and contain no underscore. If an anonymous PUT/upload succeeds with a first path-segment that violates any of these rules (uppercase letters, an underscore, or fewer than 3 characters), that segment cannot be a real bucket: the write necessarily landed as an object-key prefix inside an existing bucket, not a newly created bucket. Use this to prove or refute a "this created a rogue bucket" claim purely from the naming rules, with no bucket-listing permission needed. Gotcha: the store's own AccessDenied/error XML echoing that first segment back in a `<BucketName>` field is just the server parsing the URL path, not evidence a bucket by that name exists.
+
 ## Sources
 
 - Swisskyrepo [InternalAllTheThings](https://github.com/swisskyrepo/InternalAllTheThings) (ingest slug `InternalAllTheThings`).
+
+<!-- promoted-slug: s3-minio-s-own-bucket-naming-rules-3-63-chars-lowercase-no-u -->

@@ -348,15 +348,133 @@ Apply vendor baselines for logging, least privilege, patch cadence, and segmenta
 ## Tools
 
 - [[burp-suite]]
-- [[ffuf]]
+- [[wiki/tools/ffuf]]
 - [[gobuster]]
 - [[gowitness]]
-- [[httpx]]
+- [[wiki/tools/httpx]]
 - [[nikto]]
 - [[nmap]]
-- [[nuclei]]
+- [[wiki/tools/nuclei]]
 - [[subfinder]]
+
+## A completed handshake is not a live service
+
+Recurred independently at least twice in the same estate, on both a bare in-scope IP and a
+discovered non-CDN-fronted subdomain: a raw TCP-connect probe reports 443/8080 as open, but `curl`
+and `openssl s_client` each get zero bytes back on either port. A filtering device (or a
+non-terminating load balancer) can complete the three-way handshake and then drop everything that
+follows.
+
+Generic rule: never record a port as a live service from a connect-scan result alone. Confirm with
+a protocol-speaking client (curl for HTTP/S, openssl s_client for raw TLS, or the specific
+protocol's own handshake) before spending further effort on it.
+
+## A recovering connection drop is a throttle, not a ban
+
+A host began refusing connections outright after roughly 40 requests sent at about one per second,
+then answered normally again about a minute later with no change in source IP or credentials.
+Misreading this burst-then-recover shape risks two wrong conclusions: that the host is down, or
+that the source has been banned - both would send testing down the wrong path (origin-bypass
+hunting, or IP/persona rotation) for a problem that is neither.
+
+Generic rule: on any unexplained connection refusal, wait roughly a minute and retry unchanged
+before concluding a ban or an outage. A rate-limit throttle that self-clears is the far more common
+explanation on a shared or CDN-fronted host.
+
+## DNS-check scope hostnames before chasing their CVEs
+
+On one estate, a large fraction of the "juicy" scope hostnames (named after internal tools with
+known CVE histories) had no public A/AAAA record at all - internal-only, unreachable from outside.
+A `000`/connection-refused from curl on such a host means "no DNS record", not "host is down" and
+not "WAF blocked"; re-probing it over HTTP repeatedly wastes a whole sweep.
+
+The same pattern killed several source-derived vulnerability candidates in one pass purely on DNS:
+a hostname with genuinely vulnerable-looking code in its public repo, and no live public host
+serving it in this program's scope, is not testable and should be recorded as such immediately
+rather than revisited.
+
+Generic rule: resolve every scope hostname with a direct DNS query FIRST, before any HTTP probing,
+and keep the resolved/NXDOMAIN split visible so nobody re-chases an internal-only name.
+
+## Fast tell for a redirect-only host with no origin
+
+Two separate hosts in one estate turned out to be nothing but a CDN-level redirect rule pointing at
+a third-party SaaS product, with no origin application of their own. The tell was fast and cheap: a
+handful of redirect-manipulation probes (varying the path, query string, and common override
+headers) all produced the exact same `Location` value, byte for byte.
+
+Generic rule: when a host's every response is a redirect, run a small batch of redirect-
+manipulation probes before investing in content discovery or scanners. If the `Location` never
+varies, there is no origin behind the redirect to find, and further enumeration on that host is
+provably wasted effort - stop and move to the next asset.
+
+## Use a fresh scratch file per target
+
+A fingerprinting pass wrote each host's fetched page to the same shared temp file. When a fetch
+failed for the current host, the file still held the PREVIOUS host's content, and the script
+reported that stale `<title>` (or other extracted field) as belonging to the new host - a
+plausible-looking but entirely invented result. This recurred independently in a second, unrelated
+probe against a different host later in the same engagement.
+
+Generic rule for any scripted per-host loop that shells out to a file-based tool: write to a
+fresh/unique file per target (a temp file keyed by hostname, or `mktemp` per iteration), or at
+minimum check the fetch's own exit code/freshness before trusting anything read back from disk.
+
+## Read the vendor's source before more probing
+
+An endpoint returned 200 with an empty result set unauthenticated, while sibling endpoints on the
+same API returned 401 - ambiguous from outside (a missing authorization check that happens to leak
+nothing today, or correct scoping producing an empty set for an anonymous caller). The product was
+a known open-source platform, so the question was settled definitively by reading the public
+policy/controller source for that one action, with zero further requests sent to the target: the
+200-vs-401 split turned out to be a framework artifact (an empty authorized scope resolves 200,
+an explicit authorization failure raises and becomes 401), not a missing check.
+
+Generic rule: before spending further probes on an ambiguous external observation, check whether
+the product is open source. If it is, reading the one relevant file is usually cheaper, more
+definitive, and touches the target zero further times.
 
 ## Sources
 
 - Swisskyrepo [InternalAllTheThings](https://github.com/swisskyrepo/InternalAllTheThings) (ingest slug `InternalAllTheThings`).
+
+BUDGET SERVER ERRORS, NOT JUST REQUESTS. On products whose error handler files a ticket and pages an on-call engineer, the binding constraint is the number of 500s you cause, not your request count. Track them in a separate ledger with a hard cap.
+
+THE TRAP: route-existence probing is itself a 500-generating technique. A GET against an unknown path feels free because you expect a 404, but a routed-but-erroring path throws. 'GET is read-only' does not mean 'GET is safe'.
+
+MITIGATIONS THAT WORK:
+- Recover the client's real call contract from the JS bundle FIRST, then send well-formed requests. A well-formed call to a live endpoint returns data or a clean 4xx; a guessed one throws.
+- Prefer endpoints already observed returning structured 4xx JSON; they are safe to iterate against.
+- When a probe class produces two errors, stop the class rather than varying the payload.
+
+Real numbers from one engagement: 98 requests against a 1000 budget, but 6 server errors against a self-imposed cap of 4. Requests were never the limit.
+
+<!-- promoted-slug: budget-500s-not-just-requests -->
+
+A CONTROL THAT VARIES THE WRONG VARIABLE PRODUCES FALSE CONFIDENCE, NOT SAFETY. Control-first testing is necessary but not sufficient: if the control changes a different variable than the one actually gating the endpoint, it manufactures a boundary that does not exist.
+
+CANONICAL CASE - the 403 that is not an auth boundary. You test an endpoint authenticated (200) and anonymous (403), and conclude authentication is required. But if the endpoint enforces an anti-CSRF header, your anonymous request omitted BOTH the session cookie and the token, so you measured 'no token', not 'no session'. Many apps hand a fresh session cookie AND a fresh CSRF token to any caller on one GET of the home page - so an unauthenticated attacker mints both and gets the full response. The boundary you reported does not exist.
+
+THE CORRECT CONTROL MATRIX. Vary ONE variable at a time:
+  cookie + token  -> baseline
+  no cookie + token (minted anonymously)  <- THE ONE PEOPLE SKIP. This is the real auth test.
+  cookie + no token   -> isolates CSRF enforcement
+  no cookie + no token -> tells you almost nothing on its own
+
+DISTINGUISH WHO EMITTED THE 403: an application 403 is small and carries the app's own headers (its request-id/counter); an edge/WAF 403 is large and carries CDN ray-id/error-code markers. Reporting a WAF block as an application control is the same class of error.
+
+GENERALISATION: before claiming any boundary, write down which single variable your control changed, and confirm it is the variable the server actually keys on. If you cannot name it, you do not have a control.
+
+<!-- promoted-slug: 403-may-be-csrf-not-auth -->
+
+<!-- promoted-slug: a-bare-tcp-connect-scan-e-g-nc-z-reporting-a-port-open-is-no -->
+
+<!-- promoted-slug: a-burst-triggered-connection-refusal-that-recovers-within-ro -->
+
+<!-- promoted-slug: a-scope-hostname-with-no-public-dns-record-burns-effort-desp -->
+
+<!-- promoted-slug: a-static-edge-redirect-only-host-zero-origin-application-beh -->
+
+<!-- promoted-slug: reusing-one-local-scratch-temp-file-path-across-sequential-p -->
+
+<!-- promoted-slug: when-a-target-runs-known-open-source-software-an-externally -->

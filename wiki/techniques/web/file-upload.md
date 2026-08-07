@@ -647,6 +647,21 @@ def handleResponse(req, interesting):
 
 ---
 
+## Safe pre-upload confirmation of script execution in a directory
+
+Request a nonexistent `.php` file in the target directory and a nonexistent `.txt` in the SAME directory. If PHP execution is enabled there, PHP-FPM/mod_php emits its own short "File not found." body (fixed small size) for the `.php` request, proving the request was routed to the interpreter, while the `.txt` request gets the web server's own larger static 404 page.
+```
+GET /uploads/zz.php   -> 404, 16 b,  "File not found."   <- interpreter answered
+GET /uploads/zz.txt   -> 404, 196 b, Apache error page   <- static handling, control
+```
+This proves the last line of defense (execution disabled in writable directories) is missing, entirely from safe non-existent-file probes, before ever testing whether an actual upload bypass exists.
+
+## Filename-XSS survives even when uploads are fully disabled
+
+When a chat/ticket/support widget disables real file uploads, also probe the message-creation endpoint for a file-metadata-shaped JSON field. Many apps let the message layer attach a "file" purely by reference (`{"url":..., "filename":..., "mimetype":...}`) with no check that the referenced upload ever happened, so a crafted `filename` containing a quote/HTML still lands verbatim in storage and renders unescaped wherever a staff/reviewer console displays the attachment name, even though the upload feature itself is switched off.
+
+Seen twice independently (a chat widget's message API, and a grant-application review page's file-attach endpoint), both landing stored XSS in a staff console purely via the FILENAME, never the file content. Always test the filename/display-name field of any upload or attachment-reference feature as its own injection point, separate from content-based upload filters.
+
 ## Sources
 
 - PortSwigger Academy — Upload Vulns (General Concepts) and File Upload Vulnerabilities (In-depth)
@@ -683,3 +698,7 @@ for the RCE sink and [[windows-amsi-bypass]] when the executed language is Power
 - [[xxe]] (uploaded SVG, DOCX, or XML is parsed with external entities enabled)
 - [[ssti]] (an uploaded file rendered server-side as a template yields RCE)
 - [[xss]] (a stored SVG or HTML upload served inline executes as XSS)
+
+<!-- promoted-slug: confirm-server-side-script-execution-is-enabled-in-an-upload -->
+
+<!-- promoted-slug: a-file-upload-disabled-control-can-be-dead-on-arrival-if-a-s -->

@@ -164,9 +164,9 @@ The `-k` flag also works in `vhost` mode to bypass TLS errors.
 
 ## Related Techniques
 
-- [[ffuf]] — Alternative fuzzer with more advanced filtering and POST fuzzing support
-- [[recon]] — Broader context for directory and vhost enumeration
-- [[recon]] — Quick reference combining Gobuster commands
+- [[wiki/tools/ffuf]] — Alternative fuzzer with more advanced filtering and POST fuzzing support
+- [[wiki/cheatsheets/recon]] — Broader context for directory and vhost enumeration
+- [[wiki/cheatsheets/recon]] — Quick reference combining Gobuster commands
 
 ## Sources
 

@@ -42,7 +42,7 @@ whatweb -a 3 https://t | grep -Eo '[A-Za-z]+\[[0-9.]+\]'      # tech + version -
 
 ## Related techniques
 
-[[nuclei]], [[cms-exploitation]], [[web-attack-surface]]
+[[wiki/tools/nuclei]], [[cms-exploitation]], [[web-attack-surface]]
 
 ## Sources
 

@@ -71,4 +71,18 @@ Parameterised queries, allowlist input validation, output encoding per context, 
 ## Tools
 [[semgrep]] (fast sweep), [[codeql]] (taint proof), [[trivy]] (dep CVEs), `trufflehog`/`gitleaks` (secrets), grep. Web confirmation -> the matching `hunt-*` skill and `wiki/payloads/`. Memory-unsafe code -> [[memory-safety-bugs]]. Methodology: [[static-code-analysis]].
 
+## An early return can still fire the sink
+
+While tracing whether an authorization guard blocked reachability of a dangerous sink, the naive
+reading ("the function returns early on this branch, so the sink is unreached") can be wrong: the
+branch can perform a real side effect (issuing an outbound network call) BEFORE hitting the return
+statement assumed to gate it. Reading only the branch's final return value hides a live sink sitting
+earlier in the same code path.
+
+For the 'prove the dataflow' step of a source audit: when a guard clause or early return looks like
+it closes off a sink, read every statement in that branch in execution order, not just its terminal
+return.
+
 ## Sources
+
+<!-- promoted-slug: when-source-auditing-an-early-return-guard-clause-for-sink-r -->

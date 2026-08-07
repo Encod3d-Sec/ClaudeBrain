@@ -40,9 +40,9 @@ gowitness scan nmap -f scan.xml --service-contains http
 ## Tips and gotchas
 - The point is **fast human triage**: scan thousands, then scroll the grid for the 1% worth manual testing (admin/login/upload/staging/default installs).
 - Sort/filter the report by title, status, or technology to cluster similar apps (one bug often repeats across a fleet).
-- Feed the interesting hosts to [[nuclei]] and the relevant `hunt-*` skill. Respect scope/RoE - it does load each page (active).
+- Feed the interesting hosts to [[wiki/tools/nuclei]] and the relevant `hunt-*` skill. Respect scope/RoE - it does load each page (active).
 
 ## Related techniques
-[[web-attack-surface]], [[service-enumeration]]. Pipeline with [[subfinder]], [[httpx]], [[nuclei]].
+[[web-attack-surface]], [[service-enumeration]]. Pipeline with [[subfinder]], [[wiki/tools/httpx]], [[wiki/tools/nuclei]].
 
 ## Sources

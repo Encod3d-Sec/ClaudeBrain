@@ -97,5 +97,13 @@ Always trailing-slash `alias`/`location`; define an explicit `/` root; strip/nor
 - [shiblisec/Kyubi](https://github.com/shiblisec/Kyubi) - alias-traversal finder.
 - [laluka/bypass-url-parser](https://github.com/laluka/bypass-url-parser) - ACL/path bypass fuzzer.
 
+## An internal relay's own address poisons the X-Forwarded-For trust chain
+
+Beyond spoofing X-Forwarded-For directly: when a request passes through an INTERNAL forwarding component before reaching the final application, that component may append or overwrite X-Forwarded-For with its OWN internal RFC1918 address as it forwards. If the final internal-IP check reads the LAST element of X-Forwarded-For as closest-hop-therefore-trustworthy, then EVERY external request that happens to route through that internal component, not just requests where an attacker forged the header, ends up trusted as internal, because the last hop really is the internal relay's own address on every single request.
+
+When a service classifies callers as internal/external from a forwarded-IP header, check which component appends the LAST element specifically, not just whether the header can be spoofed by the client; a component-level rewrite anywhere in the chain can grant blanket trust regardless of the true origin.
+
 ## Sources
 - PayloadsAllTheThings - Reverse Proxy
+
+<!-- promoted-slug: an-internal-reverse-proxy-relay-component-sitting-between-th -->

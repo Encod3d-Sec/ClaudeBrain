@@ -897,8 +897,83 @@ Script execution blocked by CSP; only HTML injection into an attribute is possib
 ```
 This appends `script-src-elem 'unsafe-inline'` to the response CSP, allowing the inline `<script>` to execute.
 
+## Type-mismatch DB error as an XSS sink, and as SQLi-negative proof
+
+When a numeric/typed parameter is fed a non-numeric value and the framework surfaces the raw exception to the client, the payload is frequently written into the HTML response with NO encoding, even though the framework double-quotes it inside the error text, giving reflected XSS through what looks like a generic error page. Test any type-checked parameter with an HTML tag as the value.
+
+Separately, this exact error shape settles a common false-positive: if injecting a quote ALWAYS produces a type-CAST error (never a SQL syntax error) regardless of how many quotes are present, the framework's query builder is substituting a BOUND parameter into its displayed raw-SQL for readability, not concatenating; so despite the alarming-looking inline value in the error text, it is not SQL injection.
+
+## Text-serialization escape helper reused in an attribute context
+
+Assigning a string to `element.textContent` then reading back `element.innerHTML` is a legitimate way to HTML-escape a value for TEXT content, but it does NOT escape `"` or `'`. The bug appears when a developer treats that function as a general-purpose escaper and calls it to build an attribute value inside a template string (`` `<a download="${escape(name)}">` ``). A double-quote in the input then closes the attribute early, and everything after it becomes new attributes on the same element, most usefully `autofocus onfocus="..."`.
+
+Code-review signature: grep client bundles for a function whose body is exactly `textContent = x; return innerHTML` and grep every call site for attribute-position usage rather than element/text-node children.
+
+Separately, do not stop at the first render location that looks safe: when the same stored field (a filename, a title) is displayed in more than one consumer, one view may correctly encode it while a second view decodes that encoded value client-side and passes it to a DOM-write sink with no re-escaping. Grep the client bundle for every place the field is read, not just the first found. Recurred via two unrelated findings sharing this exact root cause.
+
+
+## Protocol-relative URLs survive a tag-unaware bare-URL autolinker
+
+Some homegrown markdown-to-HTML converters skip escaping raw HTML entirely (a `<img>`/`<a>` tag in
+the input becomes a real element) but still run a second pass that regex-substitutes any bare
+`https?://...` string anywhere in the text into an `<a href="...">` link, with no awareness of HTML
+tag or attribute boundaries.
+
+That second pass is a trap for your own payload: an absolute URL placed inside your injected tag's
+own attribute (`<img src=http://host/beacon>`) gets spliced by the SAME regex into a nested anchor,
+breaking the attribute and killing the request you were relying on for OOB confirmation or exfil.
+
+The regex only matches an explicit `http://` or `https://` prefix. A protocol-relative URL
+(`//host/path`) is not matched, passes through untouched, and still resolves as a live absolute URL
+in a real browser (via the page's own scheme) - so use `//host/path`, not `http://host/path`, for any
+beacon/exfil URL embedded inside a raw-tag XSS payload against this class of renderer.
+
+## A host:port:path URL grammar can misparse a dangerous scheme as a hostname
+
+Some URL-format validators do not check the scheme first; they instead try to parse the whole value
+against a generic `authority:port/path` shape. A value like `javascript:1/rest-of-payload` matches
+that shape perfectly: `javascript` reads as the hostname, `1` as the port, `/rest-of-payload` as the
+path. The validator accepts it as syntactically well-formed and passes it through unchanged.
+
+If a same-string denylist (WAF rule, regex checking for the literal word `javascript`) sits in front
+of the app, this is a second, independent way past a "safe URL" check even when the denylist itself
+is intact - the value never needs to be encoded or obfuscated to defeat the FORMAT validator, only
+the separate keyword filter. Once stored/reflected verbatim into an `href`, the string is a live
+`javascript:` URI again, because nothing in the chain ever rejected the scheme itself, only its
+concatenation-time shape.
+
+Check any custom or ported URL-syntax validator for this: does it reject by scheme, or does it just
+confirm the string LOOKS like `host[:port][/path]`?
+
+## javascript: URI payload construction: avoid document replacement and silent assignment failure
+
+Clicking a `javascript:EXPR` link runs `EXPR` and, if it evaluates to a STRING, the browser replaces
+the entire current document with that string - so a working payload can look like total failure (a
+blank or garbled page) if this is not accounted for.
+
+Two rules keep the page intact and the payload actually running:
+- Prefix the expression with an arithmetic no-op, e.g. `1/actualCall()`. Division coerces the result
+  to a number (or `Infinity`/`NaN`), never a string, so the browser does not replace the document.
+- The expression must be a function CALL, not an assignment. `1/(x.y = z)` parses as `(1/x.y) = z`,
+  an invalid assignment target, and throws silently with no visible error and no execution - this
+  looks identical to the payload simply not firing.
+
+Useful for building a screenshot-able PoC: pick a call whose visible side effect is written onto the
+live page itself (e.g. prepending `location.href` or a marker into `document.body`), since a real
+`alert()`/`confirm()` native dialog blocks headless/automated screenshot capture.
+
 ## Related
 
 - [[csrf]] (XSS bypasses CSRF tokens to forge authenticated requests)
 - [[xssi]] (both abuse the cross-origin script-inclusion boundary)
 - [[cors-sop]] (XSS runs in-origin, defeating the data protections SOP and CORS enforce)
+
+<!-- promoted-slug: a-database-type-cast-error-e-g-postgres-invalid-input-syntax -->
+
+<!-- promoted-slug: a-homemade-html-escape-helper-built-on-div-textcontent-x-ret -->
+
+<!-- promoted-slug: a-homegrown-markdown-to-html-converter-that-passes-raw-html -->
+
+<!-- promoted-slug: a-url-format-validator-that-parses-input-using-a-generic-hos -->
+
+<!-- promoted-slug: when-triggering-javascript-uri-xss-via-a-link-click-an-expre -->

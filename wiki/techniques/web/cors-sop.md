@@ -33,6 +33,38 @@ For non-simple requests (e.g., `PUT`, `DELETE`, custom headers), the browser sen
 - Attacker can deliver JavaScript to the victim's browser (hosted page, stored XSS)
 - Apache / web server accessible on attacker machine to receive exfiltrated data
 
+## Check token transport FIRST - it decides whether CORS is exploitable at all
+
+**Before investing any effort in a CORS finding, establish how the app carries its credential.**
+A permissive `Access-Control-Allow-Origin` + `Access-Control-Allow-Credentials: true` pair is
+**inert** unless the credential is *ambient* - i.e. the browser attaches it automatically.
+
+| Credential transport | Attacker origin can read the response? | Verdict |
+|---|---|---|
+| Session **cookie** (no `SameSite`, or `SameSite=None`) | Yes - the browser attaches it to the cross-origin request | Exploitable, pursue it |
+| Cookie with `SameSite=Lax`/`Strict` | No on cross-site requests | Dead for most flows |
+| **`Authorization: Bearer` header** | No - the foreign origin never had the token, and cannot make the browser add a header | **Inert. Stop here.** |
+| Token in **`localStorage`/`sessionStorage`** | No - storage is origin-partitioned; a foreign origin cannot read it | **Inert. Stop here.** |
+
+The failure mode this prevents: a scanner (or a reflected-origin probe) reports "CORS
+misconfiguration - ACAO reflects any origin, ACAC true", it looks like a high-severity
+cross-origin data read, and the finding dies in triage because the app is a token-in-header SPA.
+`Allow-Credentials: true` on a token-auth API is a *configuration smell*, not a vulnerability -
+there is no browser-attached credential for it to release.
+
+**Two further traps seen in the wild:**
+
+- **The header pair appears only on the wrong response.** Reflected `ACAO`/`ACAC` on a redirect,
+  an error page, or an SSO interstitial proves nothing. The browser only exposes the body if the
+  pair comes back on the response that *carries the data*. Always re-check on a real, data-bearing
+  200 - not on the 302 or the 401.
+- **An access proxy in front changes the answer.** If the host sits behind an identity-aware proxy
+  (Cloudflare Access, IAP, or similar), the reflected headers you see may belong to the proxy's own
+  login page while the application behind it is unreachable to any cross-origin caller.
+
+**One-line triage:** find a request that returns real data, look at what authenticates it. Header
+or storage -> close the lead. Cookie -> now test the origin reflection properly.
+
 ## Misconfiguration Types
 
 ### 1. Arbitrary origin reflection
@@ -423,6 +455,37 @@ document.location = "http://stock.TARGET.web-security-academy.net/?productId="
 
 ---
 
+
+## CORS trusting a plaintext http:// origin is only exploitable if HSTS is also missing
+
+A CORS policy can correctly reject every foreign origin and still reflect its OWN front end's
+insecure `http://` origin (with `Access-Control-Allow-Credentials: true`). On its own that looks
+theoretical: browsers rarely make a plaintext request to a site they already know as HTTPS.
+
+Check HSTS separately before scoring it low. If neither the HTTPS host nor its own
+`http://` -> `301` redirect response sets `Strict-Transport-Security`, the browser is never told to
+upgrade, so a victim's very first visit (or an on-path attacker forcing one, e.g. a hostile
+Wi-Fi/ARP-spoof/DNS-manipulation position) can still hit the plaintext origin. That single plaintext
+request is a live opportunity to serve attacker content under the trusted-but-insecure origin, from
+which credentialed cross-origin reads succeed against the real API.
+
+Gotcha: test the redirect response itself for HSTS, not just the final HTTPS response - a site can
+set HSTS on `https://host/` while its `http://host/` -> HTTPS redirect (the very response an
+intercepted victim receives) carries none, leaving the upgrade unenforced on exactly the request
+that matters.
+
+## CORS grants also enable import-direction XSS, not just exfiltration
+
+The standard CORS-misconfiguration story is an attacker's page reading a victim's authenticated API response. A CORS grant where a lower-trust origin names a HIGHER-trust authenticated app as the allowed caller creates the opposite risk: the authenticated app is the one making the cross-origin fetch (of a CMS or marketing page), then writing the raw response into its own DOM via `innerHTML`.
+
+That combination (explicit `Access-Control-Allow-Origin: <authenticated-origin>` plus a client-side `innerHTML` sink on the fetched body) caps the authenticated app's effective security at the lower-trust origin's security: any future plugin bug, compromised editor account, or stored-content injection on the source becomes script/attribute-handler execution inside the authenticated session, with no additional vulnerability needed on the authenticated app itself.
+
+Report it as a confirmed architectural weakness once the mechanism, the CORS grant, and the sink are all demonstrated, even without a currently-live content-injection primitive on the source origin - state plainly that the source content itself was not altered.
+
 ## Sources
 
 - THM CORS & SOP room (`https://tryhackme.com/room/corsandsop`)
+
+<!-- promoted-slug: a-cors-allow-list-that-reflects-the-correct-hostname-but-onl -->
+
+<!-- promoted-slug: a-permissive-cors-grant-is-also-abusable-in-the-opposite-dir -->

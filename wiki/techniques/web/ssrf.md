@@ -809,6 +809,16 @@ Final payload:
 stockApi=http://localhost%2523@stock.weliketoshop.net/admin/delete?username=carlos
 ```
 
+
+## Isolating a blind SSRF sink beyond the first callback
+
+A single OOB hit only proves something in the request triggered a fetch, not which parameter. Two follow-up replays turn one positive into a precise, defensible primitive:
+
+- **Sibling-parameter replay.** Resend the identical URL in every other parameter of the same request, one at a time, changing nothing else. A callback ONLY from the true sink field, and zero from every sibling field (a connection-name label, a username field), proves the hit is attributable to that one parameter rather than to the request or session as a whole.
+- **Scheme-presence replay.** Resend the sink with a bare hostname carrying no scheme, then with an unrecognised scheme (e.g. `htp://`). If the bare hostname produces zero callbacks but the bogus scheme still fires, the sink parses the value as a URI before fetching (scheme-agnostic once it parses) rather than pattern-matching on `http`/`https` literally - useful for predicting which alternate schemes are worth trying next.
+
+Both cost one extra request each and convert "the endpoint reaches out somewhere" into "this exact field, parsed as a URI, is the sink."
+
 ## Related
 
 - [[open-redirect]] (a redirect on an allowlisted domain chains past SSRF host filters)
@@ -844,3 +854,5 @@ surface as an empty body once the client raises and the app swallows the excepti
 time does not separate them either. Enumerate the reachable HTTP roots instead.
 
 <!-- promoted-slug: ssrf-loopback-only-vhost -->
+
+<!-- promoted-slug: for-a-blind-oob-confirmed-ssrf-two-cheap-differential-replay -->

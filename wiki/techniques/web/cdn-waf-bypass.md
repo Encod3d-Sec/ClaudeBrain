@@ -276,9 +276,90 @@ Method: identify where input is validated versus where it is normalized/case-fol
 
 - `curl`, `dig`: origin IP verification and virtual host enumeration
 - Shodan, Censys, crt.sh, SecurityTrails, ViewDNS: passive origin IP discovery
-- [[ffuf]]: virtual host fuzzing at origin IP with `-H "Host: FUZZ.target.com"`
+- [[wiki/tools/ffuf]]: virtual host fuzzing at origin IP with `-H "Host: FUZZ.target.com"`
+
+## Origin-IP disclosure via a neighbouring domain's MX record
+
+When several sites share one backend host, hosting inbound mail for ANY one of them on that same host publishes the shared origin address by design: MX records cannot be CDN-proxied, so `dig MX <domain>` followed by `dig A <that mail exchanger hostname>` resolves straight to origin. Distinct from the page's existing 'trigger a password reset email and read Received headers' method: this is a pure passive DNS lookup, no account or email trigger required, and gives an exact IP rather than an approximate /24.
+
+The key gap is that this works even when the CDN-fronted target itself has flawless DNS hygiene, because the leak comes from a SIBLING domain on the same shared server, not the target's own records. Enumerate every in-scope domain that shares hosting with the target (same registrar account, same organisation, subdomains of a common parent) and check each one's MX chain, not just the target's own.
+
+Once the shared origin IP is confirmed, every site on that box is reachable via `--resolve` / `Host:` header, bypassing whatever the CDN enforces for ALL of them at once.
+
+## No-HTML XSS bypasses HTML-signature WAFs
+
+When a parameter is reflected raw inside an inline `<script>` string literal, the equivalent HTML-shaped payload (`</script><svg onload=...>`) gets blocked by an edge WAF as HTML injection, while a payload that stays entirely inside JS syntax passes cleanly because it contains no `<`, `>`, or tag/attribute tokens the WAF signature matches on. This differs from the page's existing 'inline comments/case/whitespace' evasion bullet, which obfuscates an HTML-shaped payload; here there is no HTML shape to obfuscate at all.
+
+Payload shape: close the string AND the enclosing function with `';}` so execution is hoisted to top level (runs on page load, not only inside the original function's later call path):
+```js
+x4hd2k9pq';}document.write(...);function zzz(){var a='
+```
+General lesson: when a promising reflection point is blocked, don't just obfuscate the same HTML payload; hunt for a sibling endpoint/parameter that reflects into a JS string or URI-scheme context instead, and reuse the confirmed WAF-transparency there.
+
+## A companion mobile app is a Cloudflare Access bypass source, not just a secrets leak
+
+When a host sits behind Cloudflare Access (a 302 to `<team>.cloudflareaccess.com`) and has a
+companion Android/iOS app, unzip or decompile the public APK/IPA and search its bundled config
+(`.env`, `assets/`, `strings.xml`, `Info.plist`) for a Cloudflare Access service token: a client id
+shaped like 32 hex chars plus `.access`, paired with a 64-hex-char secret.
+
+Replay the pair as headers against the gated host, no cookies, no account:
+
+```
+curl -H 'CF-Access-Client-Id: <id>.access' -H 'CF-Access-Client-Secret: <secret>' https://<gated-host>/
+```
+
+A 200 with real content instead of the Access login redirect confirms the bypass. The token is
+typically scoped to the one host the app talks to, not the whole tenant, so control-test other
+hosts behind the same team before over-claiming scope. Gotcha: the app frequently never references
+the token in its compiled code, a forgotten build-time leftover shipped to every installer.
+
+## 421 Misdirected Request from origin testing is a client mistake, not a block
+
+Testing an origin IP directly with only a `Host:` header, instead of a resolve override that sets
+SNI and Host together, can return `421 Misdirected Request` purely from the SNI/Host mismatch. This
+reads like the origin is unreachable or actively protected, but is a client-side testing mistake.
+
+Confirm before writing off the origin: retest with `--resolve` so SNI and Host agree instead of a
+bare Host-header swap (Method B in Verify the bypass, above). If that succeeds where the
+Host-header-only request 421'd, the origin was reachable the whole time.
+
+## Invalid-byte keyword splitting defeated by a downstream byte-stripping normaliser
+
+Distinct from the page's encoding-conversion-mismatch gadget above, where a lookalike character is CONVERTED into the dangerous character via transliteration: here the payload is split with a genuinely invalid UTF-8 byte (`java%80script:`), the edge filter sees a token matching no rule and passes it, and the APPLICATION's own input-cleaning step, not the WAF, is what makes it dangerous. If that step calls something like `iconv('UTF-8','UTF-8//IGNORE', $value)`, it DELETES the invalid byte rather than replacing it, so the two keyword halves silently reassemble into the live scheme/keyword AFTER the filter already passed the string. No lookalike-character mapping table is needed for this variant, just one deliberately-invalid byte.
+
+Test by picking a single-byte position inside a blocked literal (`javascript:`, `<script`) and substituting one clearly-invalid UTF-8 byte (the `%80`-`%9F` range mid-sequence is reliable). Compare against a known-blocked control byte (`%00`) to confirm the edge genuinely differentiates by byte value, then confirm the target's own normalisation function strips rather than replaces invalid sequences.
+
+## Origin discovery: MX records and passive-DNS beat CT logs
+
+When crt.sh and CertSpotter come up empty, two more sources still work:
+
+- MX records: mail cannot be proxied through the CDN, so the apex MX target resolves to a real
+  address, on small hosting often the same box as the web origin. Resolve it, then
+  `curl --resolve <host>:443:<ip>` and compare `server:` against the edge's.
+- urlscan.io: `api/v1/search/?q=page.domain:<domain>` returns the resolved IP of every scan it ever
+  ran, recovering pre-CDN addresses that never appear in a certificate. Reverse-DNS cannot
+  substitute, origin addresses frequently have no PTR at all.
+
+Once origin-direct, look for defects the CDN hides: an expired origin TLS cert is invisible behind
+the edge, and any bot/rate-limit control that only exists at the edge is simply gone.
+
+Gotcha: a PTR matching the target on shared hosting proves nothing about ownership. Re-derive
+ownership from the TLS certificate subject/SAN before sending a single request.
 
 ## Sources
 
 - Generalised from real engagement findings
 - HackTricks (pentesting-web) - `\u`-to-`%` and encoding-conversion mismatch (slug: hacktricks-web)
+
+<!-- promoted-slug: a-cdn-fronted-site-s-true-origin-ip-can-leak-from-a-neighbou -->
+
+<!-- promoted-slug: a-javascript-string-context-xss-breakout-with-zero-html-char -->
+
+<!-- promoted-slug: a-mobile-companion-app-for-a-cloudflare-access-gated-test-st -->
+
+<!-- promoted-slug: cdn-waf-edge-responses-come-in-several-distinct-shapes-that -->
+
+<!-- promoted-slug: inserting-an-invalid-utf-8-byte-in-the-middle-of-a-waf-block -->
+
+<!-- promoted-slug: mx-records-and-urlscan-io-find-the-origin-ip-that-certificat -->

@@ -78,4 +78,4 @@ curl -s "https://crt.sh/?q=%25.target.com&output=json" | jq -r '.[].name_value' 
 ```
 
 ## Pipeline
-`subfinder -> httpx -td -> match product here / Shodan -> [[cve-arsenal]] -> nuclei -tags cve,kev`. Tools: [[subfinder]], [[httpx]], [[nuclei]], [[gowitness]].
+`subfinder -> httpx -td -> match product here / Shodan -> [[cve-arsenal]] -> nuclei -tags cve,kev`. Tools: [[subfinder]], [[wiki/tools/httpx]], [[wiki/tools/nuclei]], [[gowitness]].

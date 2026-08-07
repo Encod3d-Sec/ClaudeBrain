@@ -9,7 +9,7 @@ sources: []
 
 # Nuclei Arsenal
 
-Write custom scanners, fuzz, and run without getting WAF/rate-limit-blocked. Tool basics: [[nuclei]]. Keep program-specific templates in `targets/<eng>/`.
+Write custom scanners, fuzz, and run without getting WAF/rate-limit-blocked. Tool basics: [[wiki/tools/nuclei]]. Keep program-specific templates in `targets/<eng>/`.
 
 ## Custom template structure
 ```yaml

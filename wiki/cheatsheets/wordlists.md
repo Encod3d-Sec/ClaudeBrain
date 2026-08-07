@@ -9,7 +9,7 @@ sources: []
 
 # Wordlists
 
-Where the fuzz lists live, ready custom lists, and how to build target-specific ones. Feed [[ffuf]] / [[nuclei]] ([[nuclei-arsenal]]) / gobuster.
+Where the fuzz lists live, ready custom lists, and how to build target-specific ones. Feed [[wiki/tools/ffuf]] / [[wiki/tools/nuclei]] ([[nuclei-arsenal]]) / gobuster.
 
 ## SecLists (the standard set)
 ```bash

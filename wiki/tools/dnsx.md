@@ -38,12 +38,12 @@ cat subs.txt | dnsx -cname -resp | grep -Ei 's3|azure|github' # dangling records
 
 - Supply a fresh, fast resolver list with `-r`; public resolvers rate-limit and can be poisoned.
 - Wildcard DNS inflates results; dnsx has wildcard filtering, but verify.
-- Dangling CNAMEs feed [[subdomain-takeover]]; resolve before probing with [[httpx]].
+- Dangling CNAMEs feed [[subdomain-takeover]]; resolve before probing with [[wiki/tools/httpx]].
 - Sits between subdomain enum ([[subfinder]] / [[amass]]) and HTTP probing.
 
 ## Related techniques
 
-[[subfinder]], [[amass]], [[httpx]]
+[[subfinder]], [[amass]], [[wiki/tools/httpx]]
 
 ## Sources
 

@@ -39,11 +39,11 @@ arjun -i live-urls.txt -m GET -oT params.txt          # bulk from a URL list
 - Chunking cuts requests but it is still active traffic; throttle with `-T`/`--delay`.
 - Hidden params are a common lead into [[idor]], SSRF, and undocumented functionality.
 - Confirm a "found" param actually changes behaviour before building a finding.
-- Feed the discovered params into [[ffuf]] / sqlmap / manual testing. See [[api-testing]].
+- Feed the discovered params into [[wiki/tools/ffuf]] / sqlmap / manual testing. See [[api-testing]].
 
 ## Related techniques
 
-[[api-testing]], [[ffuf]], [[web-attack-surface]]
+[[api-testing]], [[wiki/tools/ffuf]], [[web-attack-surface]]
 
 ## Sources
 

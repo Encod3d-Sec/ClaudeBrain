@@ -43,7 +43,7 @@ katana -u https://t -field url,path -silent
 
 ## Related techniques
 
-[[gau]], [[httpx]], [[web-attack-surface]]
+[[gau]], [[wiki/tools/httpx]], [[web-attack-surface]]
 
 ## Sources
 

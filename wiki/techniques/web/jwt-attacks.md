@@ -480,7 +480,17 @@ docker run --rm -it portswigger/sig2n <token1> <token2>
 6. Sign with the symmetric key → "Don't modify header" → OK.
 7. Access `/admin`, delete carlos.
 
+## Conditional-verification bypass via an omitted optional claim
+
+Distinct from `alg:none`/weak-secret/`kid`-value-manipulation attacks: here the verification code is structured as `key_id = peek_header(token).get('kid'); if key_id: <do every check>`, so the entire block is skipped together simply by sending a JWT whose header has no `kid` field at all. The token does not need to be validly signed in any sense; a literal placeholder string in the signature slot is enough, since nothing ever reaches the verification call.
+
+Test any endpoint that accepts a bearer/JWT-style token by sending it with the `kid` header field entirely absent (not empty, not null, omitted) and see whether behaviour changes from rejected to processed. Confirm the guard exists by then sending the same forged token WITH a `kid` field holding a garbage value: if that now produces a distinct "invalid key id" error, the branch really is presence-gated rather than value-gated.
+
+Where the accepting operation writes attacker-supplied fields into a stored object (e.g. a webhook install that persists an integration's shared secret verbatim from the forged request body), the attacker can plant their own credential and sign further requests with it, turning a verification bypass into a durable, self-authenticating foothold.
+
 ## Sources
 
 - TryHackMe: JWT Security room
 - PortSwigger Web Security Academy: JWT Labs (Apprentice, Practitioner, Expert)
+
+<!-- promoted-slug: when-a-jwt-webhook-verification-block-is-gated-behind-the-me -->

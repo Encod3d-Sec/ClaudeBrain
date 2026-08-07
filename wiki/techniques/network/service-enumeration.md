@@ -732,4 +732,4 @@ prips 93.184.216.0/24 | hakoriginfinder -h https://example.com:443/foo
 - [[password-cracking]] — offline cracking of captured hashes (IPMI mode 7300, NTLM mode 5600/1000)
 - [[ad-enumeration]] — LDAP-focused domain footprinting
 - [[ad-cheatsheet|Active Directory cheatsheet]] — LDAP, SMB, WinRM, and RDP one-liners in AD context
-- [[recon]] — passive recon techniques that precede service enumeration
+- [[wiki/cheatsheets/recon]] — passive recon techniques that precede service enumeration

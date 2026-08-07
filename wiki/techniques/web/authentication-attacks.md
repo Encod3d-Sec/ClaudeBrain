@@ -297,7 +297,7 @@ SSH certificates issued for certain GitHub contexts were accepted by `gist.githu
 ## Tools
 
 - [[burp-suite]] — Intruder (Sniper / Pitchfork / Cluster Bomb), Repeater
-- [[ffuf]] — fast HTTP fuzzing for login endpoints
+- [[wiki/tools/ffuf]] — fast HTTP fuzzing for login endpoints
 - [[hydra]] — network login brute force
 - hashcat — offline cracking of password hashes found in cookies
 - CyberChef — Base64/hash manipulation for cookie analysis
@@ -433,6 +433,29 @@ The 2FA endpoint uses per-request CSRF tokens, making raw Intruder attacks fail 
 8. Resource pool: max 1 concurrent request
 9. Look for `302`; show response in browser immediately (tokens expire fast)
 
+## Timing side-channel behind a content-identical anti-enumeration control
+
+Distinct from the classic slow-password-hash timing oracle: this is a password-reset/registration-adjacent endpoint doing everything right at the content layer, both branches return the exact same byte-for-byte body and status code, defeating any diff-based enumeration check. The leak is that the account-exists branch triggers a BLOCKING call to an external system (most commonly an outbound mail send) before responding, while the no-account branch throws/returns immediately.
+
+If that outbound system is slow, misconfigured, or unreachable, the timing gap can be enormous (tens of times baseline) rather than the few-millisecond differences typical of hash-comparison timing attacks, making it trivially distinguishable with a handful of samples. Measure with several interleaved requests against known-real and synthetic identifiers, and pair every timing claim with a same-domain synthetic control to isolate the account-existence variable from network/DNS variance.
+
+When writing this up, name explicitly that the deployed anti-enumeration setting IS working at the content layer; the finding is that an unrelated operational fault silently reopens the exact channel that setting was meant to close.
+
+## Default password IS the account holder's own checksummed PII
+
+Many national ID formats encode sex+century+date-of-birth plus a serial, with one or more trailing checksum digits computed from the rest. A checksum digit is not free entropy: for a named individual whose sex and DOB are known, the space collapses to roughly the serial digits alone (e.g. a 3-digit serial = 1,000 candidates, not the full digit-string range), because the checksum invalidates all but one serial per candidate:
+
+```python
+def checksum(d10):
+    w1=[1,2,3,4,5,6,7,8,9,1]; w2=[3,4,5,6,7,8,9,1,2,3]
+    s=sum(a*b for a,b in zip(d10,w1))%11
+    if s!=10: return s
+    s=sum(a*b for a,b in zip(d10,w2))%11
+    return 0 if s==10 else s
+```
+
+Combine with absent login lockout/rate-limit for same-day account takeover requiring no credential guess in the conventional sense, and check for any OTHER unauthenticated endpoint that discloses a person's name together with their national ID: that pairing directly supplies the exact default credential, skipping derivation entirely.
+
 ## Sources
 
 - PortSwigger Academy: Authentication Vulnerabilities (General Concepts)
@@ -450,3 +473,7 @@ The 2FA endpoint uses per-request CSRF tokens, making raw Intruder attacks fail 
 - [[email-address-parsing-attacks]]
 - [[session-management-attacks]]
 - [[type-juggling]]
+
+<!-- promoted-slug: a-correctly-content-masked-anti-enumeration-control-byte-ide -->
+
+<!-- promoted-slug: a-government-national-identity-number-used-as-the-default-ac -->

@@ -92,10 +92,18 @@ Exploitation — often chained with phishing, OAuth token theft, or SSRF.
 ## Tools
 
 - [[burp-suite]] — intercept and modify redirect parameters
-- [[ffuf]] — fuzz for redirect parameter names
+- [[wiki/tools/ffuf]] — fuzz for redirect parameter names
+
+## Referer-header fallback in a go-back redirect helper
+
+Some frameworks' redirect-back-to-where-you-came-from helper (e.g. Laravel's `redirect()->back()`) falls back to the request's `Referer` header when no prior intended-URL is stored in session, and the app never constrains the result to its own origin. Unlike every other open-redirect shape, there is no `?next=`/`?redirect=` parameter to find: a plain GET to any route using this helper (a locale-switch route is a common one) with an attacker-controlled `Referer` header returns that value verbatim in `Location`, and the app may additionally echo a `<meta http-equiv="refresh">` fallback for clients that don't send a Referer.
+
+When hunting for open redirects, don't limit the search to parameter-carrying routes; test any back/return/locale-switch route with a forged `Referer` header even when it takes no redirect-shaped query parameter at all.
 
 ## Related
 
 - [[wiki/techniques/web/ssrf]] (an allowlisted open redirect chains past SSRF host filters)
 - [[xss]] (javascript: or data: redirect targets execute script)
 - [[oauth-attacks]] (an open redirect on redirect_uri steals OAuth codes and tokens)
+
+<!-- promoted-slug: a-framework-s-redirect-back-style-helper-that-falls-back-to -->

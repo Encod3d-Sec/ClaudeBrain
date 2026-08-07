@@ -315,6 +315,10 @@ jq -r '.paths | keys[] | select(contains("/admin") or contains("/internal") or c
 | Mass assignment via query param | `PUT /users/me?is_admin=true` — some frameworks bind query params to models |
 | Broken property via nested objects | `{"profile": {"settings": {"admin_override": true}}}` |
 | Auth bypass via content-type switch | `Authorization: Bearer` validated only for `application/json`; XML body skips auth |
+| BOLA via flag-selected query branch | A boolean query flag (`<object>Scoped=true`, `onlyMine=1`) picks which controller branch runs. Drop the flag and the branch that runs no longer applies the object filter at all - the id becomes decorative. Test: send a **non-existent** id with the flag removed; an identical, full result set proves the filter is inert |
+| Excessive exposure behind client-side masking | The UI renders initials/partial values (`first_name.substring(0,1)`, `mask()`, `slice`) while the JSON carries the whole record. The masking code IS the tell: grep the success handler for substring/mask/initials, then call the endpoint directly and diff the JSON against what the page shows |
+| Referrer-restricted Google Maps API key reused on web-service endpoints | HTTP-referrer key restriction only applies to the browser-side Maps JavaScript API; the same key still works unrestricted against server-side web-service APIs (Geocoding, Places, Directions, Distance Matrix) since those can only be IP-restricted, never referrer-restricted; enumerate reachable APIs with individual low-cost calls to establish the real blast radius |
+| Exposed /documentation/ or Postman collection alongside an authenticated API | A doc path on the same host+port (e.g. /documentation/, /docs/, /swagger/, *.postman_collection.json) can serve a full route map with zero auth even when /api/* itself correctly enforces it, and saved Postman examples frequently embed live Basic-auth headers or session/API tokens in the request history |
 
 ---
 
@@ -430,3 +434,7 @@ credential-issuing route, keyed on the managing permission; enforce environment 
 do not return full secrets outside the single create response; audit/alert on mint events.
 
 <!-- promoted-slug: bfla-credential-minting -->
+
+<!-- promoted-slug: a-google-cloud-api-key-leaked-in-a-public-js-bundle-that-is -->
+
+<!-- promoted-slug: a-public-documentation-directory-or-leaked-postman-collectio -->

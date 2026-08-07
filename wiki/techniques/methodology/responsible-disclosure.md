@@ -68,4 +68,21 @@ Stay within scope and the program's **safe-harbor** terms. Do not access/exfiltr
 ## Tools
 `security.txt`, FIRST CVSS calculator, CWE list, PGP/age (encrypted reports), CVE/NVD + GHSA search (novelty + references). Driven by the `disclosure` skill; findings come from the `research` skill. Report quality: [[vulnerability-reports]], [[vuln-assessment]].
 
+## Availability-incident protocol: disclose regardless of outcome
+
+If a live target starts failing (timeouts, 5xx, connection resets) during testing and the timing
+correlates with a specific probe class, stop touching that target immediately, do not keep testing
+to "confirm the chain" while the outage is unresolved.
+
+Assess honestly rather than defensively: correlation with your own request timing is real evidence
+even when total request volume looks too low to plausibly cause it. The correct position is
+"unknown causation, real correlation", not "not my fault" and not "definitely my fault", either
+overclaim damages credibility with the operator.
+
+Disclose to the operator BEFORE submitting any findings from that target, with the observation and
+timeline. If the target recovers on its own before contact is made, disclose anyway and note the
+recovery, an unattended recovery is evidence for a different cause, not permission to stay quiet.
+
 ## Sources
+
+<!-- promoted-slug: if-a-production-target-may-have-gone-unresponsive-partly-bec -->

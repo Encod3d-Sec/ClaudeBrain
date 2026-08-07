@@ -1042,7 +1042,26 @@ Apply vendor baselines for logging, least privilege, patch cadence, and segmenta
 
 - Swisskyrepo [InternalAllTheThings](https://github.com/swisskyrepo/InternalAllTheThings) (ingest slug `InternalAllTheThings`).
 
+
+## Flutter apps: plaintext .env as a raw asset, no RE needed
+
+Flutter builds bundle their asset tree unmodified inside the APK/IPA at
+`assets/flutter_assets/assets/`. Unlike Java/Kotlin secrets, which usually need
+apktool/jadx/strings.xml review to recover, a Flutter app's own `.env` config file (when the
+build embeds one) sits there as an ordinary, uncompiled text file member of the archive:
+
+```sh
+unzip -p app.apk assets/flutter_assets/assets/.env
+```
+
+No root, no instrumentation, no Dart/native decompilation. Check this path FIRST on any
+Flutter target before reaching for blutter/jadx - a config file recovered this way is
+identical for every install (same secret in every copy), so its presence turns a single
+downloaded APK into full disclosure for the whole user base.
+
 ## Wired sub-techniques
 
 <!-- auto-wired: context-reachable sub-technique pages -->
 - [[ios-application]]
+
+<!-- promoted-slug: flutter-dart-mobile-apps-commonly-ship-their-runtime-config -->

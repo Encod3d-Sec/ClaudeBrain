@@ -43,7 +43,7 @@ dalfox url https://t/ -H "Authorization: Bearer X"     # authed context
 
 ## Related techniques
 
-[[xss]], [[nuclei]]
+[[xss]], [[wiki/tools/nuclei]]
 
 ## Sources
 

@@ -69,7 +69,7 @@ Proven end-to-end paths from how real engagements actually win. Each step links 
 **Impact:** content + cookies under the victim's own domain.
 
 ## 10. Bug-bounty quick wins (breadth)
-`subfinder -> httpx -> nuclei -tags cve,kev,exposure -> gowitness` -> review grid -> exposed panel / default creds / takeover / `.env` / actuator. Tools: [[subfinder]], [[httpx]], [[nuclei]], [[gowitness]].
+`subfinder -> httpx -> nuclei -tags cve,kev,exposure -> gowitness` -> review grid -> exposed panel / default creds / takeover / `.env` / actuator. Tools: [[subfinder]], [[wiki/tools/httpx]], [[wiki/tools/nuclei]], [[gowitness]].
 
 ## 11. Unauth service RPC -> arbitrary file write -> RCE (aria2 / Tomcat)
 **Scenario:** an unauthenticated RPC/API that can write files, colocated with a service that executes what it writes.

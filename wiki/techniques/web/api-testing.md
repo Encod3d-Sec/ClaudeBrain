@@ -499,3 +499,19 @@ username=../../v1/users/administrator/field/passwordResetToken%23
 12. Send `GET /forgot-password?passwordResetToken=<TOKEN>` to load the reset page.
 13. Set a new password and log in as administrator.
 14. Navigate to the Admin panel and delete user `carlos` — lab solved.
+
+## The garbage-token differential is invalid against a non-existent object
+
+When testing whether authentication runs before or after other request processing, comparing no-token vs syntactically-present garbage token against a NON-EXISTENT record id can falsely look like proof auth is never evaluated (identical validation-error response either way) when in fact the API validates the id/body BEFORE authentication, so both requests die at that earlier, shared stage, never reaching the auth layer. A genuinely gated sibling endpoint may return 401 in the same test only because it has no such pre-auth validation step, not because it is uniquely protected.
+
+The fix: run the identical differential against a REAL object the tester owns/controls. Only then does a byte-identical response with and without a token prove the authorization layer is truly absent, rather than merely unreached.
+
+<!-- promoted-slug: a-no-token-vs-garbage-token-response-differential-only-prove -->
+
+## OpenAPI security annotations are not ground truth
+
+Do not use a path's declared (or absent) `security` requirement in an OpenAPI/Swagger spec as a proxy for its actual authorization state. Observed both directions on one production API: a path declaring no security requirement returned 401 to every unauthenticated call (safe, but the spec is misleading); a different path, also undeclared, was genuinely wide open with no pagination cap; other paths carried 401/403 RESPONSE schemas while declaring no `security` REQUIREMENT at all.
+
+Treat the spec only as an endpoint-discovery source. For every endpoint touching personal, internal, or operational data, send one request with no credential and confirm the real result. Where an endpoint accepts optional filter parameters documented as narrowing a result set, also test the bare unfiltered call: filters that work correctly when supplied can still leave the endpoint returning its entire unbounded dataset when simply omitted.
+
+<!-- promoted-slug: an-openapi-swagger-spec-s-security-annotation-is-not-reliabl -->

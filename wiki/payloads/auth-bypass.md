@@ -80,5 +80,13 @@ victim@gmail.com@attacker.com   victim@attacker.com@gmail.com   victim%00@x.com 
 ```
 Registration-as-reset upsert ATO: `POST /.../doRegistrationEntries {"email":"victim@x.com","password":"New@1"}`.
 
+## Auth-bypass via a credential-less operation on a multi-operation service
+
+When a product exposes several operations on the same service (a human-login op plus a machine-integration op plus a survey/config op), check each operation's own published contract (WSDL/OpenAPI) independently. One sibling operation can legitimately take only `userId`+`tenantId` with no password parameter at all, by design, while the human login path requires a real credential.
+
+This is not weak/default credentials: no password is accepted, guessed, or checked. Confirm from the machine-readable contract first (`?WSDL`, `?openapi.json`) rather than guessing parameters, then call the operation with a documented vendor-default admin username plus the tenant/instance identifier.
+
 ## Real-world
 `X-Original-URL`/`X-Custom-IP-Authorization` ACL bypass, response-flag tampering, OTP no-rate-limit, and reset poisoning are recurring high-bounty ATOs.
+
+<!-- promoted-slug: a-multi-operation-soap-rest-service-can-have-one-operation-w -->

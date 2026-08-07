@@ -38,5 +38,15 @@ gwtmap.py -u http://TARGET/app/app.nocache.js --filter AuthenticationService.log
 ## Detection and defence
 Enforce authorization on every RPC method (not just the UI); avoid native Java deserialization of untrusted input (use allowlists / safe formats); keep gadget-prone libraries off the classpath; validate parameter types server-side. Obfuscation is not a control - GWTMap defeats it.
 
+## GWT debug flag routes raw server exceptions into an unescaped innerHTML sink
+
+GWT compiles to a small number of large, obfuscated JS permutations. When a debug/verbose flag is live in production (observable from the app's own diagnostic panels leaking raw internal debug text), the compiled code branches on that boolean at the point it builds an error-display string: the production branch renders a static localized message, the debug branch concatenates the raw exception class/message/stack into an HTML string assigned via the ONE `innerHTML`-equivalent primitive the whole permutation uses (grep the file for `.innerHTML=`).
+
+To reach the exception message, hand-craft a GWT-RPC POST body directly rather than relying on the UI: a pipe-delimited string table (`7|2|8|<base-url>|<XSRF-header-class>/<token>|<ServiceName>|<methodName>|<paramTypeClass>|<param-value>|<int-refs...>`), obtainable by copying a real request and substituting a payload into the parameter string-table slot. A server-side validation guard that echoes the rejected value back into its error message is a common, easy sink.
+
+Confirm the sanitiser gap by grepping the same permutation for the app's own safe-HTML-escape helper name and checking it is never called on the exception-message path.
+
 ## Sources
 - PayloadsAllTheThings - Google Web Toolkit
+
+<!-- promoted-slug: a-compiled-gwt-permutation-can-ship-a-client-visible-debug-v -->

@@ -44,7 +44,7 @@ amass db -names -d target.com                        # query the local graph db
 
 ## Related techniques
 
-[[subfinder]], [[httpx]], [[network-discovery]], [[web-attack-surface]]
+[[subfinder]], [[wiki/tools/httpx]], [[network-discovery]], [[web-attack-surface]]
 
 ## Sources
 

@@ -9,7 +9,7 @@ sources: []
 
 ## Purpose
 
-**subfinder** (ProjectDiscovery) is a fast passive subdomain enumeration tool: it pulls subdomains from dozens of public sources (cert transparency, passive DNS, search engines) without touching the target. The front of the recon pipeline -> feed into [[httpx]] -> [[nuclei]].
+**subfinder** (ProjectDiscovery) is a fast passive subdomain enumeration tool: it pulls subdomains from dozens of public sources (cert transparency, passive DNS, search engines) without touching the target. The front of the recon pipeline -> feed into [[wiki/tools/httpx]] -> [[wiki/tools/nuclei]].
 
 ## Install / setup
 
@@ -44,9 +44,9 @@ subfinder -d target.com -recursive -silent
 ## Tips and gotchas
 - Passive only - it will not find subdomains absent from public data; add **DNS brute force** (`puredns`/`shuffledns` + a wordlist) and permutations (`alterx`) for full coverage.
 - API keys (Censys, SecurityTrails, Shodan, VirusTotal, GitHub) dramatically increase results - configure them.
-- Always resolve + probe results with [[httpx]] before scanning; many subdomains are dead. Capture into `targets/<eng>/` for scope tracking.
+- Always resolve + probe results with [[wiki/tools/httpx]] before scanning; many subdomains are dead. Capture into `targets/<eng>/` for scope tracking.
 
 ## Related techniques
-[[web-attack-surface]], [[secret-hunting]]. Pipeline with [[httpx]], [[nuclei]], [[gowitness]].
+[[web-attack-surface]], [[secret-hunting]]. Pipeline with [[wiki/tools/httpx]], [[wiki/tools/nuclei]], [[gowitness]].
 
 ## Sources

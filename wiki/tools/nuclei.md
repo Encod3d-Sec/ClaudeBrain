@@ -47,12 +47,12 @@ nuclei -l live.txt -rl 50 -c 25 -resume
 ```
 
 ## Tips and gotchas
-- Run behind [[httpx]] (only scan live hosts) - scanning dead hosts wastes time and rate budget.
+- Run behind [[wiki/tools/httpx]] (only scan live hosts) - scanning dead hosts wastes time and rate budget.
 - `-severity` and `-tags` are essential on real scopes; the default full set is noisy and slow.
 - Respect RoE: nuclei is active/loud. On `no_dos`/rate-limited engagements set `-rl`/`-c` low; some templates are intrusive (default-login, fuzzing) - scope with `-tags` or `-exclude-tags intrusive`.
 - Write custom templates for program-specific patterns; keep them in `targets/<eng>/` not the shared wiki. Custom-template syntax, fuzzing/DAST, and anti-block evasion (rate/proxy/IP-rotation/self-hosted OOB): [[nuclei-arsenal]].
 
 ## Related techniques
-Recon pipeline with [[httpx]]; findings feed the hunt skills. See [[nuclei-arsenal]] (custom + evasion), [[wordlists]], [[cve-arsenal]], [[recon-dorks]], [[web-attack-surface]].
+Recon pipeline with [[wiki/tools/httpx]]; findings feed the hunt skills. See [[nuclei-arsenal]] (custom + evasion), [[wordlists]], [[cve-arsenal]], [[recon-dorks]], [[web-attack-surface]].
 
 ## Sources
